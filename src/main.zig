@@ -7,6 +7,8 @@ const os = std.os;
 
 var tty: fs.File = undefined;
 var size: Size = undefined;
+var raw: os.linux.termios = undefined;
+var cooked: os.linux.termios = undefined;
 
 pub fn main() !void {
     tty = try fs.cwd().openFile(
@@ -15,11 +17,39 @@ pub fn main() !void {
     );
     defer tty.close();
 
+    try uncook();
+    defer cook() catch {};
+
     size = try getSize();
 
-    var original: os.linux.termios = undefined;
-    _ = os.linux.tcgetattr(tty.handle, &original);
-    var raw: os.linux.termios = original;
+    while (true) {
+        try render();
+        var buffer: [1]u8 = undefined;
+        _ = try tty.read(&buffer);
+        if (buffer[0] == 'q') {
+            return;
+        } else if (buffer[0] == '\x1B') {
+            //Escape
+            //debug.print("input: escape\r\n", .{});
+        } else if (buffer[0] == '\n' or buffer[0] == '\r') {
+            //return
+            //debug.print("input: return\r\n", .{});
+        } else {
+            //character
+            //debug.print("input: {} {s}\r\n", .{ buffer[0], buffer });
+        }
+    }
+}
+
+fn uncook() !void {
+    const writer = tty.writer();
+    _ = os.linux.tcgetattr(tty.handle, &cooked);
+    errdefer cook() catch {};
+
+    raw = cooked;
+    // var original: os.linux.termios = undefined;
+    // _ = os.linux.tcgetattr(tty.handle, &original);
+    // raw = original;
     inline for (.{ "ECHO", "ICANON", "ISIG", "IEXTEN" }) |flag| {
         @field(raw.lflag, flag) = false;
     }
@@ -30,21 +60,29 @@ pub fn main() !void {
     raw.cc[@intFromEnum(os.linux.V.MIN)] = 1;
     _ = os.linux.tcsetattr(tty.handle, .FLUSH, &raw);
 
-    while (true) {
-        _ = try render();
-        var buffer: [1]u8 = undefined;
-        _ = try tty.read(&buffer);
-        if (buffer[0] == 'q') {
-            _ = os.linux.tcsetattr(tty.handle, .FLUSH, &original);
-            return;
-        } else if (buffer[0] == '\x1B') {
-            debug.print("input: escape\r\n", .{});
-        } else if (buffer[0] == '\n' or buffer[0] == '\r') {
-            debug.print("input: return\r\n", .{});
-        } else {
-            debug.print("input: {} {s}\r\n", .{ buffer[0], buffer });
-        }
-    }
+    try hideCursor(writer);
+    try clear(writer);
+}
+
+fn cook() !void {
+    _ = os.linux.tcsetattr(tty.handle, .FLUSH, &cooked);
+    const writer = tty.writer();
+    try clear(writer);
+    try showCursor(writer);
+    //try attributeReset(writer);
+    try moveCursor(writer, 0, 0);
+}
+
+fn attributeReset(writer: anytype) !void {
+    try writer.writeAll("\x1B[0m");
+}
+
+fn hideCursor(writer: anytype) !void {
+    try writer.writeAll("\x1B[?25l");
+}
+
+fn showCursor(writer: anytype) !void {
+    try writer.writeAll("\x1B[?25h");
 }
 
 fn clear(writer: anytype) !void {
@@ -53,7 +91,6 @@ fn clear(writer: anytype) !void {
 
 fn render() !void {
     const writer = tty.writer();
-    try clear(writer);
     try writeLine(writer, "Hello, World!!", (size.height / 2), size.width);
 }
 
@@ -62,17 +99,9 @@ fn moveCursor(writer: anytype, row: usize, col: usize) !void {
 }
 
 fn writeLine(writer: anytype, txt: []const u8, y: usize, width: usize) !void {
-    try moveCursor(writer, y, 0);
+    try moveCursor(writer, y, (width - txt.len) / 2);
     try writer.writeAll(txt);
     try writer.writeByteNTimes(' ', width - txt.len);
-}
-
-fn attributeReset(writer: anytype) !void {
-    try writer.writeAll("\x1B[0m");
-}
-
-fn blueBackground(writer: anytype) !void {
-    try writer.writeAll("\x1B[44m");
 }
 
 const Size = struct { width: usize, height: usize };
