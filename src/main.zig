@@ -1,5 +1,6 @@
 const std = @import("std");
 const sym = @import("symbols.zig");
+const mpd = @import("mpdclient.zig");
 const debug = std.debug;
 const fs = std.fs;
 const io = std.io;
@@ -52,6 +53,9 @@ pub fn main() !void {
     };
     const panel: Panel = getPanel(xdim, ydim);
     log("panel {}", .{panel});
+
+    const song: mpd.Song = try mpd.getCurrentSong();
+    log("current song: {}", .{song});
 
     while (true) {
         try render(panel);
