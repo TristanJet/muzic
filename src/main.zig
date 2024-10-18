@@ -1,4 +1,5 @@
 const std = @import("std");
+const sym = @import("symbols.zig");
 const debug = std.debug;
 const fs = std.fs;
 const io = std.io;
@@ -13,7 +14,7 @@ var raw: os.linux.termios = undefined;
 var cooked: os.linux.termios = undefined;
 
 fn log(comptime format: []const u8, args: anytype) void {
-    logger.print(format, args) catch {};
+    logger.print(format ++ "\n", args) catch {};
 }
 
 pub fn main() !void {
@@ -32,23 +33,25 @@ pub fn main() !void {
 
     try uncook();
     defer cook() catch {};
+    defer clear(logtty.writer()) catch {};
+    defer moveCursor(logtty.writer(), 0, 0) catch {};
 
     size = try getSize();
-    log("Size: {}\n", .{size});
+    log("Size: {}", .{size});
 
     const xdim = Dim{
         .totalfr = 6,
-        .startline = 2,
-        .endline = 4,
+        .startline = 0,
+        .endline = 5,
     };
 
     const ydim = Dim{
-        .totalfr = 8,
+        .totalfr = 7,
         .startline = 0,
         .endline = 1,
     };
     const panel: Panel = getPanel(xdim, ydim);
-    log("panel {}\n", .{panel});
+    log("panel {}", .{panel});
 
     while (true) {
         try render(panel);
@@ -65,7 +68,7 @@ pub fn main() !void {
         } else {
             //character
             //debug.print("input: {} {s}\r\n", .{ buffer[0], buffer });
-            log("input: {} {s}\r\n", .{ buffer[0], buffer });
+            log("input: {} {s}", .{ buffer[0], buffer });
         }
     }
 }
@@ -120,12 +123,69 @@ fn clear(writer: anytype) !void {
 
 fn render(p: Panel) !void {
     const writer = tty.writer();
-    try fillPanel(writer, p);
+    //try fillPanel(writer, p);
     try writeLine(writer, "Hello, World!!", (size.height / 2), size.width);
+    try drawBorders(writer, p);
+    try currTrack(writer, p);
+}
+
+fn drawBorders(writer: fs.File.Writer, p: Panel) !void {
+    try moveCursor(writer, p.p1[1], p.p1[0]);
+    try writer.writeAll(sym.round_left_up);
+    var x: usize = p.p1[0] + 1;
+    while (x != p.p2[0]) {
+        try writer.writeAll(sym.h_line);
+        x += 1;
+    }
+    try writer.writeAll(sym.round_right_up);
+    var y: usize = p.p1[1] + 1;
+    while (y != p.p2[1]) {
+        try moveCursor(writer, y, p.p1[0]);
+        try writer.writeAll(sym.v_line);
+        try moveCursor(writer, y, p.p2[0]);
+        try writer.writeAll(sym.v_line);
+        y += 1;
+    }
+    try moveCursor(writer, p.p2[1], p.p1[0]);
+    try writer.writeAll(sym.round_left_down);
+    x = p.p1[0] + 1;
+    while (x != p.p2[0]) {
+        try writer.writeAll(sym.h_line);
+        x += 1;
+    }
+    try writer.writeAll(sym.round_right_down);
+}
+
+fn currTrack(writer: fs.File.Writer, p: Panel) !void {
+    const p1 = [2]usize{ p.p1[0] + 1, p.p1[1] + 1 };
+    const p2 = [2]usize{ p.p2[0] - 1, p.p2[1] - 1 };
+    const width: usize = p2[0] + 1 - p1[0];
+    const height: usize = p2[1] + 1 - p1[1];
+    const ycent = (height / 2) + 1;
+    log("p2[0] : {}", .{p2[0]});
+    log("width: {} ", .{width});
+    log("height: {}", .{height});
+    const block_char = "\xe2\x96\x88"; // Unicode escape sequence for '█' (U+2588)
+    const artist = "Charli XCX";
+    const trckalb = "Mean Girls - BRAT - 13.";
+    const time = "1:15/3:47";
+
+    try moveCursor(writer, ycent, p1[0]);
+    try writer.writeAll(time);
+    try writeLine(writer, artist, ycent, width);
+    try writeLine(writer, trckalb, ycent - 2, width);
+    try moveCursor(writer, ycent + 2, p1[0]);
+    var x: usize = p1[0];
+    while (x != p2[0] + 1) {
+        try writer.writeAll(block_char);
+        x += 1;
+    }
+    log("X pos: {}", .{x});
 }
 
 fn fillPanel(writer: anytype, p: Panel) !void {
-    const block_char = "\xe2\x96\x88"; // Unicode escape sequence for '█' (U+2588)
+    //const block_char = "\xe2\x96\x88"; // Unicode escape sequence for '█' (U+2588)
+    const block_char = "X";
     var blocks = try std.ArrayList(u8).initCapacity(std.heap.page_allocator, p.width * 3);
     defer blocks.deinit();
 
@@ -146,7 +206,6 @@ fn moveCursor(writer: anytype, row: usize, col: usize) !void {
 fn writeLine(writer: anytype, txt: []const u8, y: usize, width: usize) !void {
     try moveCursor(writer, y, (width - txt.len) / 2);
     try writer.writeAll(txt);
-    try writer.writeByteNTimes(' ', width - txt.len);
 }
 
 const Size = struct { width: usize, height: usize };
@@ -188,7 +247,7 @@ fn getPanel(x: Dim, y: Dim) Panel {
     return Panel{
         .p1 = .{ p1x, p1y },
         .p2 = .{ p2x, p2y },
-        .width = p2x - p1x,
-        .height = p2y - p1y,
+        .width = (p2x + 1) - p1x,
+        .height = (p2y + 1) - p1y,
     };
 }
