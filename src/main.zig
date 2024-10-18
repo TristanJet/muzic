@@ -19,6 +19,9 @@ fn log(comptime format: []const u8, args: anytype) void {
 }
 
 pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
     tty = try fs.cwd().openFile(
         "/dev/tty",
         .{ .mode = fs.File.OpenMode.read_write },
@@ -54,8 +57,18 @@ pub fn main() !void {
     const panel: Panel = getPanel(xdim, ydim);
     log("panel {}", .{panel});
 
-    const song: mpd.Song = try mpd.getCurrentSong();
-    log("current song: {}", .{song});
+    const allocator = gpa.allocator();
+
+    const song: mpd.Song = try mpd.getCurrentSong(allocator);
+    defer {
+        // Free the allocated memory
+        allocator.free(song.uri);
+        allocator.free(song.title);
+        allocator.free(song.artist);
+    }
+    log("Title: {s}", .{song.title});
+    log("Artist: {s}", .{song.artist});
+    log("Time: {}", .{song.duration});
 
     while (true) {
         try render(panel);

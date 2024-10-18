@@ -4,13 +4,13 @@ const c = @cImport({
 });
 
 pub const Song = struct {
-    uri: ?[]const u8,
-    title: ?[]const u8,
-    artist: ?[]const u8,
-    duration: i32,
+    uri: []const u8,
+    title: []const u8,
+    artist: []const u8,
+    duration: u32,
 };
 
-pub fn getCurrentSong() !Song {
+pub fn getCurrentSong(allocator: std.mem.Allocator) !Song {
     const con = c.mpd_connection_new(null, 8538, 0) orelse return error.ConnectionFailed;
     defer c.mpd_connection_free(con);
 
@@ -22,25 +22,24 @@ pub fn getCurrentSong() !Song {
     };
     defer c.mpd_song_free(song);
 
-    // Now you can access the song data using the C API functions
-    if (c.mpd_song_get_uri(song)) |uri| {
-        std.debug.print("URI: {s}\n", .{uri});
-    }
+    const uri = if (c.mpd_song_get_uri(song)) |uri_ptr|
+        try allocator.dupe(u8, std.mem.span(uri_ptr))
+    else
+        try allocator.dupe(u8, "");
+    const title = if (c.mpd_song_get_tag(song, c.MPD_TAG_TITLE, 0)) |title_ptr|
+        try allocator.dupe(u8, std.mem.span(title_ptr))
+    else
+        try allocator.dupe(u8, "");
+    const artist = if (c.mpd_song_get_tag(song, c.MPD_TAG_ARTIST, 0)) |artist_ptr|
+        try allocator.dupe(u8, std.mem.span(artist_ptr))
+    else
+        try allocator.dupe(u8, "");
+    const duration = @as(u32, c.mpd_song_get_duration(song));
 
-    if (c.mpd_song_get_tag(song, c.MPD_TAG_TITLE, 0)) |title| {
-        std.debug.print("Title: {s}\n", .{title});
-    }
-
-    if (c.mpd_song_get_tag(song, c.MPD_TAG_ARTIST, 0)) |artist| {
-        std.debug.print("Artist: {s}\n", .{artist});
-    }
-
-    const duration = c.mpd_song_get_duration(song);
-    std.debug.print("Duration: {} seconds\n", .{duration});
     return Song{
-        .uri = if (c.mpd_song_get_uri(song)) |uri| std.mem.span(uri) else null,
-        .title = if (c.mpd_song_get_tag(song, c.MPD_TAG_TITLE, 0)) |title| std.mem.span(title) else null,
-        .artist = if (c.mpd_song_get_tag(song, c.MPD_TAG_ARTIST, 0)) |artist| std.mem.span(artist) else null,
-        .duration = @intCast(c.mpd_song_get_duration(song)),
+        .uri = uri,
+        .title = title,
+        .artist = artist,
+        .duration = duration,
     };
 }
