@@ -1,26 +1,32 @@
 const std = @import("std");
 const sym = @import("symbols.zig");
+const util = @import("util.zig");
 const mpd = @import("mpdclient.zig");
 const debug = std.debug;
 const fs = std.fs;
 const io = std.io;
 const mem = std.mem;
 const os = std.os;
+const time = std.time;
 
-var logtty: fs.File = undefined;
-var logger: fs.File.Writer = undefined;
+const moveCursor = util.moveCursor;
+const log = util.log;
+const clear = util.clear;
+
 var tty: fs.File = undefined;
 var size: Size = undefined;
 var raw: os.linux.termios = undefined;
 var cooked: os.linux.termios = undefined;
 
-fn log(comptime format: []const u8, args: anytype) void {
-    logger.print(format ++ "\n", args) catch {};
-}
-
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
+
+    try util.init();
+    defer util.deinit() catch {};
+
+    try mpd.connect();
+    defer mpd.disconnect();
 
     tty = try fs.cwd().openFile(
         "/dev/tty",
@@ -28,17 +34,8 @@ pub fn main() !void {
     );
     defer tty.close();
 
-    logtty = try fs.cwd().openFile(
-        "/dev/pts/1",
-        .{ .mode = fs.File.OpenMode.write_only },
-    );
-    defer logtty.close();
-    logger = logtty.writer();
-
     try uncook();
     defer cook() catch {};
-    defer clear(logtty.writer()) catch {};
-    defer moveCursor(logtty.writer(), 0, 0) catch {};
 
     size = try getSize();
     log("Size: {}", .{size});
@@ -59,6 +56,47 @@ pub fn main() !void {
 
     const allocator = gpa.allocator();
 
+    // log("  Elapsed time: {} seconds", .{time.elapsed});
+    // log("  Total time: {} seconds", .{time.total});
+
+    // var last_render_time = time.milliTimestamp();
+    while (true) {
+        const song: mpd.Song = try fetchSong(allocator);
+        const songTime: mpd.Time = try fetchTime();
+        try render(panel, song, songTime);
+        log("Rendered!", .{});
+        var buffer: [1]u8 = undefined;
+
+        // Set the tty to non-blocking mode
+        _ = try std.posix.fcntl(tty.handle, os.linux.F.SETFL, os.linux.SOCK.NONBLOCK);
+
+        const bytes_read = tty.read(&buffer) catch |err| switch (err) {
+            error.WouldBlock => 0, // No input available
+            else => |e| return e,
+        };
+
+        if (bytes_read > 0) {
+            if (buffer[0] == 'q') {
+                return;
+            } else if (buffer[0] == '\x1B') {
+                //Escape
+                //debug.print("input: escape\r\n", .{});
+            } else if (buffer[0] == '\n' or buffer[0] == '\r') {
+                //return
+                //debug.print("input: return\r\n", .{});
+            } else {
+                //character
+                //debug.print("input: {} {s}\r\n", .{ buffer[0], buffer });
+                log("input: {} {s}", .{ buffer[0], buffer });
+            }
+        }
+
+        // Sleep for a short duration to control the loop speed
+        time.sleep(time.ns_per_ms * 200);
+    }
+}
+
+fn fetchSong(allocator: std.mem.Allocator) !mpd.Song {
     const song: mpd.Song = try mpd.getCurrentSong(allocator);
     defer {
         // Free the allocated memory
@@ -68,26 +106,15 @@ pub fn main() !void {
     }
     log("Title: {s}", .{song.title});
     log("Artist: {s}", .{song.artist});
-    log("Time: {}", .{song.duration});
+    //Album kinda doesn't work
+    log("Album: {s}", .{song.album});
+    log("Trackno: {s}", .{song.trackno});
 
-    while (true) {
-        try render(panel);
-        var buffer: [1]u8 = undefined;
-        _ = try tty.read(&buffer);
-        if (buffer[0] == 'q') {
-            return;
-        } else if (buffer[0] == '\x1B') {
-            //Escape
-            //debug.print("input: escape\r\n", .{});
-        } else if (buffer[0] == '\n' or buffer[0] == '\r') {
-            //return
-            //debug.print("input: return\r\n", .{});
-        } else {
-            //character
-            //debug.print("input: {} {s}\r\n", .{ buffer[0], buffer });
-            log("input: {} {s}", .{ buffer[0], buffer });
-        }
-    }
+    return song;
+}
+
+fn fetchTime() !mpd.Time {
+    return try mpd.get_status();
 }
 
 fn uncook() !void {
@@ -134,16 +161,12 @@ fn showCursor(writer: anytype) !void {
     try writer.writeAll("\x1B[?25h");
 }
 
-fn clear(writer: anytype) !void {
-    try writer.writeAll("\x1B[2J");
-}
-
-fn render(p: Panel) !void {
+fn render(p: Panel, s: mpd.Song, t: mpd.Time) !void {
     const writer = tty.writer();
     //try fillPanel(writer, p);
     try writeLine(writer, "Hello, World!!", (size.height / 2), size.width);
     try drawBorders(writer, p);
-    try currTrack(writer, p);
+    try currTrack(writer, p, s, t);
 }
 
 fn drawBorders(writer: fs.File.Writer, p: Panel) !void {
@@ -173,7 +196,15 @@ fn drawBorders(writer: fs.File.Writer, p: Panel) !void {
     try writer.writeAll(sym.round_right_down);
 }
 
-fn currTrack(writer: fs.File.Writer, p: Panel) !void {
+fn formatTime(seconds: u32) [5]u8 {
+    const minutes = seconds / 60;
+    const remainingSeconds = seconds % 60;
+    var result: [5]u8 = undefined;
+    _ = std.fmt.bufPrint(&result, "{d:0>2}:{d:0>2}", .{ minutes, remainingSeconds }) catch unreachable;
+    return result;
+}
+
+fn currTrack(writer: fs.File.Writer, p: Panel, s: mpd.Song, t: mpd.Time) !void {
     const p1 = [2]usize{ p.p1[0] + 1, p.p1[1] + 1 };
     const p2 = [2]usize{ p.p2[0] - 1, p.p2[1] - 1 };
     const width: usize = p2[0] + 1 - p1[0];
@@ -182,20 +213,40 @@ fn currTrack(writer: fs.File.Writer, p: Panel) !void {
     log("p2[0] : {}", .{p2[0]});
     log("width: {} ", .{width});
     log("height: {}", .{height});
-    const block_char = "\xe2\x96\x88"; // Unicode escape sequence for '█' (U+2588)
-    const artist = "Charli XCX";
-    const trckalb = "Mean Girls - BRAT - 13.";
-    const time = "1:15/3:47";
+    const full_block = "\xe2\x96\x88"; // Unicode escape sequence for '█' (U+2588)
+    const light_shade = "\xe2\x96\x92"; // Unicode escape sequence for '▒' (U+2592)
+
+    const artist = if (s.artist.len > 0) s.artist else "Unknown Artist";
+    var trckalb_buf: [256]u8 = undefined;
+    const trckalb = try std.fmt.bufPrint(&trckalb_buf, "{s} - {s} - {s}", .{
+        if (s.title.len > 0) s.title else "Unknown Title",
+        if (s.album.len > 0) s.album else "Unknown Album",
+        if (s.trackno.len > 0) s.trackno else "?",
+    });
+
+    const elapsedTime = formatTime(t.elapsed);
+    const totalTime = formatTime(t.total);
+    var songTime_buf: [12]u8 = undefined;
+    const songTime = try std.fmt.bufPrint(&songTime_buf, "{s}/{s}", .{ elapsedTime, totalTime });
 
     try moveCursor(writer, ycent, p1[0]);
-    try writer.writeAll(time);
+    try writer.writeAll(songTime);
     try writeLine(writer, artist, ycent, width);
     try writeLine(writer, trckalb, ycent - 2, width);
+
+    // Draw progress bar
     try moveCursor(writer, ycent + 2, p1[0]);
-    var x: usize = p1[0];
-    while (x != p2[0] + 1) {
-        try writer.writeAll(block_char);
-        x += 1;
+    const progress_width = p2[0] + 1 - p1[0];
+    const progress_ratio = @as(f32, @floatFromInt(t.elapsed)) / @as(f32, @floatFromInt(t.total));
+    const filled_blocks = @as(usize, @intFromFloat(progress_ratio * @as(f32, @floatFromInt(progress_width))));
+
+    var x: usize = 0;
+    while (x < progress_width) : (x += 1) {
+        if (x < filled_blocks) {
+            try writer.writeAll(full_block);
+        } else {
+            try writer.writeAll(light_shade);
+        }
     }
     log("X pos: {}", .{x});
 }
@@ -214,10 +265,6 @@ fn fillPanel(writer: anytype, p: Panel) !void {
         try moveCursor(writer, p.p1[1] + row, p.p1[0]);
         try writer.writeAll(blocks.items);
     }
-}
-
-fn moveCursor(writer: anytype, row: usize, col: usize) !void {
-    _ = try writer.print("\x1B[{};{}H", .{ row + 1, col + 1 });
 }
 
 fn writeLine(writer: anytype, txt: []const u8, y: usize, width: usize) !void {
