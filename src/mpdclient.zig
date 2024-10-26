@@ -8,10 +8,24 @@ var conn: ?*c.struct_mpd_connection = null;
 var stream: std.net.Stream = undefined;
 
 pub const Song = struct {
-    title: []const u8,
-    artist: []const u8,
-    album: []const u8,
-    trackno: []const u8,
+    title: ?[]const u8,
+    artist: ?[]const u8,
+    album: ?[]const u8,
+    trackno: ?[]const u8,
+
+    pub fn getTitle(self: Song) []const u8 {
+        return self.title orelse "";
+    }
+
+    pub fn getArtist(self: Song) []const u8 {
+        return self.artist orelse "";
+    }
+    pub fn getAlbum(self: Song) []const u8 {
+        return self.artist orelse "";
+    }
+    pub fn getTrackno(self: Song) []const u8 {
+        return self.trackno orelse "";
+    }
 };
 
 pub const Time = struct {
@@ -61,10 +75,10 @@ pub fn getCurrentSong(
     var reader = buf_reader.reader();
 
     var song = Song{
-        .title = try storallocator.dupe(u8, ""),
-        .artist = try storallocator.dupe(u8, ""),
-        .album = try storallocator.dupe(u8, ""),
-        .trackno = try storallocator.dupe(u8, ""),
+        .title = null,
+        .artist = null,
+        .album = null,
+        .trackno = null,
     };
 
     const startPoint = end_index.*;
@@ -87,16 +101,12 @@ pub fn getCurrentSong(
 
             // Allocate and store the value based on the key
             if (std.mem.eql(u8, key, "Title")) {
-                storallocator.free(song.title);
                 song.title = try storallocator.dupe(u8, value);
             } else if (std.mem.eql(u8, key, "Artist")) {
-                storallocator.free(song.artist);
                 song.artist = try storallocator.dupe(u8, value);
             } else if (std.mem.eql(u8, key, "Album")) {
-                storallocator.free(song.album);
                 song.album = try storallocator.dupe(u8, value);
             } else if (std.mem.eql(u8, key, "Track")) {
-                storallocator.free(song.trackno);
                 song.trackno = try storallocator.dupe(u8, value);
             }
         }
