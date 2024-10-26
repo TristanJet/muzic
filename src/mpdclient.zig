@@ -30,7 +30,7 @@ pub const Song = struct {
 
 pub const Time = struct {
     elapsed: u32,
-    total: u32,
+    duration: u32,
 };
 
 pub fn connect() !void {
@@ -82,14 +82,9 @@ pub fn getCurrentSong(
     };
 
     const startPoint = end_index.*;
-    util.log("start point: {}", .{startPoint});
     while (true) {
         defer end_index.* = startPoint;
-        util.log("0?: {}", .{startPoint});
         var line = try reader.readUntilDelimiterAlloc(worallocator, '\n', 1024);
-        util.log("line content: {s}", .{line});
-        util.log("line length: {}", .{line.len});
-        util.log("line length?: {}", .{end_index.*});
 
         if (std.mem.eql(u8, line, "OK")) break;
         if (std.mem.startsWith(u8, line, "ACK")) return error.MpdError;
@@ -115,76 +110,39 @@ pub fn getCurrentSong(
     return song;
 }
 
-// pub fn getCurrentSong(allocator: std.mem.Allocator) !Song {
-//     const song = c.mpd_run_current_song(conn) orelse {
-//         if (c.mpd_connection_get_error(conn) != c.MPD_ERROR_SUCCESS) {
-//             return error.MPDError;
-//         }
-//         return error.NoCurrentSong;
-//     };
-//     defer c.mpd_song_free(song);
-//
-//     const uri = if (c.mpd_song_get_uri(song)) |uri_ptr|
-//         try allocator.dupe(u8, std.mem.span(uri_ptr))
-//     else
-//         try allocator.dupe(u8, "");
-//     const title = if (c.mpd_song_get_tag(song, c.MPD_TAG_TITLE, 0)) |title_ptr|
-//         try allocator.dupe(u8, std.mem.span(title_ptr))
-//     else
-//         try allocator.dupe(u8, "");
-//     const artist = if (c.mpd_song_get_tag(song, c.MPD_TAG_ARTIST, 0)) |artist_ptr|
-//         try allocator.dupe(u8, std.mem.span(artist_ptr))
-//     else
-//         try allocator.dupe(u8, "");
-//     const album = if (c.mpd_song_get_tag(song, c.MPD_TAG_ALBUM, 0)) |album_ptr|
-//         try allocator.dupe(u8, std.mem.span(album_ptr))
-//     else
-//         try allocator.dupe(u8, "");
-//     const trackno = if (c.mpd_song_get_tag(song, c.MPD_TAG_TRACK, 0)) |trackno_ptr|
-//         try allocator.dupe(u8, std.mem.span(trackno_ptr))
-//     else
-//         try allocator.dupe(u8, "");
-//
-//     return Song{
-//         .uri = uri,
-//         .title = title,
-//         .artist = artist,
-//         .album = album,
-//         .trackno = trackno,
-//     };
-// }
+pub fn getTime(
+    worallocator: std.mem.Allocator,
+    end_index: *usize,
+) !Time {
+    try connSend("status\n");
 
-pub fn get_status() !Time {
-    const status_ptr: ?*c.mpd_status = c.mpd_run_status(conn);
-    if (status_ptr == null) {
-        return error.FailedToGetStatus;
+    var buf_reader = std.io.bufferedReader(stream.reader());
+    var reader = buf_reader.reader();
+
+    var time = Time{
+        .elapsed = 0,
+        .duration = 0,
+    };
+
+    const startPoint = end_index.*;
+    while (true) {
+        defer end_index.* = startPoint;
+        var line = try reader.readUntilDelimiterAlloc(worallocator, '\n', 1024);
+
+        if (std.mem.eql(u8, line, "OK")) break;
+        if (std.mem.startsWith(u8, line, "ACK")) return error.MpdError;
+
+        if (std.mem.indexOf(u8, line, ": ")) |separator_index| {
+            const key = line[0..separator_index];
+            const value = line[separator_index + 2 ..];
+
+            if (std.mem.eql(u8, key, "elapsed")) {
+                time.elapsed = @intFromFloat(try std.fmt.parseFloat(f64, value));
+            } else if (std.mem.eql(u8, key, "duration")) {
+                time.duration = @intFromFloat(try std.fmt.parseFloat(f64, value));
+            }
+        }
     }
 
-    // const state = c.mpd_status_get_state(status_ptr);
-    // const volume = c.mpd_status_get_volume(status_ptr);
-    const elapsed_time = c.mpd_status_get_elapsed_time(status_ptr);
-    const total_time = c.mpd_status_get_total_time(status_ptr);
-    //
-    // util.log("MPD Status:", .{});
-    // util.log("  State: {s}", .{mpdStateToString(state)});
-    // util.log("  Volume: {}%", .{volume});
-    // util.log("  Elapsed time: {} seconds", .{elapsed_time});
-    // util.log("  Total time: {} seconds", .{total_time});
-
-    c.mpd_status_free(status_ptr);
-
-    return Time{
-        .elapsed = elapsed_time,
-        .total = total_time,
-    };
-}
-
-fn mpdStateToString(state: c.mpd_state) []const u8 {
-    return switch (state) {
-        c.MPD_STATE_UNKNOWN => "unknown",
-        c.MPD_STATE_STOP => "stop",
-        c.MPD_STATE_PLAY => "play",
-        c.MPD_STATE_PAUSE => "pause",
-        else => "invalid",
-    };
+    return time;
 }

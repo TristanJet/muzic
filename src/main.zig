@@ -58,14 +58,18 @@ pub fn main() !void {
         .endline = 1,
     };
 
-    _ = try mpd.getCurrentSong(wrkallocator, storallocator, &wrkfba.end_index);
-    // const songTime: mpd.Time = try fetchTime();
+    const song = try mpd.getCurrentSong(wrkallocator, storallocator, &wrkfba.end_index);
+    const songTime = try mpd.getTime(wrkallocator, &wrkfba.end_index);
     const panel: Panel = getPanel(xdim, ydim);
     try render(panel);
     log("Rendered!", .{});
 
-    // log("  Elapsed time: {} seconds", .{time.elapsed});
-    // log("  Total time: {} seconds", .{time.total});
+    log("  title: {s} \n", .{song.getTitle()});
+    log("  artist: {s} \n", .{song.getArtist()});
+    log("  album: {s} \n", .{song.getAlbum()});
+    log("  trackno: {s} \n", .{song.getTrackno()});
+    log("  Elapsed time: {} seconds \n", .{songTime.elapsed});
+    log("  Total time: {} seconds \n", .{songTime.duration});
 
     // var last_render_time = time.milliTimestamp();
     while (quit != true) {
