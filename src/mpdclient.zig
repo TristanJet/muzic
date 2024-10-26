@@ -21,7 +21,7 @@ pub const Song = struct {
         return self.artist orelse "";
     }
     pub fn getAlbum(self: Song) []const u8 {
-        return self.artist orelse "";
+        return self.album orelse "";
     }
     pub fn getTrackno(self: Song) []const u8 {
         return self.trackno orelse "";

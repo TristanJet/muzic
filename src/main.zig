@@ -61,7 +61,6 @@ pub fn main() !void {
     const song = try mpd.getCurrentSong(wrkallocator, storallocator, &wrkfba.end_index);
     const songTime = try mpd.getTime(wrkallocator, &wrkfba.end_index);
     const panel: Panel = getPanel(xdim, ydim);
-    try render(panel);
     log("Rendered!", .{});
 
     log("  title: {s} \n", .{song.getTitle()});
@@ -74,6 +73,7 @@ pub fn main() !void {
     // var last_render_time = time.milliTimestamp();
     while (quit != true) {
         try checkInput();
+        try render(wrkallocator, panel, song, songTime);
         // Sleep for a short duration to control the loop speed
         time.sleep(time.ns_per_ms * 200);
     }
@@ -155,12 +155,16 @@ fn showCursor(writer: anytype) !void {
     try writer.writeAll("\x1B[?25h");
 }
 
-fn render(p: Panel) !void {
+fn render(
+    allocator: std.mem.Allocator,
+    p: Panel,
+    s: mpd.Song,
+    t: mpd.Time,
+) !void {
     const writer = tty.writer();
     //try fillPanel(writer, p);
-    try writeLine(writer, "Hello, World!!", (size.height / 2), size.width);
     try drawBorders(writer, p);
-    // try currTrack(writer, p, s, t);
+    try currTrack(allocator, writer, p, s, t);
 }
 
 fn drawBorders(writer: fs.File.Writer, p: Panel) !void {
@@ -198,7 +202,14 @@ fn formatTime(seconds: u32) [5]u8 {
     return result;
 }
 
-fn currTrack(writer: fs.File.Writer, p: Panel, s: mpd.Song, t: mpd.Time) !void {
+//on loop it will have to change
+fn currTrack(
+    allocator: std.mem.Allocator,
+    writer: fs.File.Writer,
+    p: Panel,
+    s: mpd.Song,
+    t: mpd.Time,
+) !void {
     const p1 = [2]usize{ p.p1[0] + 1, p.p1[1] + 1 };
     const p2 = [2]usize{ p.p2[0] - 1, p.p2[1] - 1 };
     const width: usize = p2[0] + 1 - p1[0];
@@ -207,18 +218,31 @@ fn currTrack(writer: fs.File.Writer, p: Panel, s: mpd.Song, t: mpd.Time) !void {
     const full_block = "\xe2\x96\x88"; // Unicode escape sequence for '█' (U+2588)
     const light_shade = "\xe2\x96\x92"; // Unicode escape sequence for '▒' (U+2592)
 
-    const artist = if (s.artist.len > 0) s.artist else "Unknown Artist";
-    var trckalb_buf: [256]u8 = undefined;
-    const trckalb = try std.fmt.bufPrint(&trckalb_buf, "{s} - {s} - {s}", .{
-        if (s.title.len > 0) s.title else "Unknown Title",
-        if (s.album.len > 0) s.album else "Unknown Album",
-        if (s.trackno.len > 0) s.trackno else "?",
-    });
+    const artist = s.getArtist();
+    const album = s.getAlbum();
+    const trackno = s.getTrackno();
+    const has_album = album.len > 0;
+    const has_trackno = trackno.len > 0;
+
+    const trckalb = if (!has_album)
+        try std.fmt.allocPrint(allocator, "{s}", .{s.getTitle()})
+    else if (!has_trackno)
+        try std.fmt.allocPrint(allocator, "{s} - {s}", .{
+            s.getTitle(),
+            album,
+        })
+    else
+        try std.fmt.allocPrint(allocator, "{s} - {s} - {s}", .{
+            s.getTitle(),
+            album,
+            trackno,
+        });
+    defer allocator.free(trckalb);
 
     const elapsedTime = formatTime(t.elapsed);
-    const totalTime = formatTime(t.total);
-    var songTime_buf: [12]u8 = undefined;
-    const songTime = try std.fmt.bufPrint(&songTime_buf, "{s}/{s}", .{ elapsedTime, totalTime });
+    const duration = formatTime(t.duration);
+    const songTime = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ elapsedTime, duration });
+    defer allocator.free(songTime);
 
     try moveCursor(writer, ycent, p1[0]);
     try writer.writeAll(songTime);
@@ -228,7 +252,7 @@ fn currTrack(writer: fs.File.Writer, p: Panel, s: mpd.Song, t: mpd.Time) !void {
     // Draw progress bar
     try moveCursor(writer, ycent + 2, p1[0]);
     const progress_width = p2[0] + 1 - p1[0];
-    const progress_ratio = @as(f32, @floatFromInt(t.elapsed)) / @as(f32, @floatFromInt(t.total));
+    const progress_ratio = @as(f32, @floatFromInt(t.elapsed)) / @as(f32, @floatFromInt(t.duration));
     const filled_blocks = @as(usize, @intFromFloat(progress_ratio * @as(f32, @floatFromInt(progress_width))));
 
     var x: usize = 0;
@@ -239,7 +263,6 @@ fn currTrack(writer: fs.File.Writer, p: Panel, s: mpd.Song, t: mpd.Time) !void {
             try writer.writeAll(light_shade);
         }
     }
-    log("X pos: {}", .{x});
 }
 
 fn fillPanel(writer: anytype, p: Panel) !void {
