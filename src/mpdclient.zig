@@ -54,23 +54,28 @@ pub fn disconnect() void {
 pub fn getCurrentSong(
     worallocator: std.mem.Allocator,
     storallocator: std.mem.Allocator,
+    end_index: *usize,
 ) !Song {
     try connSend("currentsong\n");
     var buf_reader = std.io.bufferedReader(stream.reader());
     var reader = buf_reader.reader();
 
-    var title: ?[]const u8 = null;
-    var artist: ?[]const u8 = null;
-    var album: ?[]const u8 = null;
-    var trackno: ?[]const u8 = null;
+    var song = Song{
+        .title = try storallocator.dupe(u8, ""),
+        .artist = try storallocator.dupe(u8, ""),
+        .album = try storallocator.dupe(u8, ""),
+        .trackno = try storallocator.dupe(u8, ""),
+    };
 
-    var arena = std.heap.ArenaAllocator.init(worallocator);
-    defer arena.deinit();
+    const startPoint = end_index.*;
+    util.log("start point: {}", .{startPoint});
     while (true) {
-        util.log("start: {}", .{arena.state.end_index});
-        var line = try reader.readUntilDelimiterAlloc(arena.allocator(), '\n', 1024);
-        util.log("line length?: {}", .{arena.state.end_index});
-        defer _ = arena.reset(.free_all);
+        defer end_index.* = startPoint;
+        util.log("0?: {}", .{startPoint});
+        var line = try reader.readUntilDelimiterAlloc(worallocator, '\n', 1024);
+        util.log("line content: {s}", .{line});
+        util.log("line length: {}", .{line.len});
+        util.log("line length?: {}", .{end_index.*});
 
         if (std.mem.eql(u8, line, "OK")) break;
         if (std.mem.startsWith(u8, line, "ACK")) return error.MpdError;
@@ -82,23 +87,22 @@ pub fn getCurrentSong(
 
             // Allocate and store the value based on the key
             if (std.mem.eql(u8, key, "Title")) {
-                title = value;
+                storallocator.free(song.title);
+                song.title = try storallocator.dupe(u8, value);
             } else if (std.mem.eql(u8, key, "Artist")) {
-                artist = value;
+                storallocator.free(song.artist);
+                song.artist = try storallocator.dupe(u8, value);
             } else if (std.mem.eql(u8, key, "Album")) {
-                album = value;
+                storallocator.free(song.album);
+                song.album = try storallocator.dupe(u8, value);
             } else if (std.mem.eql(u8, key, "Track")) {
-                trackno = value;
+                storallocator.free(song.trackno);
+                song.trackno = try storallocator.dupe(u8, value);
             }
         }
     }
 
-    return Song{
-        .title = try storallocator.dupe(u8, title orelse ""),
-        .artist = try storallocator.dupe(u8, artist orelse ""),
-        .album = try storallocator.dupe(u8, album orelse ""),
-        .trackno = try storallocator.dupe(u8, trackno orelse ""),
-    };
+    return song;
 }
 
 // pub fn getCurrentSong(allocator: std.mem.Allocator) !Song {

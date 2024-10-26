@@ -27,11 +27,9 @@ pub fn main() !void {
     defer mpd.disconnect();
 
     // working buffer to store temporary data
-    var wrkbuf: [1024]u8 = undefined;
+    var wrkbuf: [4096]u8 = undefined;
     var wrkfba = std.heap.FixedBufferAllocator.init(&wrkbuf);
-    var wrkarena = std.heap.ArenaAllocator.init(wrkfba.allocator());
-    defer wrkarena.deinit();
-    const wrkallocator = wrkarena.allocator();
+    const wrkallocator = wrkfba.allocator();
 
     var storbuf: [512]u8 = undefined;
     var storfba = std.heap.FixedBufferAllocator.init(&storbuf);
@@ -59,16 +57,17 @@ pub fn main() !void {
         .startline = 0,
         .endline = 1,
     };
-    const panel: Panel = getPanel(xdim, ydim);
 
-    const song: mpd.Song = try mpd.getCurrentSong(wrkallocator, storallocator);
+    const song: mpd.Song = try mpd.getCurrentSong(wrkallocator, storallocator, &wrkfba.end_index);
     const nbytes = song.title.len + song.artist.len + song.album.len + song.trackno.len;
     util.log("they the same?: {} == {} ?", .{ storfba.end_index, nbytes });
-    util.log("title: {?s} \n", .{song.title});
-    util.log("artist: {?s} \n", .{song.artist});
-    util.log("album: {?s}\n", .{song.album});
-    util.log("trackno: {?s}\n", .{song.trackno});
+    util.log("title: {s} \n", .{song.title});
+    util.log("artist: {s} \n", .{song.artist});
+    util.log("album: {s}\n", .{song.album});
+    util.log("trackno: {s}\n", .{song.trackno});
+    util.log("point: {}", .{wrkfba.end_index});
     // const songTime: mpd.Time = try fetchTime();
+    const panel: Panel = getPanel(xdim, ydim);
     try render(panel);
     log("Rendered!", .{});
 
