@@ -79,7 +79,7 @@ pub fn main() !void {
         try checkInput();
         if (isRenderTime(last_render_time, current_time)) {
             songTime.elapsed += @intCast(current_time - last_render_time);
-            try render(wrkallocator, panel, song, songTime);
+            try render(wrkallocator, panel, song, songTime, &wrkfba.end_index);
             last_render_time = current_time;
         }
         // Small sleep to prevent CPU hogging
@@ -173,10 +173,11 @@ fn render(
     p: Panel,
     s: mpd.Song,
     t: mpd.Time,
+    end_index: *usize,
 ) !void {
     const writer = tty.writer();
     try drawBorders(writer, p);
-    try currTrack(wrkallocator, writer, p, s, t);
+    try currTrack(wrkallocator, writer, p, s, t, end_index);
 }
 
 fn drawBorders(writer: fs.File.Writer, p: Panel) !void {
@@ -206,13 +207,22 @@ fn drawBorders(writer: fs.File.Writer, p: Panel) !void {
     try writer.writeAll(sym.round_right_down);
 }
 
-fn formatTime(milli: u64) [5]u8 {
+fn formatTime(allocator: std.mem.Allocator, milli: u64) ![]const u8 {
+    // Validate input - ensure we don't exceed reasonable time values
+    if (milli > std.math.maxInt(u32) * 1000) {
+        return error.TimeValueTooLarge;
+    }
+
     const seconds = milli / 1000;
     const minutes = seconds / 60;
     const remainingSeconds = seconds % 60;
-    var result: [5]u8 = undefined;
-    _ = std.fmt.bufPrint(&result, "{d:0>2}:{d:0>2}", .{ minutes, remainingSeconds }) catch unreachable;
-    return result;
+
+    // Format time string with proper error handling
+    return std.fmt.allocPrint(
+        allocator,
+        "{d:0>2}:{d:0>2}",
+        .{ minutes, remainingSeconds },
+    );
 }
 
 //on loop it will have to change
@@ -222,7 +232,11 @@ fn currTrack(
     p: Panel,
     s: mpd.Song,
     t: mpd.Time,
+    end_index: *usize,
 ) !void {
+    const start = end_index.*;
+    defer end_index.* = start;
+
     const xmin = p.xmin + 1;
     const xmax = p.xmax - 1;
     const ycent = p.getYCentre();
@@ -248,12 +262,10 @@ fn currTrack(
             album,
             trackno,
         });
-    defer allocator.free(trckalb);
 
-    const elapsedTime = formatTime(t.elapsed);
-    const duration = formatTime(t.duration);
+    const elapsedTime = try formatTime(allocator, t.elapsed);
+    const duration = try formatTime(allocator, t.duration);
     const songTime = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ elapsedTime, duration });
-    defer allocator.free(songTime);
 
     //Include co-ords in the panel drawing?
     try moveCursor(writer, ycent, xmin);
