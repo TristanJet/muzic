@@ -29,8 +29,8 @@ pub const Song = struct {
 };
 
 pub const Time = struct {
-    elapsed: u32,
-    duration: u32,
+    elapsed: u64,
+    duration: u64,
 };
 
 pub fn connect() !void {
@@ -132,9 +132,11 @@ pub fn getTime(
             const value = line[separator_index + 2 ..];
 
             if (std.mem.eql(u8, key, "elapsed")) {
-                time.elapsed = @intFromFloat(try std.fmt.parseFloat(f64, value));
+                const seconds = try std.fmt.parseFloat(f64, value);
+                time.elapsed = @intFromFloat(seconds * 1000);
             } else if (std.mem.eql(u8, key, "duration")) {
-                time.duration = @intFromFloat(try std.fmt.parseFloat(f64, value));
+                const seconds = try std.fmt.parseFloat(f64, value);
+                time.duration = @intFromFloat(seconds * 1000);
             }
         }
     }

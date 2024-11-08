@@ -31,9 +31,10 @@ pub fn main() !void {
     var wrkfba = std.heap.FixedBufferAllocator.init(&wrkbuf);
     const wrkallocator = wrkfba.allocator();
 
-    var storbuf: [512]u8 = undefined;
-    var storfba = std.heap.FixedBufferAllocator.init(&storbuf);
-    const storallocator = storfba.allocator();
+    //Stores a single Song struct
+    var currTrackBuf: [128]u8 = undefined;
+    var currTrackfba = std.heap.FixedBufferAllocator.init(&currTrackBuf);
+    const currTrackallocator = currTrackfba.allocator();
 
     tty = try fs.cwd().openFile(
         "/dev/tty",
@@ -48,18 +49,18 @@ pub fn main() !void {
 
     const xdim = Dim{
         .totalfr = 6,
-        .startline = 0,
+        .startline = 1,
         .endline = 5,
     };
 
     const ydim = Dim{
         .totalfr = 7,
-        .startline = 0,
-        .endline = 1,
+        .startline = 3,
+        .endline = 4,
     };
 
-    const song = try mpd.getCurrentSong(wrkallocator, storallocator, &wrkfba.end_index);
-    const songTime = try mpd.getTime(wrkallocator, &wrkfba.end_index);
+    const song = try mpd.getCurrentSong(wrkallocator, currTrackallocator, &wrkfba.end_index);
+    var songTime = try mpd.getTime(wrkallocator, &wrkfba.end_index);
     const panel: Panel = getPanel(xdim, ydim);
     log("Rendered!", .{});
     log("-------------------", .{});
@@ -71,13 +72,24 @@ pub fn main() !void {
     log("  Elapsed time: {} seconds \n", .{songTime.elapsed});
     log("  Total time: {} seconds \n", .{songTime.duration});
 
-    // var last_render_time = time.milliTimestamp();
+    var last_render_time = time.milliTimestamp();
+
     while (quit != true) {
+        const current_time = time.milliTimestamp();
         try checkInput();
-        try render(wrkallocator, panel, song, songTime);
-        // Sleep for a short duration to control the loop speed
-        time.sleep(time.ns_per_ms * 200);
+        if (isRenderTime(last_render_time, current_time)) {
+            songTime.elapsed += @intCast(current_time - last_render_time);
+            try render(wrkallocator, panel, song, songTime);
+            last_render_time = current_time;
+        }
+        // Small sleep to prevent CPU hogging
+        time.sleep(time.ns_per_ms * 10);
     }
+}
+
+fn isRenderTime(last_render_time: i64, current_time: i64) bool {
+    if ((current_time - last_render_time) >= 200) return true;
+    return false;
 }
 
 fn checkInput() !void {
@@ -157,14 +169,14 @@ fn showCursor(writer: anytype) !void {
 }
 
 fn render(
-    allocator: std.mem.Allocator,
+    wrkallocator: std.mem.Allocator,
     p: Panel,
     s: mpd.Song,
     t: mpd.Time,
 ) !void {
     const writer = tty.writer();
     try drawBorders(writer, p);
-    try currTrack(allocator, writer, p, s, t);
+    try currTrack(wrkallocator, writer, p, s, t);
 }
 
 fn drawBorders(writer: fs.File.Writer, p: Panel) !void {
@@ -194,7 +206,8 @@ fn drawBorders(writer: fs.File.Writer, p: Panel) !void {
     try writer.writeAll(sym.round_right_down);
 }
 
-fn formatTime(seconds: u32) [5]u8 {
+fn formatTime(milli: u64) [5]u8 {
+    const seconds = milli / 1000;
     const minutes = seconds / 60;
     const remainingSeconds = seconds % 60;
     var result: [5]u8 = undefined;
