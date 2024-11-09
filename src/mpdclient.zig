@@ -33,13 +33,14 @@ pub const Time = struct {
     duration: u64,
 };
 
-pub fn connect() !void {
+pub fn connect(
+    buffer: []u8,
+) !void {
     const peer = try net.Address.parseIp4("127.0.0.1", 8538);
     // Connect to peer
     stream = try net.tcpConnectToAddress(peer);
 
-    var buffer: [64]u8 = undefined;
-    const bytes_read = try stream.read(&buffer);
+    const bytes_read = try stream.read(buffer);
     const received_data = buffer[0..bytes_read];
 
     if (bytes_read < 2 or !std.mem.eql(u8, received_data[0..2], "OK")) {

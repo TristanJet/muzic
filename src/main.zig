@@ -20,12 +20,6 @@ var cooked: os.linux.termios = undefined;
 var quit: bool = false;
 
 pub fn main() !void {
-    try util.init();
-    defer util.deinit() catch {};
-
-    try mpd.connect();
-    defer mpd.disconnect();
-
     // working buffer to store temporary data
     var wrkbuf: [4096]u8 = undefined;
     var wrkfba = std.heap.FixedBufferAllocator.init(&wrkbuf);
@@ -36,32 +30,64 @@ pub fn main() !void {
     var currTrackfba = std.heap.FixedBufferAllocator.init(&currTrackBuf);
     const currTrackallocator = currTrackfba.allocator();
 
-    tty = try fs.cwd().openFile(
+    util.init() catch {};
+    defer util.deinit() catch {};
+
+    mpd.connect(wrkbuf[0..64]) catch {
+        log("Unable to connect to MPD", .{});
+        return;
+    };
+    defer mpd.disconnect();
+
+    tty = fs.cwd().openFile(
         "/dev/tty",
         .{ .mode = fs.File.OpenMode.read_write },
-    );
+    ) catch {
+        log("could not find tty at /dev/tty", .{});
+        return;
+    };
     defer tty.close();
 
-    try uncook();
+    uncook() catch {
+        log("failed to uncook", .{});
+        return;
+    };
     defer cook() catch {};
 
     window = try getWindow();
 
-    const xdim = Dim{
-        .totalfr = 6,
-        .startline = 1,
-        .endline = 5,
+    const song = mpd.getCurrentSong(wrkallocator, currTrackallocator, &wrkfba.end_index) catch |err| {
+        log("failed to get current song: {}", .{err});
+        return;
+    };
+    var songTime = mpd.getTime(wrkallocator, &wrkfba.end_index) catch |err| {
+        log("failed to get time: {}", .{err});
+        return;
     };
 
-    const ydim = Dim{
+    const playing: Panel = getPanel(
+        Dim{
+            .totalfr = 6,
+            .startline = 1,
+            .endline = 5,
+        },
+        Dim{
+            .totalfr = 7,
+            .startline = 0,
+            .endline = 1,
+        },
+    );
+
+    const queue: Panel = getPanel(Dim{
         .totalfr = 7,
-        .startline = 3,
-        .endline = 4,
-    };
+        .startline = 2,
+        .endline = 5,
+    }, Dim{
+        .totalfr = 7,
+        .startline = 2,
+        .endline = 5,
+    });
 
-    const song = try mpd.getCurrentSong(wrkallocator, currTrackallocator, &wrkfba.end_index);
-    var songTime = try mpd.getTime(wrkallocator, &wrkfba.end_index);
-    const panel: Panel = getPanel(xdim, ydim);
     log("Rendered!", .{});
     log("-------------------", .{});
 
@@ -79,7 +105,10 @@ pub fn main() !void {
         try checkInput();
         if (isRenderTime(last_render_time, current_time)) {
             songTime.elapsed += @intCast(current_time - last_render_time);
-            try render(wrkallocator, panel, song, songTime, &wrkfba.end_index);
+            render(wrkallocator, playing, song, songTime, queue, &wrkfba.end_index) catch |err| {
+                log("Couldn't render {}", .{err});
+                return;
+            };
             last_render_time = current_time;
         }
         // Small sleep to prevent CPU hogging
@@ -173,11 +202,13 @@ fn render(
     p: Panel,
     s: mpd.Song,
     t: mpd.Time,
+    q: Panel,
     end_index: *usize,
 ) !void {
     const writer = tty.writer();
     try drawBorders(writer, p);
     try currTrack(wrkallocator, writer, p, s, t, end_index);
+    try drawBordersOffset(writer, q, 1);
 }
 
 fn drawBorders(writer: fs.File.Writer, p: Panel) !void {
@@ -205,6 +236,17 @@ fn drawBorders(writer: fs.File.Writer, p: Panel) !void {
         x += 1;
     }
     try writer.writeAll(sym.round_right_down);
+}
+
+fn drawBordersOffset(writer: fs.File.Writer, p: Panel, topOffset: u8) !void {
+    const offsetDims = Panel{
+        .xmin = p.xmin,
+        .xmax = p.xmax,
+        .ymin = (p.ymin + topOffset),
+        .ymax = p.ymax,
+    };
+    try writeLine(writer, "queue:", p.ymin, p.xmin, p.xmax);
+    try drawBorders(writer, offsetDims);
 }
 
 fn formatTime(allocator: std.mem.Allocator, milli: u64) ![]const u8 {
