@@ -25,10 +25,7 @@ pub fn main() !void {
     var wrkfba = std.heap.FixedBufferAllocator.init(&wrkbuf);
     const wrkallocator = wrkfba.allocator();
 
-    //Stores a single Song struct
-    var currTrackBuf: [128]u8 = undefined;
-    var currTrackfba = std.heap.FixedBufferAllocator.init(&currTrackBuf);
-    const currTrackallocator = currTrackfba.allocator();
+    window = try getWindow();
 
     util.init() catch {};
     defer util.deinit() catch {};
@@ -54,35 +51,36 @@ pub fn main() !void {
     };
     defer cook() catch {};
 
-    window = try getWindow();
+    var song: mpd.Song = mpd.Song.init();
 
-    const song = mpd.getCurrentSong(wrkallocator, currTrackallocator, &wrkfba.end_index) catch |err| {
+    _ = mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &song) catch |err| {
         log("failed to get current song: {}", .{err});
         return;
     };
+
     var songTime = mpd.getTime(wrkallocator, &wrkfba.end_index) catch |err| {
         log("failed to get time: {}", .{err});
         return;
     };
 
     const playing: Panel = getPanel(
-        Dim{
+        .{
             .totalfr = 6,
             .startline = 1,
             .endline = 5,
         },
-        Dim{
+        .{
             .totalfr = 7,
             .startline = 0,
             .endline = 1,
         },
     );
 
-    const queue: Panel = getPanel(Dim{
+    const queue: Panel = getPanel(.{
         .totalfr = 7,
         .startline = 2,
         .endline = 5,
-    }, Dim{
+    }, .{
         .totalfr = 7,
         .startline = 2,
         .endline = 5,
@@ -91,13 +89,13 @@ pub fn main() !void {
     log("Rendered!", .{});
     log("-------------------", .{});
 
-    log("  title: {s} \n", .{song.getTitle()});
-    log("  artist: {s} \n", .{song.getArtist()});
-    log("  album: {s} \n", .{song.getAlbum()});
-    log("  trackno: {s} \n", .{song.getTrackno()});
-    log("  Elapsed time: {} seconds \n", .{songTime.elapsed});
-    log("  Total time: {} seconds \n", .{songTime.duration});
-
+    // log("  title: {s} \n", .{song.getTitle()});
+    // log("  artist: {s} \n", .{song.getArtist()});
+    // log("  album: {s} \n", .{song.getAlbum()});
+    // log("  trackno: {s} \n", .{song.getTrackno()});
+    // log("  Elapsed time: {} seconds \n", .{songTime.elapsed});
+    // log("  Total time: {} seconds \n", .{songTime.duration});
+    //
     var last_render_time = time.milliTimestamp();
 
     while (quit != true) {
@@ -285,24 +283,21 @@ fn currTrack(
     const full_block = "\xe2\x96\x88"; // Unicode escape sequence for '█' (U+2588)
     const light_shade = "\xe2\x96\x92"; // Unicode escape sequence for '▒' (U+2592)
 
-    const artist = s.getArtist();
-    const album = s.getAlbum();
-    const trackno = s.getTrackno();
-    const has_album = album.len > 0;
-    const has_trackno = trackno.len > 0;
+    const has_album = s.album.len > 0;
+    const has_trackno = s.trackno.len > 0;
 
     const trckalb = if (!has_album)
-        try std.fmt.allocPrint(allocator, "{s}", .{s.getTitle()})
+        try std.fmt.allocPrint(allocator, "{s}", .{s.title})
     else if (!has_trackno)
         try std.fmt.allocPrint(allocator, "{s} - {s}", .{
-            s.getTitle(),
-            album,
+            s.title,
+            s.album,
         })
     else
         try std.fmt.allocPrint(allocator, "{s} - {s} - {s}", .{
-            s.getTitle(),
-            album,
-            trackno,
+            s.title,
+            s.album,
+            s.trackno,
         });
 
     const elapsedTime = try formatTime(allocator, t.elapsed);
@@ -312,7 +307,7 @@ fn currTrack(
     //Include co-ords in the panel drawing?
     try moveCursor(writer, ycent, xmin);
     try writer.writeAll(songTime);
-    try writeLine(writer, artist, ycent, xmin, xmax);
+    try writeLine(writer, s.artist, ycent, xmin, xmax);
     try writeLine(writer, trckalb, ycent - 2, xmin, xmax);
 
     // Draw progress bar
