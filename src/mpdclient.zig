@@ -17,49 +17,41 @@ pub const Song = struct {
 
     pub fn setTitle(self: *Song, title: []const u8) !void {
         if (title.len > MAX_LEN) return error.TooLong;
-        // @memset(&self.titleBuf, 0);
         std.mem.copyForwards(u8, self.titleBuf[0..title.len], title);
         self.titleLen = @intCast(title.len);
     }
 
-    pub fn getTitle(self: Song) []const u8 {
+    pub fn getTitle(self: *const Song) []const u8 {
         return self.titleBuf[0..self.titleLen];
     }
 
     pub fn setArtist(self: *Song, artist: []const u8) !void {
         if (artist.len > MAX_LEN) return error.TooLong;
-        // First zero out the entire buffer
-        // @memset(&self.artistBuf, 0);
-        // Then copy the new data
         std.mem.copyForwards(u8, self.artistBuf[0..artist.len], artist);
         self.artistLen = @intCast(artist.len);
     }
 
-    pub fn getArtist(self: Song) []const u8 {
+    pub fn getArtist(self: *const Song) []const u8 {
         return self.artistBuf[0..self.artistLen];
     }
 
     pub fn setAlbum(self: *Song, album: []const u8) !void {
         if (album.len > MAX_LEN) return error.TooLong;
-        // First zero out the entire buffer
-        // @memset(&self.albumBuf, 0);
-        // Then copy the new data
         std.mem.copyForwards(u8, self.albumBuf[0..album.len], album);
         self.albumLen = @intCast(album.len);
     }
 
-    pub fn getAlbum(self: Song) []const u8 {
+    pub fn getAlbum(self: *const Song) []const u8 {
         return self.albumBuf[0..self.albumLen];
     }
 
     pub fn setTrackno(self: *Song, trackno: []const u8) !void {
         if (trackno.len > 2) return error.TooLong;
-        // @memset(&self.tracknoBuf, 0);
         std.mem.copyForwards(u8, self.tracknoBuf[0..trackno.len], trackno);
         self.tracknoLen = @intCast(trackno.len);
     }
 
-    pub fn getTrackno(self: Song) []const u8 {
+    pub fn getTrackno(self: *const Song) []const u8 {
         return self.tracknoBuf[0..self.tracknoLen];
     }
 };
@@ -144,26 +136,37 @@ test "currentsong" {
     _ = try connect(wrkbuf[0..16]);
 
     const song = try getCurrentSong(wrkallocator, &wrkfba.end_index);
-    const string = song.getTitle();
-
     // Print the raw buffer contents
-    std.debug.print("\nFull string buffer contents: ", .{});
-    for (song.titleBuf) |c| {
-        if (c == 0) {
-            std.debug.print("0 ", .{});
-        } else {
-            std.debug.print("{c}({}) ", .{ c, c });
-        }
-    }
-    std.debug.print("\n", .{});
+    // std.debug.print("\nFull string buffer contents: ", .{});
+    // for (song.titleBuf) |c| {
+    //     if (c == 0) {
+    //         std.debug.print("0 ", .{});
+    //     } else {
+    //         std.debug.print("{c}({}) ", .{ c, c });
+    //     }
+    // }
+    // std.debug.print("\n", .{});
 
-    std.debug.print("string buffer length: {}\n", .{song.titleLen});
-    std.debug.print("string slice: '{s}' (len: {})\n", .{ song.titleBuf[0..song.titleLen], string.len });
+    std.debug.print("title slice: '{s}' (len: {})\n", .{ song.titleBuf[0..song.titleLen], song.titleLen });
+    std.debug.print("artist slice: '{s}' (len: {})\n", .{ song.artistBuf[0..song.artistLen], song.artistLen });
+    std.debug.print("album slice: '{s}' (len: {})\n", .{ song.albumBuf[0..song.albumLen], song.albumLen });
 
     // Test with the actual value from MPD
-    const expected = "Ivy";
-    // try std.testing.expectEqualStrings(expected, string);
-    try std.testing.expectEqualSlices(u8, expected, song.titleBuf[0..song.titleLen]);
+    const expectedTitle = "Feenin'";
+    const expectedArtist = "Jodeci";
+    const expectedAlbum = "Diary of a Mad Band";
+    const expectedTrackno = "3";
+    try std.testing.expectEqualStrings(expectedTitle, song.getTitle());
+    try std.testing.expectEqualStrings(expectedTitle, song.titleBuf[0..song.titleLen]);
+    try std.testing.expectEqualSlices(u8, expectedTitle, song.titleBuf[0..song.titleLen]);
+    try std.testing.expectEqualStrings(expectedArtist, song.getArtist());
+    try std.testing.expectEqualStrings(expectedArtist, song.artistBuf[0..song.artistLen]);
+    try std.testing.expectEqualSlices(u8, expectedArtist, song.artistBuf[0..song.artistLen]);
+    try std.testing.expectEqualStrings(expectedAlbum, song.getAlbum());
+    try std.testing.expectEqualStrings(expectedAlbum, song.albumBuf[0..song.albumLen]);
+    try std.testing.expectEqualSlices(u8, expectedAlbum, song.albumBuf[0..song.albumLen]);
+    try std.testing.expectEqualStrings(expectedTrackno, song.tracknoBuf[0..song.tracknoLen]);
+    try std.testing.expectEqualSlices(u8, expectedTrackno, song.tracknoBuf[0..song.tracknoLen]);
 }
 
 pub fn getTime(
