@@ -19,12 +19,18 @@ var raw: os.linux.termios = undefined;
 var cooked: os.linux.termios = undefined;
 var quit: bool = false;
 
-pub fn main() !void {
-    // working buffer to store temporary data
-    var wrkbuf: [4096]u8 = undefined;
-    var wrkfba = std.heap.FixedBufferAllocator.init(&wrkbuf);
-    const wrkallocator = wrkfba.allocator();
+var wrkbuf: [4096]u8 = undefined;
+var wrkfba = std.heap.FixedBufferAllocator.init(&wrkbuf);
+const wrkallocator = wrkfba.allocator();
 
+var currSong: mpd.CurrentSong = undefined;
+var panelCurrSong: Panel = undefined;
+var queue: mpd.Queue = undefined;
+var panelQueue: Panel = undefined;
+
+var renderState: RenderState = RenderState.init();
+
+pub fn main() !void {
     window = try getWindow();
 
     util.init() catch {};
@@ -38,7 +44,7 @@ pub fn main() !void {
 
     tty = fs.cwd().openFile(
         "/dev/tty",
-        .{ .mode = fs.File.OpenMode.read_write },
+        .{ .mode = .read_write },
     ) catch {
         log("could not find tty at /dev/tty", .{});
         return;
@@ -51,19 +57,12 @@ pub fn main() !void {
     };
     defer cook() catch {};
 
-    var song: mpd.CurrentSong = mpd.CurrentSong.init();
+    currSong = mpd.CurrentSong.init();
 
-    _ = mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &song) catch |err| {
-        log("failed to get current song: {}", .{err});
-        return;
-    };
+    _ = try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &currSong);
+    _ = try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &currSong);
 
-    _ = mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &song) catch |err| {
-        log("failed to get time: {}", .{err});
-        return;
-    };
-
-    const playing: Panel = getPanel(
+    panelCurrSong = Panel.init(
         .{
             .totalfr = 6,
             .startline = 1,
@@ -76,7 +75,7 @@ pub fn main() !void {
         },
     );
 
-    const queue: Panel = getPanel(.{
+    panelQueue = Panel.init(.{
         .totalfr = 7,
         .startline = 2,
         .endline = 5,
@@ -86,30 +85,23 @@ pub fn main() !void {
         .endline = 5,
     });
 
-    log("Rendered!", .{});
-    log("-------------------", .{});
-
-    log("  title: {s} \n", .{song.title});
-    log("  artist: {s} \n", .{song.artist});
-    log("  album: {s} \n", .{song.album});
-    log("  trackno: {s} \n", .{song.trackno});
-    log("  Elapsed time: {} seconds \n", .{song.time.elapsed});
-    log("  Total time: {} seconds \n", .{song.time.duration});
-
+    renderState.borders = true;
+    renderState.queue = true;
     var last_render_time = time.milliTimestamp();
 
     while (quit != true) {
         const current_time = time.milliTimestamp();
         try checkInput();
         if (isRenderTime(last_render_time, current_time)) {
-            song.time.elapsed += @intCast(current_time - last_render_time);
-            render(wrkallocator, playing, song, queue, &wrkfba.end_index) catch |err| {
+            currSong.time.elapsed += @intCast(current_time - last_render_time);
+            renderState.currentTrack = true;
+            render(renderState, &wrkfba.end_index) catch |err| {
                 log("Couldn't render {}", .{err});
                 return;
             };
+            renderState = RenderState.init();
             last_render_time = current_time;
         }
-        // Small sleep to prevent CPU hogging
         time.sleep(time.ns_per_ms * 10);
     }
 }
@@ -157,9 +149,6 @@ fn uncook() !void {
     errdefer cook() catch {};
 
     raw = cooked;
-    // var original: os.linux.termios = undefined;
-    // _ = os.linux.tcgetattr(tty.handle, &original);
-    // raw = original;
     inline for (.{ "ECHO", "ICANON", "ISIG", "IEXTEN" }) |flag| {
         @field(raw.lflag, flag) = false;
     }
@@ -195,17 +184,11 @@ fn showCursor(writer: anytype) !void {
     try writer.writeAll("\x1B[?25h");
 }
 
-fn render(
-    wrkallocator: std.mem.Allocator,
-    p: Panel,
-    s: mpd.CurrentSong,
-    q: Panel,
-    end_index: *usize,
-) !void {
+fn render(state: RenderState, end_index: *usize) !void {
     const writer = tty.writer();
-    try drawBorders(writer, p);
-    try currTrack(wrkallocator, writer, p, s, end_index);
-    try drawBordersOffset(writer, q, 1);
+    if (state.borders) try drawBorders(writer, panelCurrSong);
+    if (state.currentTrack) try currTrack(wrkallocator, writer, panelCurrSong, currSong, end_index);
+    if (state.borders) try drawBordersOffset(writer, panelQueue, 1);
 }
 
 fn drawBorders(writer: fs.File.Writer, p: Panel) !void {
@@ -352,11 +335,44 @@ fn getWindow() !Window {
     };
 }
 
+const RenderState = struct {
+    borders: bool,
+    currentTrack: bool,
+    queue: bool,
+
+    fn init() RenderState {
+        return .{
+            .borders = false,
+            .currentTrack = false,
+            .queue = false,
+        };
+    }
+};
+
 const Panel = struct {
     xmin: usize,
     xmax: usize,
     ymin: usize,
     ymax: usize,
+
+    fn init(x: Dim, y: Dim) Panel {
+        // Calculate fractions of total window dimensions
+        const xfr = @as(f32, @floatFromInt(window.xmax + 1)) / @as(f32, @floatFromInt(x.totalfr));
+        const yfr = @as(f32, @floatFromInt(window.ymax + 1)) / @as(f32, @floatFromInt(y.totalfr));
+
+        // Calculate panel boundaries ensuring they stay within window limits
+        const x_min = @min(window.xmax, @as(usize, @intFromFloat(@round(xfr * @as(f32, @floatFromInt(x.startline))))));
+        const x_max = @min(window.xmax, @as(usize, @intFromFloat(@round(xfr * @as(f32, @floatFromInt(x.endline))))));
+        const y_min = @min(window.ymax, @as(usize, @intFromFloat(@round(yfr * @as(f32, @floatFromInt(y.startline))))));
+        const y_max = @min(window.ymax, @as(usize, @intFromFloat(@round(yfr * @as(f32, @floatFromInt(y.endline))))));
+
+        return Panel{
+            .xmin = x_min,
+            .xmax = x_max,
+            .ymin = y_min,
+            .ymax = y_max,
+        };
+    }
 
     fn getYCentre(self: Panel) usize {
         return self.ymin + (self.ymax - self.ymin) / 2;
@@ -372,22 +388,3 @@ const Dim = struct {
     startline: u8,
     endline: u8,
 };
-
-fn getPanel(x: Dim, y: Dim) Panel {
-    // Calculate fractions of total window dimensions
-    const xfr = @as(f32, @floatFromInt(window.xmax + 1)) / @as(f32, @floatFromInt(x.totalfr));
-    const yfr = @as(f32, @floatFromInt(window.ymax + 1)) / @as(f32, @floatFromInt(y.totalfr));
-
-    // Calculate panel boundaries ensuring they stay within window limits
-    const x_min = @min(window.xmax, @as(usize, @intFromFloat(@round(xfr * @as(f32, @floatFromInt(x.startline))))));
-    const x_max = @min(window.xmax, @as(usize, @intFromFloat(@round(xfr * @as(f32, @floatFromInt(x.endline))))));
-    const y_min = @min(window.ymax, @as(usize, @intFromFloat(@round(yfr * @as(f32, @floatFromInt(y.startline))))));
-    const y_max = @min(window.ymax, @as(usize, @intFromFloat(@round(yfr * @as(f32, @floatFromInt(y.endline))))));
-
-    return Panel{
-        .xmin = x_min,
-        .xmax = x_max,
-        .ymin = y_min,
-        .ymax = y_max,
-    };
-}
