@@ -51,14 +51,14 @@ pub fn main() !void {
     };
     defer cook() catch {};
 
-    var song: mpd.Song = mpd.Song.init();
+    var song: mpd.CurrentSong = mpd.CurrentSong.init();
 
     _ = mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &song) catch |err| {
         log("failed to get current song: {}", .{err});
         return;
     };
 
-    var songTime = mpd.getTime(wrkallocator, &wrkfba.end_index) catch |err| {
+    _ = mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &song) catch |err| {
         log("failed to get time: {}", .{err});
         return;
     };
@@ -89,21 +89,21 @@ pub fn main() !void {
     log("Rendered!", .{});
     log("-------------------", .{});
 
-    // log("  title: {s} \n", .{song.getTitle()});
-    // log("  artist: {s} \n", .{song.getArtist()});
-    // log("  album: {s} \n", .{song.getAlbum()});
-    // log("  trackno: {s} \n", .{song.getTrackno()});
-    // log("  Elapsed time: {} seconds \n", .{songTime.elapsed});
-    // log("  Total time: {} seconds \n", .{songTime.duration});
-    //
+    log("  title: {s} \n", .{song.title});
+    log("  artist: {s} \n", .{song.artist});
+    log("  album: {s} \n", .{song.album});
+    log("  trackno: {s} \n", .{song.trackno});
+    log("  Elapsed time: {} seconds \n", .{song.time.elapsed});
+    log("  Total time: {} seconds \n", .{song.time.duration});
+
     var last_render_time = time.milliTimestamp();
 
     while (quit != true) {
         const current_time = time.milliTimestamp();
         try checkInput();
         if (isRenderTime(last_render_time, current_time)) {
-            songTime.elapsed += @intCast(current_time - last_render_time);
-            render(wrkallocator, playing, song, songTime, queue, &wrkfba.end_index) catch |err| {
+            song.time.elapsed += @intCast(current_time - last_render_time);
+            render(wrkallocator, playing, song, queue, &wrkfba.end_index) catch |err| {
                 log("Couldn't render {}", .{err});
                 return;
             };
@@ -198,14 +198,13 @@ fn showCursor(writer: anytype) !void {
 fn render(
     wrkallocator: std.mem.Allocator,
     p: Panel,
-    s: mpd.Song,
-    t: mpd.Time,
+    s: mpd.CurrentSong,
     q: Panel,
     end_index: *usize,
 ) !void {
     const writer = tty.writer();
     try drawBorders(writer, p);
-    try currTrack(wrkallocator, writer, p, s, t, end_index);
+    try currTrack(wrkallocator, writer, p, s, end_index);
     try drawBordersOffset(writer, q, 1);
 }
 
@@ -270,8 +269,7 @@ fn currTrack(
     allocator: std.mem.Allocator,
     writer: fs.File.Writer,
     p: Panel,
-    s: mpd.Song,
-    t: mpd.Time,
+    s: mpd.CurrentSong,
     end_index: *usize,
 ) !void {
     const start = end_index.*;
@@ -300,8 +298,8 @@ fn currTrack(
             s.trackno,
         });
 
-    const elapsedTime = try formatTime(allocator, t.elapsed);
-    const duration = try formatTime(allocator, t.duration);
+    const elapsedTime = try formatTime(allocator, s.time.elapsed);
+    const duration = try formatTime(allocator, s.time.duration);
     const songTime = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ elapsedTime, duration });
 
     //Include co-ords in the panel drawing?
@@ -313,7 +311,7 @@ fn currTrack(
     // Draw progress bar
     try moveCursor(writer, ycent + 2, xmin);
     const progress_width = xmax - xmin;
-    const progress_ratio = @as(f32, @floatFromInt(t.elapsed)) / @as(f32, @floatFromInt(t.duration));
+    const progress_ratio = @as(f32, @floatFromInt(s.time.elapsed)) / @as(f32, @floatFromInt(s.time.duration));
     const filled_blocks = @as(usize, @intFromFloat(progress_ratio * @as(f32, @floatFromInt(progress_width))));
 
     var x: usize = 0;
