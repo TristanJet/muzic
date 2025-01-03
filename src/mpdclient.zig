@@ -23,7 +23,8 @@ pub const CurrentSong = struct {
         .elapsed = undefined,
         .duration = undefined,
     },
-    pos: u8 = 0,
+    pos: u8,
+    id: u8,
 
     pub fn init() CurrentSong {
         var song = CurrentSong{
@@ -31,6 +32,8 @@ pub const CurrentSong = struct {
             .artist = &[_]u8{},
             .album = &[_]u8{},
             .trackno = &[_]u8{},
+            .pos = undefined,
+            .id = undefined,
         };
         // Point title to the correct part of bufTitle
         song.title = song.bufTitle[0..0];
@@ -69,6 +72,12 @@ pub const CurrentSong = struct {
         const int: u8 = try std.fmt.parseInt(u8, pos[0..1], 10);
         self.pos = int;
     }
+
+    pub fn setId(self: *CurrentSong, id: []const u8) !void {
+        if (id.len > 1) return error.TooLong;
+        const int: u8 = try std.fmt.parseInt(u8, id[0..1], 10);
+        self.id = int;
+    }
 };
 
 const QSong = struct {
@@ -79,7 +88,8 @@ const QSong = struct {
     bufArtist: [MAX_LEN]u8 = [_]u8{0} ** MAX_LEN,
     artist: []const u8,
     time: u64,
-    pos: u8 = 0,
+    pos: u8,
+    id: u8,
 
     pub fn init() QSong {
         var song = QSong{
@@ -87,6 +97,7 @@ const QSong = struct {
             .artist = &[_]u8{},
             .time = undefined,
             .pos = undefined,
+            .id = undefined,
         };
         // Point title to the correct part of bufTitle
         song.title = song.bufTitle[0..0];
@@ -112,6 +123,13 @@ const QSong = struct {
         self.pos = int;
     }
 
+    pub fn setId(self: *QSong, id: []const u8) !void {
+        if (id.len > 1) return error.TooLong;
+        std.debug.print("ID 1 : {s}\n", .{id});
+        const int: u8 = try std.fmt.parseInt(u8, id[0..1], 10);
+        self.id = int;
+    }
+
     pub fn setDuration(self: *QSong, duration: []const u8) !void {
         if (duration.len > 3) return error.TooLong;
         const int: u64 = try std.fmt.parseInt(u64, duration, 10);
@@ -133,6 +151,7 @@ pub const Queue = struct {
         self.items[self.len] = QSong.init();
         try self.items[self.len].setTitle(song.title);
         try self.items[self.len].setArtist(song.artist);
+        self.items[self.len].id = song.id;
         self.items[self.len].pos = song.pos;
         self.items[self.len].time = song.time;
 
@@ -189,16 +208,18 @@ pub fn getCurrentSong(worallocator: std.mem.Allocator, end_index: *usize, song: 
             const value = line[separator_index + 2 ..];
 
             // Allocate and store the value based on the key
-            if (std.mem.eql(u8, key, "Title")) {
+            if (std.mem.eql(u8, key, "Id")) {
+                try song.setId(value);
+            } else if (std.mem.eql(u8, key, "Pos")) {
+                try song.setPos(value);
+            } else if (std.mem.eql(u8, key, "Track")) {
+                try song.setTrackno(value);
+            } else if (std.mem.eql(u8, key, "Album")) {
+                try song.setAlbum(value);
+            } else if (std.mem.eql(u8, key, "Title")) {
                 try song.setTitle(value);
             } else if (std.mem.eql(u8, key, "Artist")) {
                 try song.setArtist(value);
-            } else if (std.mem.eql(u8, key, "Album")) {
-                try song.setAlbum(value);
-            } else if (std.mem.eql(u8, key, "Track")) {
-                try song.setTrackno(value);
-            } else if (std.mem.eql(u8, key, "Pos")) {
-                try song.setPos(value);
             }
         }
     }
@@ -225,7 +246,9 @@ test "currentsong" {
     const expectedPos = 3;
     const expectedDur = 238512;
     const expectedElap = 100;
+    const expectedId = 4;
     try std.testing.expect(expectedPos == song.pos);
+    try std.testing.expect(expectedId == song.id);
     std.debug.print("duration: {}\n", .{song.time.duration});
     try std.testing.expect(expectedElap < song.time.elapsed);
     try std.testing.expect(expectedDur == song.time.duration);
@@ -279,7 +302,9 @@ pub fn getQueue(wrkallocator: std.mem.Allocator, end_index: *usize, bufQueue: *Q
                 current_song = QSong.init();
             } else if (current_song) |*song| {
                 // Only process other fields if we have a current song
-                if (std.mem.eql(u8, "Pos", key)) {
+                if (std.mem.eql(u8, "Id", key)) {
+                    try song.setId(value);
+                } else if (std.mem.eql(u8, "Pos", key)) {
                     try song.setPos(value);
                 } else if (std.mem.eql(u8, "Time", key)) {
                     const seconds = try std.fmt.parseInt(u64, value, 10);
@@ -309,6 +334,10 @@ test "getQueue" {
     for (queue.items) |item| {
         std.debug.print("ARTISTS: {s}\n", .{item.artist});
     }
+
+    std.debug.print("Pos: {}\n", .{queue.items[2].pos});
+    std.debug.print("Id test: {}\n", .{queue.items[2].id});
+    // try std.testing.expect(queue.items[0].id == 1);
     try std.testing.expect(queue.len == 4);
     try std.testing.expectEqualStrings("Charli xcx", queue.items[0].artist);
 }
