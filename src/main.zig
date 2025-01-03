@@ -63,6 +63,7 @@ pub fn main() !void {
     _ = try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &currSong);
 
     panelCurrSong = Panel.init(
+        true,
         .{
             .totalfr = 6,
             .startline = 1,
@@ -75,7 +76,7 @@ pub fn main() !void {
         },
     );
 
-    panelQueue = Panel.init(.{
+    panelQueue = Panel.init(true, .{
         .totalfr = 7,
         .startline = 2,
         .endline = 5,
@@ -187,8 +188,9 @@ fn showCursor(writer: anytype) !void {
 fn render(state: RenderState, end_index: *usize) !void {
     const writer = tty.writer();
     if (state.borders) try drawBorders(writer, panelCurrSong);
+    if (state.borders) try drawBorders(writer, panelQueue);
+    if (state.borders) try drawHeader(writer, panelQueue);
     if (state.currentTrack) try currTrack(wrkallocator, writer, panelCurrSong, currSong, end_index);
-    if (state.borders) try drawBordersOffset(writer, panelQueue, 1);
 }
 
 fn drawBorders(writer: fs.File.Writer, p: Panel) !void {
@@ -218,17 +220,13 @@ fn drawBorders(writer: fs.File.Writer, p: Panel) !void {
     try writer.writeAll(sym.round_right_down);
 }
 
-fn drawBordersOffset(writer: fs.File.Writer, p: Panel, topOffset: u8) !void {
-    const offsetDims = Panel{
-        .xmin = p.xmin,
-        .xmax = p.xmax,
-        .ymin = (p.ymin + topOffset),
-        .ymax = p.ymax,
-    };
-    try writeLine(writer, "queue:", p.ymin, p.xmin, p.xmax);
-    try drawBorders(writer, offsetDims);
+fn drawHeader(writer: fs.File.Writer, p: Panel) !void {
+    const x = p.xmin + 1;
+    try moveCursor(writer, p.ymin, x);
+    try writer.writeAll(sym.right_up);
+    try writer.writeAll("Queue");
+    try writer.writeAll(sym.left_up);
 }
-
 fn formatTime(allocator: std.mem.Allocator, milli: u64) ![]const u8 {
     // Validate input - ensure we don't exceed reasonable time values
     if (milli > std.math.maxInt(u32) * 1000) {
@@ -247,7 +245,9 @@ fn formatTime(allocator: std.mem.Allocator, milli: u64) ![]const u8 {
     );
 }
 
-//on loop it will have to change
+// fn queueRender(writer: fs.File.Writer, panel: Panel, queue: mpd.Queue) !void {
+// }
+
 fn currTrack(
     allocator: std.mem.Allocator,
     writer: fs.File.Writer,
@@ -258,8 +258,10 @@ fn currTrack(
     const start = end_index.*;
     defer end_index.* = start;
 
-    const xmin = p.xmin + 1;
-    const xmax = p.xmax - 1;
+    const area = p.validArea();
+
+    const xmin = area.xmin;
+    const xmax = area.xmax;
     const ycent = p.getYCentre();
     const full_block = "\xe2\x96\x88"; // Unicode escape sequence for '█' (U+2588)
     const light_shade = "\xe2\x96\x92"; // Unicode escape sequence for '▒' (U+2592)
@@ -350,12 +352,13 @@ const RenderState = struct {
 };
 
 const Panel = struct {
+    borders: bool,
     xmin: usize,
     xmax: usize,
     ymin: usize,
     ymax: usize,
 
-    fn init(x: Dim, y: Dim) Panel {
+    fn init(borders: bool, x: Dim, y: Dim) Panel {
         // Calculate fractions of total window dimensions
         const xfr = @as(f32, @floatFromInt(window.xmax + 1)) / @as(f32, @floatFromInt(x.totalfr));
         const yfr = @as(f32, @floatFromInt(window.ymax + 1)) / @as(f32, @floatFromInt(y.totalfr));
@@ -367,11 +370,30 @@ const Panel = struct {
         const y_max = @min(window.ymax, @as(usize, @intFromFloat(@round(yfr * @as(f32, @floatFromInt(y.endline))))));
 
         return Panel{
+            .borders = borders,
             .xmin = x_min,
             .xmax = x_max,
             .ymin = y_min,
             .ymax = y_max,
         };
+    }
+
+    fn validArea(self: Panel) struct { xmin: usize, xmax: usize, ymin: usize, ymax: usize } {
+        if (self.borders) {
+            return .{
+                .xmin = self.xmin + 1,
+                .xmax = self.xmax - 1,
+                .ymin = self.ymin + 1,
+                .ymax = self.ymax - 1,
+            };
+        } else {
+            return .{
+                .xmin = self.xmin,
+                .xmax = self.xmax,
+                .ymin = self.ymin,
+                .ymax = self.ymax,
+            };
+        }
     }
 
     fn getYCentre(self: Panel) usize {
