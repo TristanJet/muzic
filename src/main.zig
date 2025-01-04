@@ -28,7 +28,7 @@ var currSong: mpd.CurrentSong = undefined;
 var panelCurrSong: Panel = undefined;
 var queue: mpd.Queue = undefined;
 var panelQueue: Panel = undefined;
-var viewStartQ: u8 = 0;
+var viewStartQ: usize = 0;
 var viewEndQ: usize = undefined;
 var cursorPosQ: u8 = 0;
 
@@ -92,7 +92,7 @@ pub fn main() !void {
         .startline = 2,
         .endline = 5,
     });
-    viewEndQ = panelQueue.validArea().ylen;
+    viewEndQ = viewStartQ + panelQueue.validArea().ylen + 1;
 
     renderState.borders = true;
     renderState.queue = true;
@@ -164,8 +164,10 @@ fn checkInput() !void {
         if (buffer[0] == 'q') {
             quit = true;
         } else if (buffer[0] == 'j') {
+            log("J pressed", .{});
             scrollQ(false);
         } else if (buffer[0] == 'k') {
+            log("K pressed", .{});
             scrollQ(true);
         } else if (buffer[0] == '\x1B') {
             //Escape
@@ -184,18 +186,18 @@ fn checkInput() !void {
 fn scrollQ(isUp: bool) void {
     if (isUp) {
         if (cursorPosQ == 0) return;
-        if (cursorPosQ == viewStartQ) {
-            viewStartQ -= 1;
-            viewEndQ -= 1;
-        }
         cursorPosQ -= 1;
-    } else {
-        if (viewEndQ == queue.len - 1) return;
-        if (cursorPosQ == viewEndQ) {
-            viewStartQ += 1;
-            viewEndQ += 1;
+        if (cursorPosQ < viewStartQ) {
+            viewStartQ = cursorPosQ;
+            viewEndQ = viewStartQ + panelQueue.validArea().ylen + 1;
         }
+    } else {
+        if (cursorPosQ >= queue.len - 1) return;
         cursorPosQ += 1;
+        if (cursorPosQ >= viewEndQ) {
+            viewEndQ = cursorPosQ + 1;
+            viewStartQ = viewEndQ - panelQueue.validArea().ylen - 1;
+        }
     }
     renderState.queue = true;
 }
@@ -326,8 +328,8 @@ fn queueRender(writer: fs.File.Writer, allocator: std.mem.Allocator, end_index: 
     const n = area.xlen / 4; // idk why this looks good
     const gapcol = area.xlen / 8;
 
-    for (viewStartQ..queue.len, 0..) |i, j| {
-        if (j > area.ylen) break;
+    for (viewStartQ..viewEndQ, 0..) |i, j| {
+        if (i >= queue.len) break;
         if (queue.items[i].pos == cursorPosQ) try writer.writeAll("\x1B[7m");
         const itemTime = try formatSeconds(allocator, queue.items[i].time);
         try moveCursor(writer, area.ymin + j, area.xmin);
