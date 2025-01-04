@@ -68,13 +68,13 @@ pub const CurrentSong = struct {
     }
 
     pub fn setPos(self: *CurrentSong, pos: []const u8) !void {
-        if (pos.len > 1) return error.TooLong;
-        const int: u8 = try std.fmt.parseInt(u8, pos[0..1], 10);
+        if (pos.len > 3) return error.TooLong;
+        const int: u8 = try std.fmt.parseInt(u8, pos[0..], 10);
         self.pos = int;
     }
 
     pub fn setId(self: *CurrentSong, id: []const u8) !void {
-        if (id.len > 1) return error.TooLong;
+        if (id.len > 3) return error.TooLong;
         const int: u8 = try std.fmt.parseInt(u8, id[0..1], 10);
         self.id = int;
     }
@@ -118,14 +118,13 @@ const QSong = struct {
     }
 
     pub fn setPos(self: *QSong, pos: []const u8) !void {
-        if (pos.len > 1) return error.TooLong;
-        const int: u8 = try std.fmt.parseInt(u8, pos[0..1], 10);
+        if (pos.len > 3) return error.TooLong;
+        const int: u8 = try std.fmt.parseInt(u8, pos[0..], 10);
         self.pos = int;
     }
 
     pub fn setId(self: *QSong, id: []const u8) !void {
-        if (id.len > 1) return error.TooLong;
-        std.debug.print("ID 1 : {s}\n", .{id});
+        if (id.len > 3) return error.TooLong;
         const int: u8 = try std.fmt.parseInt(u8, id[0..1], 10);
         self.id = int;
     }
