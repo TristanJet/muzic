@@ -17,7 +17,7 @@ pub fn clear(writer: anytype) !void {
 
 pub fn deinit() !void {
     try moveCursor(logtty.writer(), 0, 0);
-    try clear(logtty);
+    // try clear(logtty);
     logtty.close();
 }
 

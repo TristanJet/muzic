@@ -1,7 +1,8 @@
 const std = @import("std");
 const util = @import("util.zig");
 const net = std.net;
-var stream: std.net.Stream = undefined;
+pub var cmdStream: std.net.Stream = undefined;
+pub var idleStream: std.net.Stream = undefined;
 
 pub const Time = struct {
     elapsed: u64,
@@ -28,7 +29,7 @@ pub const CurrentSong = struct {
 
     pub fn init() CurrentSong {
         var song = CurrentSong{
-            .title = &[_]u8{}, // temporary empty slice
+            .title = &[_]u8{},
             .artist = &[_]u8{},
             .album = &[_]u8{},
             .trackno = &[_]u8{},
@@ -162,10 +163,11 @@ pub const Queue = struct {
     }
 };
 
-pub fn connect(buffer: []u8) !void {
+pub fn connect(buffer: []u8, stream: *std.net.Stream, nonblock: bool) !void {
     const peer = try net.Address.parseIp4("127.0.0.1", 8538);
     // Connect to peer
-    stream = try net.tcpConnectToAddress(peer);
+
+    stream.* = try net.tcpConnectToAddress(peer);
 
     const bytes_read = try stream.read(buffer);
     const received_data = buffer[0..bytes_read];
@@ -174,9 +176,14 @@ pub fn connect(buffer: []u8) !void {
         util.log("BAD! connection", .{});
         return error.InvalidResponse;
     }
+
+    if (nonblock) {
+        const flags = std.os.linux.fcntl(stream.handle, std.os.linux.F.GETFL, 0);
+        _ = std.os.linux.fcntl(stream.handle, std.os.linux.F.SETFL, flags | std.os.linux.SOCK.NONBLOCK);
+    }
 }
 
-fn connSend(data: []const u8) !void {
+fn connSend(data: []const u8, stream: *std.net.Stream) !void {
     // Sending data to peer
     var writer = stream.writer();
     _ = try writer.write(data);
@@ -184,19 +191,55 @@ fn connSend(data: []const u8) !void {
     // try writer.writeAll("hello zig");
 }
 
-pub fn disconnect() void {
+pub fn disconnect(stream: *std.net.Stream) void {
     stream.close();
 }
 
-pub fn getCurrentSong(worallocator: std.mem.Allocator, end_index: *usize, song: *CurrentSong) !void {
-    try connSend("currentsong\n");
-    var buf_reader = std.io.bufferedReader(stream.reader());
+pub fn initIdle() !void {
+    try connSend("idle player playlist\n", &idleStream);
+}
+
+pub fn checkIdle(allocator: std.mem.Allocator, end_index: *usize) !u8 {
+    var buf_reader = std.io.bufferedReader(idleStream.reader());
+    var reader = buf_reader.reader();
+    const startPoint = end_index.*;
+    while (true) {
+        defer end_index.* = startPoint;
+        const line = reader.readUntilDelimiterAlloc(allocator, '\n', 18) catch |err| switch (err) {
+            error.WouldBlock => return 0, // No data available
+            error.EndOfStream => return 0, // EOF
+            else => return err,
+        };
+        util.log("LINE: {s}", .{line});
+        if (std.mem.eql(u8, line, "OK")) break;
+        if (std.mem.startsWith(u8, line, "ACK")) return error.MpdError;
+
+        if (std.mem.indexOf(u8, line, ": ")) |separator_index| {
+            const value = line[separator_index + 2 ..];
+
+            if (std.mem.eql(u8, value, "player")) return 1;
+            if (std.mem.eql(u8, value, "playlist")) return 2;
+        }
+    }
+    return 0;
+}
+
+pub fn getCurrentSong(
+    worallocator: std.mem.Allocator,
+    end_index: *usize,
+    song: *CurrentSong,
+) !void {
+    try connSend("currentsong\n", &cmdStream);
+    var buf_reader = std.io.bufferedReader(cmdStream.reader());
     var reader = buf_reader.reader();
 
     const startPoint = end_index.*;
     while (true) {
         defer end_index.* = startPoint;
-        var line = try reader.readUntilDelimiterAlloc(worallocator, '\n', 1024);
+        var line = reader.readUntilDelimiterAlloc(worallocator, '\n', 1024) catch |err| {
+            if (err == error.EndOfStream) return error.EndOfStream;
+            return err;
+        };
 
         if (std.mem.eql(u8, line, "OK")) break;
         if (std.mem.startsWith(u8, line, "ACK")) return error.MpdError;
@@ -267,9 +310,9 @@ test "currentsong" {
 }
 
 pub fn getQueue(wrkallocator: std.mem.Allocator, end_index: *usize, bufQueue: *Queue) !void {
-    try connSend("playlistinfo\n");
+    try connSend("playlistinfo\n", &cmdStream);
 
-    var buf_reader = std.io.bufferedReader(stream.reader());
+    var buf_reader = std.io.bufferedReader(cmdStream.reader());
     var reader = buf_reader.reader();
 
     const startPoint = end_index.*;
@@ -342,9 +385,9 @@ test "getQueue" {
 }
 
 pub fn getCurrentTrackTime(worallocator: std.mem.Allocator, end_index: *usize, song: *CurrentSong) !void {
-    try connSend("status\n");
+    try connSend("status\n", &cmdStream);
 
-    var buf_reader = std.io.bufferedReader(stream.reader());
+    var buf_reader = std.io.bufferedReader(cmdStream.reader());
     var reader = buf_reader.reader();
 
     const startPoint = end_index.*;

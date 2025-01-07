@@ -32,6 +32,7 @@ var viewStartQ: usize = 0;
 var viewEndQ: usize = undefined;
 var cursorPosQ: u8 = 0;
 
+var firstRender: bool = true;
 var renderState: RenderState = RenderState.init();
 
 pub fn main() !void {
@@ -40,11 +41,17 @@ pub fn main() !void {
     util.init() catch {};
     defer util.deinit() catch {};
 
-    mpd.connect(wrkbuf[0..64]) catch {
+    mpd.connect(wrkbuf[0..64], &mpd.cmdStream, false) catch {
         log("Unable to connect to MPD", .{});
         return;
     };
-    defer mpd.disconnect();
+    defer mpd.disconnect(&mpd.cmdStream);
+
+    mpd.connect(wrkbuf[0..64], &mpd.idleStream, true) catch |err| {
+        log("Unable to connect to MPD: {}\n", .{err});
+        return;
+    };
+    defer mpd.disconnect(&mpd.idleStream);
 
     tty = fs.cwd().openFile(
         "/dev/tty",
@@ -62,7 +69,6 @@ pub fn main() !void {
     defer cook() catch {};
 
     currSong = mpd.CurrentSong.init();
-
     _ = try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &currSong);
     _ = try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &currSong);
 
@@ -98,9 +104,27 @@ pub fn main() !void {
     renderState.queue = true;
     var last_render_time = time.milliTimestamp();
 
+    _ = try mpd.initIdle();
+
     while (!quit) {
         const current_time = time.milliTimestamp();
         try checkInput();
+
+        // handle Idle update
+        const idleRes = try mpd.checkIdle(wrkallocator, &wrkfba.end_index);
+        if (idleRes == 1) {
+            currSong = mpd.CurrentSong.init();
+            _ = try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &currSong);
+            _ = try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &currSong);
+            _ = try mpd.initIdle();
+        } else if (idleRes == 2) {
+            queue = mpd.Queue{};
+            _ = try mpd.getQueue(wrkallocator, &wrkfba.end_index, &queue);
+            _ = try mpd.initIdle();
+            renderState.queue = true;
+        }
+
+        //render
         if (isRenderTime(last_render_time, current_time)) {
             currSong.time.elapsed += @intCast(current_time - last_render_time);
             renderState.currentTrack = true;
@@ -144,6 +168,8 @@ test "co-ords" {
     }
 }
 
+fn stateUpdate() !void {}
+
 fn isRenderTime(last_render_time: i64, current_time: i64) bool {
     if ((current_time - last_render_time) >= 100) return true;
     return false;
@@ -164,10 +190,8 @@ fn checkInput() !void {
         if (buffer[0] == 'q') {
             quit = true;
         } else if (buffer[0] == 'j') {
-            log("J pressed", .{});
             scrollQ(false);
         } else if (buffer[0] == 'k') {
-            log("K pressed", .{});
             scrollQ(true);
         } else if (buffer[0] == '\x1B') {
             //Escape
@@ -394,10 +418,16 @@ fn currTrackRender(
     const songTime = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ elapsedTime, duration });
 
     //Include co-ords in the panel drawing?
+
+    if (!firstRender) {
+        try clearLine(writer, ycent, xmin, xmax);
+        try clearLine(writer, ycent - 2, xmin, xmax);
+    }
     try moveCursor(writer, ycent, xmin);
     try writer.writeAll(songTime);
     try writeLine(writer, s.artist, ycent, xmin, xmax);
     try writeLine(writer, trckalb, ycent - 2, xmin, xmax);
+    if (firstRender) firstRender = false;
 
     // Draw progress bar
     try moveCursor(writer, ycent + 2, xmin);
@@ -420,6 +450,12 @@ fn writeLine(writer: anytype, txt: []const u8, y: usize, xmin: usize, xmax: usiz
     const x_pos = xmin + (panel_width - txt.len) / 2;
     try moveCursor(writer, y, x_pos);
     try writer.writeAll(txt);
+}
+
+fn clearLine(writer: fs.File.Writer, y: usize, xmin: usize, xmax: usize) !void {
+    try moveCursor(writer, y, xmin);
+    const width = xmax - xmin + 1;
+    try writer.writeByteNTimes(' ', width);
 }
 
 const Window = struct {
