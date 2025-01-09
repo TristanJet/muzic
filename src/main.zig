@@ -23,10 +23,10 @@ var wrkbuf: [4096]u8 = undefined;
 var wrkfba = std.heap.FixedBufferAllocator.init(&wrkbuf);
 const wrkallocator = wrkfba.allocator();
 
-var currSong: mpd.CurrentSong = undefined;
+var currSong = mpd.CurrentSong{};
 
 var panelCurrSong: Panel = undefined;
-var queue: mpd.Queue = undefined;
+var queue = mpd.Queue{};
 var panelQueue: Panel = undefined;
 var viewStartQ: usize = 0;
 var viewEndQ: usize = undefined;
@@ -34,6 +34,8 @@ var cursorPosQ: u8 = 0;
 
 var firstRender: bool = true;
 var renderState: RenderState = RenderState.init();
+
+var isPlaying: bool = true;
 
 pub fn main() !void {
     window = try getWindow();
@@ -68,7 +70,7 @@ pub fn main() !void {
     };
     defer cook() catch {};
 
-    currSong = mpd.CurrentSong.init();
+    _ = currSong.init();
     _ = try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &currSong);
     _ = try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &currSong);
 
@@ -86,7 +88,6 @@ pub fn main() !void {
         },
     );
 
-    queue = mpd.Queue{};
     _ = try mpd.getQueue(wrkallocator, &wrkfba.end_index, &queue);
 
     panelQueue = Panel.init(true, .{
@@ -107,13 +108,14 @@ pub fn main() !void {
     _ = try mpd.initIdle();
 
     while (!quit) {
+        defer wrkfba.reset();
         const current_time = time.milliTimestamp();
         try checkInput();
 
         // handle Idle update
         const idleRes = try mpd.checkIdle(wrkallocator, &wrkfba.end_index);
         if (idleRes == 1) {
-            currSong = mpd.CurrentSong.init();
+            _ = currSong.init();
             _ = try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &currSong);
             _ = try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &currSong);
             _ = try mpd.initIdle();
@@ -168,6 +170,12 @@ test "co-ords" {
     }
 }
 
+test "song update" {
+    _ = currSong.init();
+    _ = try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &currSong);
+    _ = try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &currSong);
+}
+
 fn stateUpdate() !void {}
 
 fn isRenderTime(last_render_time: i64, current_time: i64) bool {
@@ -193,12 +201,18 @@ fn checkInput() !void {
             scrollQ(false);
         } else if (buffer[0] == 'k') {
             scrollQ(true);
+        } else if (buffer[0] == 'p') {
+            isPlaying = try mpd.togglePlaystate(isPlaying);
+        } else if (buffer[0] == 'l') {
+            try mpd.nextSong();
+        } else if (buffer[0] == 'h') {
+            try mpd.prevSong();
         } else if (buffer[0] == '\x1B') {
             //Escape
             //debug.print("input: escape\r\n", .{});
         } else if (buffer[0] == '\n' or buffer[0] == '\r') {
             //return
-            log("input: return\r\n", .{});
+            try mpd.playByPos(wrkallocator, cursorPosQ);
         } else {
             //character
             //debug.print("input: {} {s}\r\n", .{ buffer[0], buffer });
@@ -223,6 +237,7 @@ fn scrollQ(isUp: bool) void {
             viewStartQ = viewEndQ - panelQueue.validArea().ylen - 1;
         }
     }
+    log("cursor position: {}\n", .{cursorPosQ});
     renderState.queue = true;
 }
 

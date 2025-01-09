@@ -13,35 +13,26 @@ pub const CurrentSong = struct {
     const MAX_LEN = 64;
 
     bufTitle: [MAX_LEN]u8 = [_]u8{0} ** MAX_LEN,
-    title: []const u8,
+    title: []const u8 = &[_]u8{},
     bufArtist: [MAX_LEN]u8 = [_]u8{0} ** MAX_LEN,
-    artist: []const u8,
+    artist: []const u8 = &[_]u8{},
     bufAlbum: [MAX_LEN]u8 = [_]u8{0} ** MAX_LEN,
-    album: []const u8,
+    album: []const u8 = &[_]u8{},
     bufTrackno: [2]u8 = [_]u8{0} ** 2,
-    trackno: []const u8,
+    trackno: []const u8 = &[_]u8{},
     time: Time = Time{
         .elapsed = undefined,
         .duration = undefined,
     },
-    pos: u8,
-    id: u8,
+    pos: u8 = undefined,
+    id: u8 = undefined,
 
-    pub fn init() CurrentSong {
-        var song = CurrentSong{
-            .title = &[_]u8{},
-            .artist = &[_]u8{},
-            .album = &[_]u8{},
-            .trackno = &[_]u8{},
-            .pos = undefined,
-            .id = undefined,
-        };
+    pub fn init(self: *CurrentSong) void {
         // Point title to the correct part of bufTitle
-        song.title = song.bufTitle[0..0];
-        song.artist = song.bufArtist[0..0];
-        song.album = song.bufAlbum[0..0];
-        song.trackno = song.bufTrackno[0..0];
-        return song;
+        self.title = self.bufTitle[0..0];
+        self.artist = self.bufArtist[0..0];
+        self.album = self.bufAlbum[0..0];
+        self.trackno = self.bufTrackno[0..0];
     }
 
     pub fn setTitle(self: *CurrentSong, title: []const u8) !void {
@@ -210,7 +201,6 @@ pub fn checkIdle(allocator: std.mem.Allocator, end_index: *usize) !u8 {
             error.EndOfStream => return 0, // EOF
             else => return err,
         };
-        util.log("LINE: {s}", .{line});
         if (std.mem.eql(u8, line, "OK")) break;
         if (std.mem.startsWith(u8, line, "ACK")) return error.MpdError;
 
@@ -222,6 +212,42 @@ pub fn checkIdle(allocator: std.mem.Allocator, end_index: *usize) !u8 {
         }
     }
     return 0;
+}
+
+pub fn togglePlaystate(isPlaying: bool) !bool {
+    var buf: [16]u8 = undefined;
+    if (isPlaying) {
+        try connSend("pause\n", &cmdStream);
+        _ = try cmdStream.read(&buf);
+        if (!std.mem.eql(u8, buf[0..2], "OK")) return error.BadConnection;
+        return false;
+    }
+    try connSend("play\n", &cmdStream);
+    _ = try cmdStream.read(&buf);
+    if (!std.mem.eql(u8, buf[0..2], "OK")) return error.BadConnection;
+    return true;
+}
+
+pub fn nextSong() !void {
+    var buf: [16]u8 = undefined;
+    try connSend("next\n", &cmdStream);
+    _ = try cmdStream.read(&buf);
+    if (!std.mem.eql(u8, buf[0..2], "OK")) return error.BadConnection;
+}
+
+pub fn prevSong() !void {
+    var buf: [16]u8 = undefined;
+    try connSend("previous\n", &cmdStream);
+    _ = try cmdStream.read(&buf);
+    if (!std.mem.eql(u8, buf[0..2], "OK")) return error.BadConnection;
+}
+
+pub fn playByPos(allocator: std.mem.Allocator, pos: u8) !void {
+    var buf: [16]u8 = undefined;
+    const string = try std.fmt.allocPrint(allocator, "play {}\n", .{pos});
+    try connSend(string, &cmdStream);
+    _ = try cmdStream.read(&buf);
+    if (!std.mem.eql(u8, buf[0..2], "OK")) return error.BadConnection;
 }
 
 pub fn getCurrentSong(
