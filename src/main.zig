@@ -119,6 +119,7 @@ pub fn main() !void {
             _ = try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &currSong);
             _ = try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &currSong);
             _ = try mpd.initIdle();
+            renderState.queue = true;
         } else if (idleRes == 2) {
             queue = mpd.Queue{};
             _ = try mpd.getQueue(wrkallocator, &wrkfba.end_index, &queue);
@@ -176,8 +177,6 @@ test "song update" {
     _ = try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &currSong);
 }
 
-fn stateUpdate() !void {}
-
 fn isRenderTime(last_render_time: i64, current_time: i64) bool {
     if ((current_time - last_render_time) >= 100) return true;
     return false;
@@ -208,8 +207,8 @@ fn checkInput() !void {
         } else if (buffer[0] == 'h') {
             try mpd.prevSong();
         } else if (buffer[0] == '\x1B') {
-            //Escape
-            //debug.print("input: escape\r\n", .{});
+            // quit = true;
+            //
         } else if (buffer[0] == '\n' or buffer[0] == '\r') {
             //return
             try mpd.playByPos(wrkallocator, cursorPosQ);
@@ -237,7 +236,6 @@ fn scrollQ(isUp: bool) void {
             viewStartQ = viewEndQ - panelQueue.validArea().ylen - 1;
         }
     }
-    log("cursor position: {}\n", .{cursorPosQ});
     renderState.queue = true;
 }
 
@@ -367,11 +365,16 @@ fn queueRender(writer: fs.File.Writer, allocator: std.mem.Allocator, end_index: 
     const n = area.xlen / 4; // idk why this looks good
     const gapcol = area.xlen / 8;
 
+    var highlighted = false;
     for (viewStartQ..viewEndQ, 0..) |i, j| {
         if (i >= queue.len) break;
-        if (queue.items[i].pos == cursorPosQ) try writer.writeAll("\x1B[7m");
+        if (queue.items[i].pos == cursorPosQ) {
+            try writer.writeAll("\x1B[7m");
+            highlighted = true;
+        }
         const itemTime = try formatSeconds(allocator, queue.items[i].time);
         try moveCursor(writer, area.ymin + j, area.xmin);
+        if ((currSong.id == queue.items[i].id) and !highlighted) try writer.writeAll("\x1B[33m");
         if (n > queue.items[i].title.len) {
             try writer.writeAll(queue.items[i].title);
             try writer.writeByteNTimes(' ', n - queue.items[i].title.len);
@@ -388,7 +391,11 @@ fn queueRender(writer: fs.File.Writer, allocator: std.mem.Allocator, end_index: 
         try writer.writeByteNTimes(' ', area.xlen - 4 - gapcol - 2 * n);
         try moveCursor(writer, area.ymin + j, area.xmax - 4);
         try writer.writeAll(itemTime);
-        if (queue.items[i].pos == cursorPosQ) try writer.writeAll("\x1B[0m");
+        if (highlighted) {
+            try writer.writeAll("\x1B[0m");
+            highlighted = false;
+        }
+        if (!highlighted and (queue.items[i].id == currSong.id)) try writer.writeAll("\x1B[0m");
     }
 }
 

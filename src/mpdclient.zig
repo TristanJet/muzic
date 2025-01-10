@@ -67,7 +67,7 @@ pub const CurrentSong = struct {
 
     pub fn setId(self: *CurrentSong, id: []const u8) !void {
         if (id.len > 3) return error.TooLong;
-        const int: u8 = try std.fmt.parseInt(u8, id[0..1], 10);
+        const int: u8 = try std.fmt.parseInt(u8, id[0..], 10);
         self.id = int;
     }
 };
@@ -117,7 +117,7 @@ const QSong = struct {
 
     pub fn setId(self: *QSong, id: []const u8) !void {
         if (id.len > 3) return error.TooLong;
-        const int: u8 = try std.fmt.parseInt(u8, id[0..1], 10);
+        const int: u8 = try std.fmt.parseInt(u8, id[0..], 10);
         self.id = int;
     }
 
