@@ -109,8 +109,9 @@ pub fn main() !void {
 
     while (!quit) {
         defer wrkfba.reset();
+        var inputBuffer: [1]u8 = undefined;
         const current_time = time.milliTimestamp();
-        try checkInput();
+        try checkInput(inputBuffer[0..]);
 
         // handle Idle update
         const idleRes = try mpd.checkIdle(wrkallocator, &wrkfba.end_index);
@@ -127,7 +128,6 @@ pub fn main() !void {
             renderState.queue = true;
         }
 
-        //render
         if (isRenderTime(last_render_time, current_time)) {
             currSong.time.elapsed += @intCast(current_time - last_render_time);
             renderState.currentTrack = true;
@@ -182,13 +182,12 @@ fn isRenderTime(last_render_time: i64, current_time: i64) bool {
     return false;
 }
 
-fn checkInput() !void {
-    var buffer: [1]u8 = undefined;
+fn checkInput(buffer: []u8) !void {
 
     // Set the tty to non-blocking mode
     _ = try std.posix.fcntl(tty.handle, os.linux.F.SETFL, os.linux.SOCK.NONBLOCK);
 
-    const bytes_read = tty.read(&buffer) catch |err| switch (err) {
+    const bytes_read = tty.read(buffer) catch |err| switch (err) {
         error.WouldBlock => 0, // No input available
         else => |e| return e,
     };
@@ -207,6 +206,33 @@ fn checkInput() !void {
         } else if (buffer[0] == 'h') {
             try mpd.prevSong();
         } else if (buffer[0] == '\x1B') {
+            raw.cc[@intFromEnum(os.linux.V.TIME)] = 1;
+            raw.cc[@intFromEnum(os.linux.V.MIN)] = 0;
+            _ = os.linux.tcsetattr(tty.handle, .NOW, &raw);
+
+            var escBuffer: [8]u8 = undefined;
+            const escRead = tty.read(&escBuffer) catch |err| switch (err) {
+                error.WouldBlock => 0, // No input available
+                else => |e| return e,
+            };
+
+            raw.cc[@intFromEnum(os.linux.V.TIME)] = 0;
+            raw.cc[@intFromEnum(os.linux.V.MIN)] = 1;
+            _ = os.linux.tcsetattr(tty.handle, .NOW, &raw);
+
+            if (escRead == 0) {
+                log("input escape", .{});
+            } else if (mem.eql(u8, escBuffer[0..escRead], "[A")) {
+                log("input: arrow up\r\n", .{});
+            } else if (mem.eql(u8, escBuffer[0..escRead], "[B")) {
+                log("input: arrow down\r\n", .{});
+            } else if (mem.eql(u8, escBuffer[0..escRead], "[C")) {
+                log("input: arrow right\r\n", .{});
+            } else if (mem.eql(u8, escBuffer[0..escRead], "[D")) {
+                log("input: arrow left\r\n", .{});
+            } else {
+                log("unknown escape sequence", .{});
+            }
             // quit = true;
             //
         } else if (buffer[0] == '\n' or buffer[0] == '\r') {
