@@ -104,6 +104,7 @@ pub fn main() !void {
     renderState.borders = true;
     renderState.queue = true;
     var last_render_time = time.milliTimestamp();
+    var last_ping_time = time.milliTimestamp();
 
     _ = try mpd.initIdle();
 
@@ -137,6 +138,11 @@ pub fn main() !void {
             };
             renderState = RenderState.init();
             last_render_time = current_time;
+        }
+
+        if ((current_time - last_ping_time) >= 25000) {
+            try mpd.checkConnection();
+            last_ping_time = current_time;
         }
         time.sleep(time.ns_per_ms * 10);
     }

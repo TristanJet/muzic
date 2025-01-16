@@ -174,6 +174,17 @@ pub fn connect(buffer: []u8, stream: *std.net.Stream, nonblock: bool) !void {
     }
 }
 
+pub fn checkConnection() !void {
+    var buf: [3]u8 = undefined;
+    try connSend("ping\n", &cmdStream);
+    util.log("PINGED", .{});
+    _ = try cmdStream.read(&buf);
+    if (!std.mem.eql(u8, buf[0..2], "OK")) {
+        util.log("BAD! connection", .{});
+        return error.InvalidResponse;
+    }
+}
+
 fn connSend(data: []const u8, stream: *std.net.Stream) !void {
     // Sending data to peer
     var writer = stream.writer();
