@@ -215,7 +215,7 @@ pub fn checkIdle(allocator: std.mem.Allocator, end_index: *usize) !u8 {
 }
 
 pub fn togglePlaystate(isPlaying: bool) !bool {
-    var buf: [16]u8 = undefined;
+    var buf: [2]u8 = undefined;
     if (isPlaying) {
         try connSend("pause\n", &cmdStream);
         _ = try cmdStream.read(&buf);
@@ -228,22 +228,32 @@ pub fn togglePlaystate(isPlaying: bool) !bool {
     return true;
 }
 
+pub fn seekCur(isForward: bool) !void {
+    var buf: [12]u8 = undefined;
+    const dir = if (isForward) "+5" else "-5";
+    const msg = try std.fmt.bufPrint(&buf, "seekcur {s}\n", .{dir});
+    util.log("msg: {s}\n", .{msg});
+    try connSend(msg, &cmdStream);
+    _ = try cmdStream.read(&buf);
+    if (!std.mem.eql(u8, buf[0..2], "OK")) return error.BadConnection;
+}
+
 pub fn nextSong() !void {
-    var buf: [16]u8 = undefined;
+    var buf: [2]u8 = undefined;
     try connSend("next\n", &cmdStream);
     _ = try cmdStream.read(&buf);
     if (!std.mem.eql(u8, buf[0..2], "OK")) return error.BadConnection;
 }
 
 pub fn prevSong() !void {
-    var buf: [16]u8 = undefined;
+    var buf: [2]u8 = undefined;
     try connSend("previous\n", &cmdStream);
     _ = try cmdStream.read(&buf);
     if (!std.mem.eql(u8, buf[0..2], "OK")) return error.BadConnection;
 }
 
 pub fn playByPos(allocator: std.mem.Allocator, pos: u8) !void {
-    var buf: [16]u8 = undefined;
+    var buf: [2]u8 = undefined;
     const string = try std.fmt.allocPrint(allocator, "play {}\n", .{pos});
     try connSend(string, &cmdStream);
     _ = try cmdStream.read(&buf);

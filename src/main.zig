@@ -227,9 +227,11 @@ fn checkInput(buffer: []u8) !void {
             } else if (mem.eql(u8, escBuffer[0..escRead], "[B")) {
                 log("input: arrow down\r\n", .{});
             } else if (mem.eql(u8, escBuffer[0..escRead], "[C")) {
-                log("input: arrow right\r\n", .{});
+                // log("input: arrow right\r\n", .{});
+                try mpd.seekCur(true);
             } else if (mem.eql(u8, escBuffer[0..escRead], "[D")) {
-                log("input: arrow left\r\n", .{});
+                // log("input: arrow left\r\n", .{});
+                try mpd.seekCur(false);
             } else {
                 log("unknown escape sequence", .{});
             }
