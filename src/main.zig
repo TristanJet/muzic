@@ -130,8 +130,10 @@ pub fn main() !void {
         }
 
         if (isRenderTime(last_render_time, current_time)) {
-            currSong.time.elapsed += @intCast(current_time - last_render_time);
-            renderState.currentTrack = true;
+            if (isPlaying) {
+                currSong.time.elapsed += @intCast(current_time - last_render_time);
+                renderState.currentTrack = true;
+            }
             render(renderState, &wrkfba.end_index) catch |err| {
                 log("Couldn't render {}", .{err});
                 return;
@@ -228,6 +230,7 @@ fn checkInput(buffer: []u8) !void {
 
             if (escRead == 0) {
                 log("input escape", .{});
+                quit = true;
             } else if (mem.eql(u8, escBuffer[0..escRead], "[A")) {
                 log("input: arrow up\r\n", .{});
             } else if (mem.eql(u8, escBuffer[0..escRead], "[B")) {
@@ -463,7 +466,7 @@ fn currTrackRender(
             s.album,
         })
     else
-        try std.fmt.allocPrint(allocator, "{s} - {s} - {s}", .{
+        try std.fmt.allocPrint(allocator, "{s} - \"{s}\" {s}.", .{
             s.title,
             s.album,
             s.trackno,
