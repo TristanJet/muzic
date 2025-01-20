@@ -4,6 +4,11 @@ const net = std.net;
 pub var cmdStream: std.net.Stream = undefined;
 pub var idleStream: std.net.Stream = undefined;
 
+pub const Searchable = struct {
+    string: ?[]const u8,
+    uri: ?[]const u8,
+};
+
 pub const Time = struct {
     elapsed: u64,
     duration: u64,
@@ -458,4 +463,95 @@ pub fn getCurrentTrackTime(worallocator: std.mem.Allocator, end_index: *usize, s
             }
         }
     }
+}
+
+pub fn readListAll(heapAllocator: std.mem.Allocator) ![]u8 {
+    try connSend("listallinfo\n", &cmdStream);
+
+    var list = std.ArrayList(u8).init(heapAllocator);
+    errdefer list.deinit();
+
+    var buf: [4096]u8 = undefined;
+    while (true) {
+        const bytes_read = cmdStream.read(buf[0..]) catch |err| switch (err) {
+            error.WouldBlock => continue,
+            else => |e| return e,
+        };
+
+        if (bytes_read == 0) continue;
+
+        try list.appendSlice(buf[0..bytes_read]);
+
+        // Check if we've received "OK\n"
+        if (bytes_read >= 3 and std.mem.endsWith(u8, list.items, "OK\n")) {
+            break;
+        }
+    }
+
+    return list.toOwnedSlice();
+}
+
+pub fn getSearchable(heapAllocator: std.mem.Allocator, respAllocator: std.mem.Allocator) ![]Searchable {
+    const data = try readListAll(respAllocator);
+    std.debug.print("read data\n", .{});
+    if (std.mem.startsWith(u8, data, "ACK")) return error.MpdError;
+    if (std.mem.startsWith(u8, data, "OK")) return error.NoSongs;
+    var array = std.ArrayList(Searchable).init(heapAllocator);
+    var lines = std.mem.splitSequence(u8, data, "\n");
+
+    var current = Searchable{ .string = null, .uri = null };
+    var title: ?[]const u8 = null;
+    var artist: ?[]const u8 = null;
+    var album: ?[]const u8 = null;
+
+    while (lines.next()) |line| {
+        if (std.mem.indexOf(u8, line, ": ")) |separator_index| {
+            const key = line[0..separator_index];
+            const value = line[separator_index + 2 ..];
+
+            if (std.mem.eql(u8, key, "Album")) {
+                album = value;
+
+                title = title orelse "";
+                artist = artist orelse "";
+
+                current.string = try std.fmt.allocPrint(heapAllocator, "{s} {s} {s}", .{ title.?, artist.?, album.? });
+                try array.append(current);
+                title = null;
+                artist = null;
+                album = null;
+            } else if (std.mem.eql(u8, key, "Title")) {
+                title = value;
+            } else if (std.mem.eql(u8, key, "Artist")) {
+                artist = value;
+            } else if (std.mem.eql(u8, key, "file")) {
+                current = Searchable{ .string = null, .uri = null };
+                current.uri = try heapAllocator.dupe(u8, value);
+            }
+        }
+    }
+    return array.items;
+}
+
+test "do it work" {
+    var respArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    // defer respArena.deinit();
+    const respAllocator = respArena.allocator();
+
+    var heapArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer heapArena.deinit();
+    const heapAllocator = heapArena.allocator();
+
+    var wrkbuf: [16]u8 = undefined;
+    _ = try connect(wrkbuf[0..16], &cmdStream, false);
+    std.debug.print("connected\n", .{});
+
+    const items = try getSearchable(heapAllocator, respAllocator);
+    std.debug.print("end index: {}\n", .{respArena.state.end_index});
+    respArena.deinit();
+    std.debug.print("length: {}\n", .{items.len});
+    std.debug.print("string 1000: {s}\n", .{items[999].string.?});
+    std.debug.print("end index: {}\n", .{heapArena.state.end_index});
+
+    try std.testing.expect(items.len == 2316);
 }

@@ -38,6 +38,14 @@ var renderState: RenderState = RenderState.init();
 var isPlaying: bool = true;
 
 pub fn main() !void {
+    // var respArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    // defer respArena.deinit();
+    // const respAllocator = respArena.allocator();
+    //
+    // var heapArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    // defer heapArena.deinit();
+    // const heapAllocator = heapArena.allocator();
+
     window = try getWindow();
 
     util.init() catch {};
