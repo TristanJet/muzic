@@ -482,7 +482,6 @@ pub fn readListAll(heapAllocator: std.mem.Allocator) ![]u8 {
 
         try list.appendSlice(buf[0..bytes_read]);
 
-        // Check if we've received "OK\n"
         if (bytes_read >= 3 and std.mem.endsWith(u8, list.items, "OK\n")) {
             break;
         }
@@ -530,12 +529,12 @@ pub fn getSearchable(heapAllocator: std.mem.Allocator, respAllocator: std.mem.Al
             }
         }
     }
-    return array.items;
+    return array.toOwnedSlice();
 }
 
 test "do it work" {
+    const start = std.time.milliTimestamp();
     var respArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    // defer respArena.deinit();
     const respAllocator = respArena.allocator();
 
     var heapArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -547,11 +546,19 @@ test "do it work" {
     std.debug.print("connected\n", .{});
 
     const items = try getSearchable(heapAllocator, respAllocator);
+    var max: []const u8 = "";
+    for (items) |item| {
+        if (item.string.?.len > max.len) {
+            max = item.string.?[0..];
+        }
+    }
+    const end = std.time.milliTimestamp() - start;
     std.debug.print("end index: {}\n", .{respArena.state.end_index});
     respArena.deinit();
     std.debug.print("length: {}\n", .{items.len});
-    std.debug.print("string 1000: {s}\n", .{items[999].string.?});
+    std.debug.print("string 1000: {s}\n", .{items[2315].string.?});
     std.debug.print("end index: {}\n", .{heapArena.state.end_index});
-
+    std.debug.print("longest string: {s}\nlen:{}\n", .{ max, max.len });
+    std.debug.print("Time spent: {}\n", .{end});
     try std.testing.expect(items.len == 2316);
 }
