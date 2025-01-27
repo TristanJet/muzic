@@ -34,20 +34,29 @@ var viewEndQ: usize = undefined;
 var cursorPosQ: u8 = 0;
 
 var panelFind: Panel = undefined;
+var typeBuffer: [256]u8 = undefined;
+var typed: []const u8 = typeBuffer[0..0];
 
 var firstRender: bool = true;
 var renderState: RenderState = RenderState.init();
 
 var isPlaying: bool = true;
 
+const Input_State = enum {
+    normal,
+    typing,
+};
+
+var state_input = Input_State.normal;
+
 pub fn main() !void {
     // var respArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     // defer respArena.deinit();
     // const respAllocator = respArena.allocator();
     //
-    // var heapArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     // defer heapArena.deinit();
     // const heapAllocator = heapArena.allocator();
+    // var heapArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 
     window = try getWindow();
 
@@ -166,47 +175,12 @@ pub fn main() !void {
             last_render_time = current_time;
         }
 
-        if ((current_time - last_ping_time) >= 25000) {
+        if ((current_time - last_ping_time) >= 25 * 1000) {
             try mpd.checkConnection();
             last_ping_time = current_time;
         }
         time.sleep(time.ns_per_ms * 10);
     }
-}
-
-test "co-ords" {
-    window = try getWindow();
-    tty = fs.cwd().openFile(
-        "/dev/pts/1",
-        .{ .mode = .read_write },
-    ) catch {
-        log("could not find tty at /dev/tty", .{});
-        return;
-    };
-    defer tty.close();
-
-    uncook() catch {
-        log("failed to uncook", .{});
-        return;
-    };
-    defer cook() catch {};
-
-    const writer = tty.writer();
-
-    try moveCursor(writer, window.ymax, window.xmax);
-    try writer.writeByte('X');
-    try moveCursor(writer, window.ymin, window.xmin);
-    try writer.writeByte('X');
-    try moveCursor(writer, window.ymax, window.xmax);
-    while (!quit) {
-        try checkInput();
-    }
-}
-
-test "song update" {
-    _ = currSong.init();
-    _ = try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &currSong);
-    _ = try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &currSong);
 }
 
 fn isRenderTime(last_render_time: i64, current_time: i64) bool {
@@ -215,66 +189,107 @@ fn isRenderTime(last_render_time: i64, current_time: i64) bool {
 }
 
 fn checkInput(buffer: []u8) !void {
-    const bytes_read = tty.read(buffer) catch |err| switch (err) {
+    const bytes_read: usize = tty.read(buffer) catch |err| switch (err) {
         error.WouldBlock => 0, // No input available
         else => |e| return e,
     };
 
-    if (bytes_read > 0) {
-        if (buffer[0] == 'q') {
-            quit = true;
-        } else if (buffer[0] == 'j') {
-            scrollQ(false);
-        } else if (buffer[0] == 'k') {
-            scrollQ(true);
-        } else if (buffer[0] == 'p') {
-            isPlaying = try mpd.togglePlaystate(isPlaying);
-        } else if (buffer[0] == 'l') {
-            try mpd.nextSong();
-        } else if (buffer[0] == 'h') {
-            try mpd.prevSong();
-        } else if (buffer[0] == '\x1B') {
-            raw.cc[@intFromEnum(os.linux.V.TIME)] = 1;
-            raw.cc[@intFromEnum(os.linux.V.MIN)] = 0;
-            _ = os.linux.tcsetattr(tty.handle, .NOW, &raw);
+    if (bytes_read < 1) return;
 
+    const func = switch (state_input) {
+        Input_State.normal => &inputNormal,
+        Input_State.typing => &inputTyping,
+    };
+
+    try func(buffer);
+}
+
+fn inputTyping(buffer: []u8) !void {
+    switch (buffer[0]) {
+        '\x1B' => {
             var escBuffer: [8]u8 = undefined;
-            const escRead = tty.read(&escBuffer) catch |err| switch (err) {
-                error.WouldBlock => 0, // No input available
-                else => |e| return e,
-            };
+            const escRead = try readEscapeCode(&escBuffer);
 
-            raw.cc[@intFromEnum(os.linux.V.TIME)] = 0;
-            raw.cc[@intFromEnum(os.linux.V.MIN)] = 1;
-            _ = os.linux.tcsetattr(tty.handle, .NOW, &raw);
+            if (escRead == 0) {
+                typed = typeBuffer[0..0];
+                renderState.borders = true;
+                state_input = Input_State.normal;
+                return;
+            }
+        },
+        // '\r', '\n' => //add song from uri,
+        else => {
+            typeFind(buffer[0]);
+            renderState.find = true;
+        },
+    }
+}
+
+fn inputNormal(buffer: []u8) !void {
+    switch (buffer[0]) {
+        'q' => quit = true,
+        'j' => scrollQ(false),
+        'k' => scrollQ(true),
+        'p' => isPlaying = try mpd.togglePlaystate(isPlaying),
+        'l' => try mpd.nextSong(),
+        'h' => try mpd.prevSong(),
+        'f' => {
+            state_input = Input_State.typing;
+            renderState.find = true;
+        },
+        '\x1B' => {
+            var escBuffer: [8]u8 = undefined;
+            const escRead = try readEscapeCode(&escBuffer);
 
             if (escRead == 0) {
                 log("input escape", .{});
                 quit = true;
-            } else if (mem.eql(u8, escBuffer[0..escRead], "[A")) {
+                return;
+            }
+            if (mem.eql(u8, escBuffer[0..escRead], "[A")) {
                 log("input: arrow up\r\n", .{});
             } else if (mem.eql(u8, escBuffer[0..escRead], "[B")) {
                 log("input: arrow down\r\n", .{});
             } else if (mem.eql(u8, escBuffer[0..escRead], "[C")) {
-                // log("input: arrow right\r\n", .{});
                 try mpd.seekCur(true);
             } else if (mem.eql(u8, escBuffer[0..escRead], "[D")) {
-                // log("input: arrow left\r\n", .{});
                 try mpd.seekCur(false);
             } else {
                 log("unknown escape sequence", .{});
             }
-            // quit = true;
-            //
-        } else if (buffer[0] == '\n' or buffer[0] == '\r') {
-            //return
-            try mpd.playByPos(wrkallocator, cursorPosQ);
-        } else {
-            //character
-            //debug.print("input: {} {s}\r\n", .{ buffer[0], buffer });
-            log("input: {} {s}", .{ buffer[0], buffer });
-        }
+        },
+        '\n', '\r' => try mpd.playByPos(wrkallocator, cursorPosQ),
+        else => log("input: {} {s}", .{ buffer[0], buffer }),
     }
+}
+
+fn readEscapeCode(buffer: []u8) !usize {
+    raw.cc[@intFromEnum(os.linux.V.TIME)] = 1;
+    raw.cc[@intFromEnum(os.linux.V.MIN)] = 0;
+    _ = os.linux.tcsetattr(tty.handle, .NOW, &raw);
+
+    const escRead = tty.read(buffer) catch |err| switch (err) {
+        error.WouldBlock => 0, // No input available
+        else => |e| return e,
+    };
+
+    raw.cc[@intFromEnum(os.linux.V.TIME)] = 0;
+    raw.cc[@intFromEnum(os.linux.V.MIN)] = 1;
+    _ = os.linux.tcsetattr(tty.handle, .NOW, &raw);
+
+    return escRead;
+}
+
+fn typeFind(char: u8) void {
+    typeBuffer[typed.len] = char;
+    typed = typeBuffer[0 .. typed.len + 1];
+}
+
+fn getFindText() ![]const u8 {
+    return switch (state_input) {
+        Input_State.normal => "find",
+        Input_State.typing => try std.fmt.allocPrint(wrkallocator, "find: {s}_", .{typed}),
+    };
 }
 
 fn scrollQ(isUp: bool) void {
@@ -345,9 +360,9 @@ fn render(state: RenderState, end_index: *usize) !void {
     const writer = tty.writer();
     if (state.borders) try drawBorders(writer, panelCurrSong);
     if (state.borders) try drawBorders(writer, panelQueue);
-    if (state.borders) try drawHeader(writer, panelQueue, "Queue");
+    if (state.borders) try drawHeader(writer, panelQueue, "queue");
     if (state.borders) try drawBorders(writer, panelFind);
-    if (state.borders) try drawHeader(writer, panelFind, "Find");
+    if (state.borders or state.find) try drawHeader(writer, panelFind, try getFindText());
     if (state.currentTrack) try currTrackRender(wrkallocator, writer, panelCurrSong, currSong, end_index);
     if (state.queue) try queueRender(writer, wrkallocator, &wrkfba.end_index, panelQueue);
 }
