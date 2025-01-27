@@ -6,7 +6,7 @@ pub var idleStream: std.net.Stream = undefined;
 
 pub const Searchable = struct {
     string: ?[]const u8,
-    uri: ?[]const u8,
+    uri: []const u8,
 };
 
 pub const Time = struct {
@@ -498,7 +498,7 @@ pub fn getSearchable(heapAllocator: std.mem.Allocator, respAllocator: std.mem.Al
     var array = std.ArrayList(Searchable).init(heapAllocator);
     var lines = std.mem.splitSequence(u8, data, "\n");
 
-    var current = Searchable{ .string = null, .uri = null };
+    var current = Searchable{ .string = null, .uri = undefined };
     var title: ?[]const u8 = null;
     var artist: ?[]const u8 = null;
     var album: ?[]const u8 = null;
@@ -524,7 +524,7 @@ pub fn getSearchable(heapAllocator: std.mem.Allocator, respAllocator: std.mem.Al
             } else if (std.mem.eql(u8, key, "Artist")) {
                 artist = value;
             } else if (std.mem.eql(u8, key, "file")) {
-                current = Searchable{ .string = null, .uri = null };
+                current = Searchable{ .string = null, .uri = undefined };
                 current.uri = try heapAllocator.dupe(u8, value);
             }
         }

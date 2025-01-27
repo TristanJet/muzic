@@ -178,4 +178,5 @@ test "full function" {
         }
         std.debug.print("Total set: {}\n", .{items.len});
     }
+    std.debug.print("file: {s}\n", .{songs[0].uri});
 }
