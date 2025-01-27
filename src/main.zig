@@ -27,10 +27,13 @@ var currSong = mpd.CurrentSong{};
 
 var panelCurrSong: Panel = undefined;
 var queue = mpd.Queue{};
+
 var panelQueue: Panel = undefined;
 var viewStartQ: usize = 0;
 var viewEndQ: usize = undefined;
 var cursorPosQ: u8 = 0;
+
+var panelFind: Panel = undefined;
 
 var firstRender: bool = true;
 var renderState: RenderState = RenderState.init();
@@ -72,6 +75,8 @@ pub fn main() !void {
     };
     defer tty.close();
 
+    _ = try std.posix.fcntl(tty.handle, os.linux.F.SETFL, os.linux.SOCK.NONBLOCK);
+
     uncook() catch {
         log("failed to uncook", .{});
         return;
@@ -100,17 +105,28 @@ pub fn main() !void {
 
     panelQueue = Panel.init(true, .{
         .totalfr = 7,
-        .startline = 2,
-        .endline = 5,
+        .startline = 0,
+        .endline = 4,
     }, .{
         .totalfr = 7,
         .startline = 2,
-        .endline = 5,
+        .endline = 7,
     });
     viewEndQ = viewStartQ + panelQueue.validArea().ylen + 1;
 
+    panelFind = Panel.init(true, .{
+        .totalfr = 7,
+        .startline = 4,
+        .endline = 7,
+    }, .{
+        .totalfr = 7,
+        .startline = 2,
+        .endline = 7,
+    });
+
     renderState.borders = true;
     renderState.queue = true;
+    renderState.find = true;
     var last_render_time = time.milliTimestamp();
     var last_ping_time = time.milliTimestamp();
 
@@ -199,10 +215,6 @@ fn isRenderTime(last_render_time: i64, current_time: i64) bool {
 }
 
 fn checkInput(buffer: []u8) !void {
-
-    // Set the tty to non-blocking mode
-    _ = try std.posix.fcntl(tty.handle, os.linux.F.SETFL, os.linux.SOCK.NONBLOCK);
-
     const bytes_read = tty.read(buffer) catch |err| switch (err) {
         error.WouldBlock => 0, // No input available
         else => |e| return e,
@@ -333,7 +345,9 @@ fn render(state: RenderState, end_index: *usize) !void {
     const writer = tty.writer();
     if (state.borders) try drawBorders(writer, panelCurrSong);
     if (state.borders) try drawBorders(writer, panelQueue);
-    if (state.borders) try drawHeader(writer, panelQueue);
+    if (state.borders) try drawHeader(writer, panelQueue, "Queue");
+    if (state.borders) try drawBorders(writer, panelFind);
+    if (state.borders) try drawHeader(writer, panelFind, "Find");
     if (state.currentTrack) try currTrackRender(wrkallocator, writer, panelCurrSong, currSong, end_index);
     if (state.queue) try queueRender(writer, wrkallocator, &wrkfba.end_index, panelQueue);
 }
@@ -365,11 +379,11 @@ fn drawBorders(writer: fs.File.Writer, p: Panel) !void {
     try writer.writeAll(sym.round_right_down);
 }
 
-fn drawHeader(writer: fs.File.Writer, p: Panel) !void {
+fn drawHeader(writer: fs.File.Writer, p: Panel, text: []const u8) !void {
     const x = p.xmin + 1;
     try moveCursor(writer, p.ymin, x);
     try writer.writeAll(sym.right_up);
-    try writer.writeAll("Queue");
+    try writer.writeAll(text);
     try writer.writeAll(sym.left_up);
 }
 
@@ -550,12 +564,14 @@ const RenderState = struct {
     borders: bool,
     currentTrack: bool,
     queue: bool,
+    find: bool,
 
     fn init() RenderState {
         return .{
             .borders = false,
             .currentTrack = false,
             .queue = false,
+            .find = false,
         };
     }
 };
