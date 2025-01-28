@@ -287,6 +287,13 @@ fn inputNormal(buffer: []u8) !void {
             state_input = Input_State.typing;
             renderState.find = true;
         },
+        'x' => {
+            try mpd.rmFromPos(wrkallocator, cursorPosQ);
+            if (cursorPosQ == 0) {
+                if (queue.len > 1) return;
+            }
+            cursorPosQ -= 1;
+        },
         '\x1B' => {
             var escBuffer: [8]u8 = undefined;
             const escRead = try readEscapeCode(&escBuffer);
@@ -517,6 +524,11 @@ fn queueRender(writer: fs.File.Writer, allocator: std.mem.Allocator, end_index: 
     const area = panel.validArea();
     const n = area.xlen / 4; // idk why this looks good
     const gapcol = area.xlen / 8;
+
+    for (0..area.ylen) |i| {
+        try moveCursor(writer, area.ymin + i, area.xmin);
+        try writer.writeByteNTimes(' ', area.xlen + 1);
+    }
 
     var highlighted = false;
     for (viewStartQ..viewEndQ, 0..) |i, j| {

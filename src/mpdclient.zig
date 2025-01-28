@@ -539,6 +539,14 @@ pub fn addFromUri(allocator: std.mem.Allocator, uri: []const u8) !void {
     if (!std.mem.eql(u8, buf[0..2], "OK")) return error.BadConnection;
 }
 
+pub fn rmFromPos(allocator: std.mem.Allocator, pos: u8) !void {
+    var buf: [2]u8 = undefined;
+    const message = try std.fmt.allocPrint(allocator, "delete {}\n", .{pos});
+    try connSend(message, &cmdStream);
+    _ = try cmdStream.read(&buf);
+    if (!std.mem.eql(u8, buf[0..2], "OK")) return error.BadConnection;
+}
+
 test "do it work" {
     const start = std.time.milliTimestamp();
     var respArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
