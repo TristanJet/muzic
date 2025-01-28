@@ -1,5 +1,6 @@
 const std = @import("std");
 const mpd = @import("mpdclient.zig");
+const util = @import("util.zig");
 
 pub const nRanked: u8 = 10;
 
@@ -17,9 +18,10 @@ const ScoredString = struct {
     score: u16,
 };
 
-fn algorithm(arena: *std.heap.ArenaAllocator, heapAllocator: std.mem.Allocator, input: []const u8) ![]mpd.Searchable {
-    if (input.len == 1) return try contains(heapAllocator, input[0]);
+pub fn algorithm(arena: *std.heap.ArenaAllocator, heapAllocator: std.mem.Allocator, input: []const u8) ![]mpd.Searchable {
+    // util.log("items: {}", .{items.len});
     const arenaAllocator = arena.allocator();
+    if (input.len == 1) return try contains(heapAllocator, arena, input[0]);
     var scoredStrings = std.ArrayList(ScoredString).init(heapAllocator);
     defer scoredStrings.deinit();
     var itemArray = std.ArrayList(mpd.Searchable).init(heapAllocator);
@@ -57,12 +59,19 @@ fn algorithm(arena: *std.heap.ArenaAllocator, heapAllocator: std.mem.Allocator, 
     return try result.toOwnedSlice();
 }
 
-fn contains(heapAllocator: std.mem.Allocator, input: u8) ![]mpd.Searchable {
+fn contains(heapAllocator: std.mem.Allocator, arena: *std.heap.ArenaAllocator, input: u8) ![]mpd.Searchable {
+    const arenaAllocator = arena.allocator();
     var itemArray = std.ArrayList(mpd.Searchable).init(heapAllocator);
     var rankedStrings = std.ArrayList(mpd.Searchable).init(heapAllocator);
+
+    const inputLower = std.ascii.toLower(input);
     for (items) |item| {
+        defer {
+            _ = arena.reset(.retain_capacity);
+        }
         if (item.string) |string| {
-            if (std.mem.indexOfScalar(u8, string, input)) |_| {
+            const stringLower: []const u8 = try std.ascii.allocLowerString(arenaAllocator, string);
+            if (std.mem.indexOfScalar(u8, stringLower, inputLower)) |_| {
                 try itemArray.append(item);
                 if (rankedStrings.items.len < nRanked) try rankedStrings.append(item);
             }
@@ -98,23 +107,25 @@ const Matrix = struct {
     }
 };
 
-fn calculateScore(seq1: []const u8, seq2: []const u8, allocator: std.mem.Allocator) !u16 {
+fn calculateScore(input: []const u8, string: []const u8, allocator: std.mem.Allocator) !u16 {
     // First, calculate exact word matches
+    const inputLower: []const u8 = try std.ascii.allocLowerString(allocator, input);
+    const stringLower: []const u8 = try std.ascii.allocLowerString(allocator, string);
     var exact_score: u16 = 0;
-    var input_words = std.mem.split(u8, seq1, " ");
+    var input_words = std.mem.split(u8, inputLower, " ");
     while (input_words.next()) |word| {
         // Skip very short words (like "the", "a", etc.)
         if (word.len <= 2 or word.len >= 255) continue;
 
         const len: u8 = @intCast(word.len);
         // Look for exact word match
-        if (std.mem.indexOf(u8, seq2, word)) |_| {
+        if (std.mem.indexOf(u8, stringLower, word)) |_| {
             exact_score += len * exact_word_multiplier;
         }
     }
 
     // Then get the Smith-Waterman score for overall similarity
-    const sw_score = try smithwaterman(seq1, seq2, allocator);
+    const sw_score = try smithwaterman(input, string, allocator);
 
     return exact_score + sw_score;
 }
@@ -165,7 +176,7 @@ test "full function" {
     items = try mpd.getSearchable(longallocator, respAllocator);
     respArena.deinit();
 
-    const input = "Michael Jackson Beat It";
+    const input = "Beat It";
     var songs: []mpd.Searchable = undefined;
 
     std.debug.print("Total set: {}\n", .{items.len});

@@ -492,7 +492,6 @@ pub fn readListAll(heapAllocator: std.mem.Allocator) ![]u8 {
 
 pub fn getSearchable(heapAllocator: std.mem.Allocator, respAllocator: std.mem.Allocator) ![]Searchable {
     const data = try readListAll(respAllocator);
-    std.debug.print("read data\n", .{});
     if (std.mem.startsWith(u8, data, "ACK")) return error.MpdError;
     if (std.mem.startsWith(u8, data, "OK")) return error.NoSongs;
     var array = std.ArrayList(Searchable).init(heapAllocator);
@@ -530,6 +529,14 @@ pub fn getSearchable(heapAllocator: std.mem.Allocator, respAllocator: std.mem.Al
         }
     }
     return array.toOwnedSlice();
+}
+
+pub fn addFromUri(allocator: std.mem.Allocator, uri: []const u8) !void {
+    var buf: [2]u8 = undefined;
+    const message = try std.fmt.allocPrint(allocator, "add \"{s}\"\n", .{uri});
+    try connSend(message, &cmdStream);
+    _ = try cmdStream.read(&buf);
+    if (!std.mem.eql(u8, buf[0..2], "OK")) return error.BadConnection;
 }
 
 test "do it work" {

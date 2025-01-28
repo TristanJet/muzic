@@ -2,6 +2,7 @@ const std = @import("std");
 const sym = @import("symbols.zig");
 const util = @import("util.zig");
 const mpd = @import("mpdclient.zig");
+const algo = @import("algo.zig");
 const debug = std.debug;
 const fs = std.fs;
 const io = std.io;
@@ -23,6 +24,18 @@ var wrkbuf: [4096]u8 = undefined;
 var wrkfba = std.heap.FixedBufferAllocator.init(&wrkbuf);
 const wrkallocator = wrkfba.allocator();
 
+var algoArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+const algoArenaAllocator = algoArena.allocator();
+
+var respArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+const respAllocator = respArena.allocator();
+
+var heapArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+const heapAllocator = heapArena.allocator();
+
+var all_searchable: []mpd.Searchable = undefined;
+var viewable_searchable: ?[]mpd.Searchable = null;
+
 var currSong = mpd.CurrentSong{};
 
 var panelCurrSong: Panel = undefined;
@@ -36,6 +49,7 @@ var cursorPosQ: u8 = 0;
 var panelFind: Panel = undefined;
 var typeBuffer: [256]u8 = undefined;
 var typed: []const u8 = typeBuffer[0..0];
+var findSelected: u8 = 0;
 
 var firstRender: bool = true;
 var renderState: RenderState = RenderState.init();
@@ -50,13 +64,8 @@ const Input_State = enum {
 var state_input = Input_State.normal;
 
 pub fn main() !void {
-    // var respArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    // defer respArena.deinit();
-    // const respAllocator = respArena.allocator();
-    //
-    // defer heapArena.deinit();
-    // const heapAllocator = heapArena.allocator();
-    // var heapArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer heapArena.deinit();
+    defer algoArena.deinit();
 
     window = try getWindow();
 
@@ -133,13 +142,17 @@ pub fn main() !void {
         .endline = 7,
     });
 
+    _ = try mpd.initIdle();
+
+    all_searchable = try mpd.getSearchable(heapAllocator, respAllocator);
+    log("allsearchable len: {}", .{all_searchable.len});
+    respArena.deinit();
+
     renderState.borders = true;
     renderState.queue = true;
     renderState.find = true;
     var last_render_time = time.milliTimestamp();
     var last_ping_time = time.milliTimestamp();
-
-    _ = try mpd.initIdle();
 
     while (!quit) {
         defer wrkfba.reset();
@@ -213,14 +226,51 @@ fn inputTyping(buffer: []u8) !void {
             if (escRead == 0) {
                 typed = typeBuffer[0..0];
                 renderState.borders = true;
+                renderState.find = true;
+                viewable_searchable = null;
                 state_input = Input_State.normal;
+                findSelected = 0;
+                _ = algoArena.reset(.free_all);
                 return;
             }
         },
-        // '\r', '\n' => //add song from uri,
+        'n' & '\x1F' => {
+            log("input: Ctrl-n\r\n", .{});
+            if (findSelected < 9) {
+                findSelected += 1;
+            }
+            renderState.find = true;
+            return;
+        },
+        'p' & '\x1F' => {
+            log("input: Ctrl-p\r\n", .{});
+            if (findSelected > 0) {
+                findSelected -= 1;
+            }
+            renderState.find = true;
+            return;
+        },
+        '\r', '\n' => {
+            //add song from uri
+            const addUri = viewable_searchable.?[findSelected].uri;
+            log("uri: {s}", .{addUri});
+            try mpd.addFromUri(wrkallocator, addUri);
+            typed = typeBuffer[0..0];
+            renderState.borders = true;
+            renderState.find = true;
+            viewable_searchable = null;
+            state_input = Input_State.normal;
+            findSelected = 0;
+            _ = algoArena.reset(.free_all);
+            return;
+        },
         else => {
             typeFind(buffer[0]);
+            const slice = try findTopMatches(all_searchable, &algo.items);
+            viewable_searchable = slice[0..];
+            // log("viewable 1: {}\n", .{viewable_searchable.?.len});
             renderState.find = true;
+            return;
         },
     }
 }
@@ -242,14 +292,14 @@ fn inputNormal(buffer: []u8) !void {
             const escRead = try readEscapeCode(&escBuffer);
 
             if (escRead == 0) {
-                log("input escape", .{});
+                // log("input escape", .{});
                 quit = true;
                 return;
             }
             if (mem.eql(u8, escBuffer[0..escRead], "[A")) {
-                log("input: arrow up\r\n", .{});
+                // log("input: arrow up\r\n", .{});
             } else if (mem.eql(u8, escBuffer[0..escRead], "[B")) {
-                log("input: arrow down\r\n", .{});
+                // log("input: arrow down\r\n", .{});
             } else if (mem.eql(u8, escBuffer[0..escRead], "[C")) {
                 try mpd.seekCur(true);
             } else if (mem.eql(u8, escBuffer[0..escRead], "[D")) {
@@ -285,11 +335,39 @@ fn typeFind(char: u8) void {
     typed = typeBuffer[0 .. typed.len + 1];
 }
 
+fn findTopMatches(strings: []mpd.Searchable, items: *[]mpd.Searchable) ![]mpd.Searchable {
+    if (typed.len == 1) items.* = strings[0..];
+    return try algo.algorithm(&algoArena, heapAllocator, typed[0..]);
+}
+
 fn getFindText() ![]const u8 {
     return switch (state_input) {
         Input_State.normal => "find",
         Input_State.typing => try std.fmt.allocPrint(wrkallocator, "find: {s}_", .{typed}),
     };
+}
+
+fn findRender(writer: std.fs.File.Writer, panel: Panel) !void {
+    const area = panel.validArea();
+
+    if (viewable_searchable) |viewable| {
+        for (0..area.ylen) |i| {
+            try moveCursor(writer, area.ymin + i, area.xmin);
+            try writer.writeByteNTimes(' ', area.xlen);
+        }
+        for (viewable, 0..) |song, j| {
+            const len = if (song.string.?.len > area.xlen) area.xlen else song.string.?.len;
+            if (j == findSelected) try writer.writeAll("\x1B[7m");
+            try moveCursor(writer, area.ymin + j, area.xmin);
+            try writer.writeAll(song.string.?[0..len]);
+            if (j == findSelected) try writer.writeAll("\x1B[0m");
+        }
+    } else {
+        for (0..area.ylen) |i| {
+            try moveCursor(writer, area.ymin + i, area.xmin);
+            try writer.writeByteNTimes(' ', area.xlen);
+        }
+    }
 }
 
 fn scrollQ(isUp: bool) void {
@@ -365,6 +443,7 @@ fn render(state: RenderState, end_index: *usize) !void {
     if (state.borders or state.find) try drawHeader(writer, panelFind, try getFindText());
     if (state.currentTrack) try currTrackRender(wrkallocator, writer, panelCurrSong, currSong, end_index);
     if (state.queue) try queueRender(writer, wrkallocator, &wrkfba.end_index, panelQueue);
+    if (state.find) findRender(writer, panelFind) catch |err| log("Error: {}", .{err});
 }
 
 fn drawBorders(writer: fs.File.Writer, p: Panel) !void {
