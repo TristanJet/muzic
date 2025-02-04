@@ -9,6 +9,7 @@ pub fn init() !void {
         .{ .mode = fs.File.OpenMode.write_only },
     );
     logger = logtty.writer();
+    try clear(logger);
 }
 
 pub fn clear(writer: anytype) !void {

@@ -3,6 +3,7 @@ const sym = @import("symbols.zig");
 const util = @import("util.zig");
 const mpd = @import("mpdclient.zig");
 const algo = @import("algo.zig");
+const window = @import("window.zig");
 const debug = std.debug;
 const fs = std.fs;
 const io = std.io;
@@ -15,7 +16,6 @@ const log = util.log;
 const clear = util.clear;
 
 var tty: fs.File = undefined;
-var window: Window = undefined;
 var raw: os.linux.termios = undefined;
 var cooked: os.linux.termios = undefined;
 var quit: bool = false;
@@ -38,15 +38,15 @@ var viewable_searchable: ?[]mpd.Searchable = null;
 
 var currSong = mpd.CurrentSong{};
 
-var panelCurrSong: Panel = undefined;
+var panelCurrSong: window.Panel = undefined;
 var queue = mpd.Queue{};
 
-var panelQueue: Panel = undefined;
+var panelQueue: window.Panel = undefined;
 var viewStartQ: usize = 0;
 var viewEndQ: usize = undefined;
 var cursorPosQ: u8 = 0;
 
-var panelFind: Panel = undefined;
+var panelFind: window.Panel = undefined;
 var typeBuffer: [256]u8 = undefined;
 var typed: []const u8 = typeBuffer[0..0];
 var findSelected: u8 = 0;
@@ -67,7 +67,7 @@ pub fn main() !void {
     defer heapArena.deinit();
     defer algoArena.deinit();
 
-    window = try getWindow();
+    try window.getWindow(&tty);
 
     util.init() catch {};
     defer util.deinit() catch {};
@@ -105,42 +105,42 @@ pub fn main() !void {
     _ = try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &currSong);
     _ = try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &currSong);
 
-    panelCurrSong = Panel.init(
-        true,
-        .{
-            .totalfr = 6,
-            .startline = 1,
-            .endline = 5,
+    panelCurrSong = window.Panel.init(true, .{
+        .absolute = .{
+            .min = window.window.xmin,
+            .max = window.window.xmax,
         },
-        .{
-            .totalfr = 7,
-            .startline = 0,
-            .endline = 1,
-        },
-    );
+    }, .{ .absolute = .{ .min = 0, .max = 6 } });
 
     _ = try mpd.getQueue(wrkallocator, &wrkfba.end_index, &queue);
 
-    panelQueue = Panel.init(true, .{
-        .totalfr = 7,
-        .startline = 0,
-        .endline = 4,
-    }, .{
-        .totalfr = 7,
-        .startline = 2,
-        .endline = 7,
-    });
+    panelQueue = window.Panel.init(
+        true,
+        .{ .fractional = .{
+            .totalfr = 7,
+            .startline = 0,
+            .endline = 4,
+        } },
+        .{ .absolute = .{
+            .min = 7,
+            .max = window.window.ymax,
+        } },
+    );
+
     viewEndQ = viewStartQ + panelQueue.validArea().ylen + 1;
 
-    panelFind = Panel.init(true, .{
-        .totalfr = 7,
-        .startline = 4,
-        .endline = 7,
-    }, .{
-        .totalfr = 7,
-        .startline = 2,
-        .endline = 7,
-    });
+    panelFind = window.Panel.init(
+        true,
+        .{ .fractional = .{
+            .totalfr = 7,
+            .startline = 4,
+            .endline = 7,
+        } },
+        .{ .absolute = .{
+            .min = 7,
+            .max = window.window.ymax,
+        } },
+    );
 
     _ = try mpd.initIdle();
 
@@ -258,6 +258,7 @@ fn inputTyping(buffer: []u8) !void {
             typed = typeBuffer[0..0];
             renderState.borders = true;
             renderState.find = true;
+            renderState.queue = true;
             viewable_searchable = null;
             state_input = Input_State.normal;
             findSelected = 0;
@@ -286,6 +287,7 @@ fn inputNormal(buffer: []u8) !void {
         'f' => {
             state_input = Input_State.typing;
             renderState.find = true;
+            renderState.queue = true;
         },
         'x' => {
             try mpd.rmFromPos(wrkallocator, cursorPosQ);
@@ -354,7 +356,7 @@ fn getFindText() ![]const u8 {
     };
 }
 
-fn findRender(writer: std.fs.File.Writer, panel: Panel) !void {
+fn findRender(writer: std.fs.File.Writer, panel: window.Panel) !void {
     const area = panel.validArea();
 
     if (viewable_searchable) |viewable| {
@@ -453,7 +455,7 @@ fn render(state: RenderState, end_index: *usize) !void {
     if (state.find) findRender(writer, panelFind) catch |err| log("Error: {}", .{err});
 }
 
-fn drawBorders(writer: fs.File.Writer, p: Panel) !void {
+fn drawBorders(writer: fs.File.Writer, p: window.Panel) !void {
     try moveCursor(writer, p.ymin, p.xmin);
     try writer.writeAll(sym.round_left_up);
     var x: usize = p.xmin + 1;
@@ -480,7 +482,7 @@ fn drawBorders(writer: fs.File.Writer, p: Panel) !void {
     try writer.writeAll(sym.round_right_down);
 }
 
-fn drawHeader(writer: fs.File.Writer, p: Panel, text: []const u8) !void {
+fn drawHeader(writer: fs.File.Writer, p: window.Panel, text: []const u8) !void {
     const x = p.xmin + 1;
     try moveCursor(writer, p.ymin, x);
     try writer.writeAll(sym.right_up);
@@ -517,7 +519,7 @@ fn formatSeconds(allocator: std.mem.Allocator, seconds: u64) ![]const u8 {
     );
 }
 
-fn queueRender(writer: fs.File.Writer, allocator: std.mem.Allocator, end_index: *usize, panel: Panel) !void {
+fn queueRender(writer: fs.File.Writer, allocator: std.mem.Allocator, end_index: *usize, panel: window.Panel) !void {
     const start = end_index.*;
     defer end_index.* = start;
 
@@ -527,13 +529,13 @@ fn queueRender(writer: fs.File.Writer, allocator: std.mem.Allocator, end_index: 
 
     for (0..area.ylen) |i| {
         try moveCursor(writer, area.ymin + i, area.xmin);
-        try writer.writeByteNTimes(' ', area.xlen + 1);
+        try writer.writeByteNTimes(' ', area.xlen);
     }
 
     var highlighted = false;
     for (viewStartQ..viewEndQ, 0..) |i, j| {
         if (i >= queue.len) break;
-        if (queue.items[i].pos == cursorPosQ) {
+        if (queue.items[i].pos == cursorPosQ and state_input == .normal) {
             try writer.writeAll("\x1B[7m");
             highlighted = true;
         }
@@ -568,7 +570,7 @@ fn queueRender(writer: fs.File.Writer, allocator: std.mem.Allocator, end_index: 
 fn currTrackRender(
     allocator: std.mem.Allocator,
     writer: fs.File.Writer,
-    p: Panel,
+    p: window.Panel,
     s: mpd.CurrentSong,
     end_index: *usize,
 ) !void {
@@ -645,27 +647,6 @@ fn clearLine(writer: fs.File.Writer, y: usize, xmin: usize, xmax: usize) !void {
     try writer.writeByteNTimes(' ', width);
 }
 
-const Window = struct {
-    xmin: usize,
-    xmax: usize,
-    ymin: usize,
-    ymax: usize,
-};
-
-fn getWindow() !Window {
-    var win_size = mem.zeroes(os.linux.winsize);
-    const err = os.linux.ioctl(tty.handle, os.linux.T.IOCGWINSZ, @intFromPtr(&win_size));
-    if (std.posix.errno(err) != .SUCCESS) {
-        return std.posix.unexpectedErrno(os.linux.E.init(err));
-    }
-    return Window{
-        .xmin = 0,
-        .xmax = win_size.ws_col - 1, // Columns (width) minus 1 for zero-based indexing
-        .ymin = 0,
-        .ymax = win_size.ws_row - 1, // Rows (height) minus 1 for zero-based indexing
-    };
-}
-
 const RenderState = struct {
     borders: bool,
     currentTrack: bool,
@@ -680,81 +661,4 @@ const RenderState = struct {
             .find = false,
         };
     }
-};
-
-const Panel = struct {
-    borders: bool,
-    xmin: usize,
-    xmax: usize,
-    ymin: usize,
-    ymax: usize,
-    xlen: usize,
-    ylen: usize,
-
-    fn init(borders: bool, x: Dim, y: Dim) Panel {
-        // Calculate fractions of total window dimensions
-        const xfr = @as(f32, @floatFromInt(window.xmax + 1)) / @as(f32, @floatFromInt(x.totalfr));
-        const yfr = @as(f32, @floatFromInt(window.ymax + 1)) / @as(f32, @floatFromInt(y.totalfr));
-
-        // Calculate panel boundaries ensuring they stay within window limits
-        const x_min = @min(window.xmax, @as(usize, @intFromFloat(@round(xfr * @as(f32, @floatFromInt(x.startline))))));
-        const x_max = @min(window.xmax, @as(usize, @intFromFloat(@round(xfr * @as(f32, @floatFromInt(x.endline))))));
-        const x_len = x_max - x_min;
-        const y_min = @min(window.ymax, @as(usize, @intFromFloat(@round(yfr * @as(f32, @floatFromInt(y.startline))))));
-        const y_max = @min(window.ymax, @as(usize, @intFromFloat(@round(yfr * @as(f32, @floatFromInt(y.endline))))));
-        const y_len = y_max - y_min;
-
-        return Panel{
-            .borders = borders,
-            .xmin = x_min,
-            .xmax = x_max,
-            .ymin = y_min,
-            .ymax = y_max,
-            .xlen = x_len,
-            .ylen = y_len,
-        };
-    }
-
-    fn validArea(self: Panel) struct {
-        xmin: usize,
-        xmax: usize,
-        xlen: usize,
-        ymin: usize,
-        ymax: usize,
-        ylen: usize,
-    } {
-        if (self.borders) {
-            return .{
-                .xmin = self.xmin + 1,
-                .xmax = self.xmax - 1,
-                .ymin = self.ymin + 1,
-                .ymax = self.ymax - 1,
-                .xlen = self.xlen - 2,
-                .ylen = self.ylen - 2,
-            };
-        } else {
-            return .{
-                .xmin = self.xmin,
-                .xmax = self.xmax,
-                .ymin = self.ymin,
-                .ymax = self.ymax,
-                .xlen = self.xlen,
-                .ylen = self.ylen,
-            };
-        }
-    }
-
-    fn getYCentre(self: Panel) usize {
-        return self.ymin + (self.ymax - self.ymin) / 2;
-    }
-
-    fn getXCentre(self: Panel) usize {
-        return self.xmin + (self.xmax - self.xmin) / 2;
-    }
-};
-
-const Dim = struct {
-    totalfr: u8,
-    startline: u8,
-    endline: u8,
 };
