@@ -141,6 +141,7 @@ pub fn main() !void {
             .max = window.window.ymax,
         } },
     );
+    algo.nRanked = panelFind.validArea().ylen;
 
     _ = try mpd.initIdle();
 
@@ -317,7 +318,10 @@ fn inputNormal(buffer: []u8) !void {
                 log("unknown escape sequence", .{});
             }
         },
-        '\n', '\r' => try mpd.playByPos(wrkallocator, cursorPosQ),
+        '\n', '\r' => {
+            try mpd.playByPos(wrkallocator, cursorPosQ);
+            if (!isPlaying) isPlaying = true;
+        },
         else => log("input: {} {s}", .{ buffer[0], buffer }),
     }
 }

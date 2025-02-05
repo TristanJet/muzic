@@ -2,7 +2,7 @@ const std = @import("std");
 const mpd = @import("mpdclient.zig");
 const util = @import("util.zig");
 
-pub const nRanked: u8 = 10;
+pub var nRanked: usize = undefined;
 
 const cutoff_denominator: u8 = 2;
 
