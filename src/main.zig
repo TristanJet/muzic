@@ -30,8 +30,11 @@ const algoArenaAllocator = algoArena.allocator();
 var respArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 const respAllocator = respArena.allocator();
 
-var heapArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-const heapAllocator = heapArena.allocator();
+var persistentArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+const persistentAllocator = persistentArena.allocator();
+
+var typingArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+const typingAllocator = typingArena.allocator();
 
 var all_searchable: []mpd.Searchable = undefined;
 var viewable_searchable: ?[]mpd.Searchable = null;
@@ -64,7 +67,7 @@ const Input_State = enum {
 var state_input = Input_State.normal;
 
 pub fn main() !void {
-    defer heapArena.deinit();
+    defer typingArena.deinit();
     defer algoArena.deinit();
 
     try window.getWindow(&tty);
@@ -145,7 +148,9 @@ pub fn main() !void {
 
     _ = try mpd.initIdle();
 
-    all_searchable = try mpd.getSearchable(heapAllocator, respAllocator);
+    all_searchable = try mpd.getSearchable(persistentAllocator, respAllocator);
+    algo.pointerToAll = &all_searchable;
+    algo.resetItems();
     log("allsearchable len: {}", .{all_searchable.len});
     respArena.deinit();
 
@@ -231,7 +236,12 @@ fn inputTyping(buffer: []u8) !void {
                 viewable_searchable = null;
                 state_input = Input_State.normal;
                 findSelected = 0;
+                algo.resetItems();
+                _ = typingArena.reset(.free_all);
                 _ = algoArena.reset(.free_all);
+                log("all items: {}\n", .{all_searchable.len});
+                log("\narena state: {} \n", .{algoArena.state.end_index});
+                log("\nlong state: {} \n", .{typingArena.state.end_index});
                 return;
             }
         },
@@ -263,12 +273,17 @@ fn inputTyping(buffer: []u8) !void {
             viewable_searchable = null;
             state_input = Input_State.normal;
             findSelected = 0;
+            algo.resetItems();
+            _ = typingArena.reset(.free_all);
             _ = algoArena.reset(.free_all);
+            log("all items: {}\n", .{all_searchable.len});
+            log("\narena state: {} \n", .{algoArena.state.end_index});
+            log("\nlong state: {} \n", .{typingArena.state.end_index});
             return;
         },
         else => {
             typeFind(buffer[0]);
-            const slice = try findTopMatches(all_searchable, &algo.items);
+            const slice = try algo.algorithm(&algoArena, typingAllocator, typed[0..]);
             viewable_searchable = slice[0..];
             // log("viewable 1: {}\n", .{viewable_searchable.?.len});
             renderState.find = true;
@@ -346,11 +361,6 @@ fn readEscapeCode(buffer: []u8) !usize {
 fn typeFind(char: u8) void {
     typeBuffer[typed.len] = char;
     typed = typeBuffer[0 .. typed.len + 1];
-}
-
-fn findTopMatches(strings: []mpd.Searchable, items: *[]mpd.Searchable) ![]mpd.Searchable {
-    if (typed.len == 1) items.* = strings[0..];
-    return try algo.algorithm(&algoArena, heapAllocator, typed[0..]);
 }
 
 fn getFindText() ![]const u8 {

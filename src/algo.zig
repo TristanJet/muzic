@@ -11,7 +11,8 @@ const mismatch_penalty: i8 = -1;
 const gap_penalty: i8 = -1;
 const exact_word_multiplier: u16 = 100;
 
-pub var items: []mpd.Searchable = undefined;
+pub var pointerToAll: *[]mpd.Searchable = undefined;
+var items: *[]mpd.Searchable = undefined;
 
 const ScoredString = struct {
     song: mpd.Searchable,
@@ -26,7 +27,7 @@ pub fn algorithm(arena: *std.heap.ArenaAllocator, heapAllocator: std.mem.Allocat
     defer scoredStrings.deinit();
     var itemArray = std.ArrayList(mpd.Searchable).init(heapAllocator);
 
-    for (items) |item| {
+    for (items.*) |item| {
         if (item.string) |string| {
             defer {
                 _ = arena.reset(.retain_capacity);
@@ -41,7 +42,9 @@ pub fn algorithm(arena: *std.heap.ArenaAllocator, heapAllocator: std.mem.Allocat
         }
     }
 
-    items = try itemArray.toOwnedSlice();
+    const new_items = try heapAllocator.dupe(mpd.Searchable, itemArray.items);
+    items = try heapAllocator.create([]mpd.Searchable);
+    items.* = new_items;
     // Sort by score (highest first)
     std.sort.pdq(ScoredString, scoredStrings.items, {}, struct {
         fn lessThan(_: void, a: ScoredString, b: ScoredString) bool {
@@ -65,7 +68,7 @@ fn contains(heapAllocator: std.mem.Allocator, arena: *std.heap.ArenaAllocator, i
     var rankedStrings = std.ArrayList(mpd.Searchable).init(heapAllocator);
 
     const inputLower = std.ascii.toLower(input);
-    for (items) |item| {
+    for (items.*) |item| {
         defer {
             _ = arena.reset(.retain_capacity);
         }
@@ -77,8 +80,14 @@ fn contains(heapAllocator: std.mem.Allocator, arena: *std.heap.ArenaAllocator, i
             }
         }
     }
-    items = try itemArray.toOwnedSlice();
+    const new_items = try heapAllocator.dupe(mpd.Searchable, itemArray.items);
+    items = try heapAllocator.create([]mpd.Searchable);
+    items.* = new_items;
     return rankedStrings.toOwnedSlice();
+}
+
+pub fn resetItems() void {
+    items = pointerToAll;
 }
 
 const Matrix = struct {
@@ -189,5 +198,4 @@ test "full function" {
         }
         std.debug.print("Total set: {}\n", .{items.len});
     }
-    std.debug.print("file: {s}\n", .{songs[0].uri});
 }
