@@ -15,6 +15,9 @@ const moveCursor = util.moveCursor;
 const log = util.log;
 const clear = util.clear;
 
+const target_fps: u64 = 60;
+const target_frame_time: u64 = 1_000_000_000 / target_fps; // nanoseconds per frame
+
 var tty: fs.File = undefined;
 var raw: os.linux.termios = undefined;
 var cooked: os.linux.termios = undefined;
@@ -44,10 +47,15 @@ var currSong = mpd.CurrentSong{};
 var panelCurrSong: window.Panel = undefined;
 var queue = mpd.Queue{};
 
+var filled_blocks: usize = 0;
+var bar_init: bool = true;
+var last_timer: u64 = 0;
+
 var panelQueue: window.Panel = undefined;
 var viewStartQ: usize = 0;
 var viewEndQ: usize = undefined;
 var cursorPosQ: u8 = 0;
+var prevCursorPos: u8 = 0;
 
 var panelFind: window.Panel = undefined;
 var typeBuffer: [256]u8 = undefined;
@@ -59,12 +67,23 @@ var renderState: RenderState = RenderState.init();
 
 var isPlaying: bool = true;
 
+const cursorDirection = enum {
+    up,
+    down,
+};
+
 const Input_State = enum {
     normal,
     typing,
 };
 
+const Search_State = enum {
+    find,
+    browse,
+};
+
 var state_input = Input_State.normal;
+var state_search = Search_State.find;
 
 pub fn main() !void {
     defer typingArena.deinit();
@@ -154,16 +173,20 @@ pub fn main() !void {
     log("allsearchable len: {}", .{all_searchable.len});
     respArena.deinit();
 
+    renderState.currentTrack = true;
     renderState.borders = true;
     renderState.queue = true;
     renderState.find = true;
+    renderState.queueEffects = true;
     var last_render_time = time.milliTimestamp();
     var last_ping_time = time.milliTimestamp();
 
     while (!quit) {
-        defer wrkfba.reset();
+        defer {
+            if (wrkfba.end_index > 0) wrkfba.reset();
+        }
+        const loop_start_time = time.milliTimestamp();
         var inputBuffer: [1]u8 = undefined;
-        const current_time = time.milliTimestamp();
         try checkInput(inputBuffer[0..]);
 
         // handle Idle update
@@ -173,38 +196,46 @@ pub fn main() !void {
             _ = try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &currSong);
             _ = try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &currSong);
             _ = try mpd.initIdle();
+            last_timer = 0;
             renderState.queue = true;
+            renderState.queueEffects = true;
+            renderState.currentTrack = true;
         } else if (idleRes == 2) {
             queue = mpd.Queue{};
             _ = try mpd.getQueue(wrkallocator, &wrkfba.end_index, &queue);
             _ = try mpd.initIdle();
             renderState.queue = true;
+            renderState.queueEffects = true;
         }
 
-        if (isRenderTime(last_render_time, current_time)) {
-            if (isPlaying) {
-                currSong.time.elapsed += @intCast(current_time - last_render_time);
-                renderState.currentTrack = true;
-            }
-            render(renderState, &wrkfba.end_index) catch |err| {
-                log("Couldn't render {}", .{err});
-                return;
-            };
-            renderState = RenderState.init();
-            last_render_time = current_time;
-        }
+        updateProgressBar(loop_start_time, last_render_time);
 
-        if ((current_time - last_ping_time) >= 25 * 1000) {
+        render(renderState, &wrkfba.end_index) catch |err| {
+            log("Couldn't render {}", .{err});
+            return;
+        };
+        renderState = RenderState.init();
+        last_render_time = time.milliTimestamp();
+
+        if ((loop_start_time - last_ping_time) >= 25 * 1000) {
             try mpd.checkConnection();
-            last_ping_time = current_time;
+            last_ping_time = loop_start_time;
         }
-        time.sleep(time.ns_per_ms * 10);
+
+        const end_time = time.nanoTimestamp();
+        const elapsed_ns = @as(u64, @intCast(end_time - loop_start_time * 1_000_000));
+        if (elapsed_ns < target_frame_time) {
+            const sleep_ns = target_frame_time - elapsed_ns;
+            time.sleep(sleep_ns);
+        }
     }
 }
 
-fn isRenderTime(last_render_time: i64, current_time: i64) bool {
-    if ((current_time - last_render_time) >= 100) return true;
-    return false;
+fn updateProgressBar(start: i64, lastrender: i64) void {
+    if (isPlaying) {
+        currSong.time.elapsed += @intCast(start - lastrender);
+        renderState.bar = true;
+    }
 }
 
 fn checkInput(buffer: []u8) !void {
@@ -223,6 +254,18 @@ fn checkInput(buffer: []u8) !void {
     try func(buffer);
 }
 
+fn onTypingExit() void {
+    typed = typeBuffer[0..0];
+    renderState.borders = true;
+    renderState.find = true;
+    viewable_searchable = null;
+    state_input = Input_State.normal;
+    findSelected = 0;
+    algo.resetItems();
+    _ = typingArena.reset(.retain_capacity);
+    _ = algoArena.reset(.free_all);
+}
+
 fn inputTyping(buffer: []u8) !void {
     switch (buffer[0]) {
         '\x1B' => {
@@ -230,15 +273,8 @@ fn inputTyping(buffer: []u8) !void {
             const escRead = try readEscapeCode(&escBuffer);
 
             if (escRead == 0) {
-                typed = typeBuffer[0..0];
-                renderState.borders = true;
-                renderState.find = true;
-                viewable_searchable = null;
-                state_input = Input_State.normal;
-                findSelected = 0;
-                algo.resetItems();
-                _ = typingArena.reset(.free_all);
-                _ = algoArena.reset(.free_all);
+                onTypingExit();
+
                 log("all items: {}\n", .{all_searchable.len});
                 log("\narena state: {} \n", .{algoArena.state.end_index});
                 log("\nlong state: {} \n", .{typingArena.state.end_index});
@@ -247,7 +283,7 @@ fn inputTyping(buffer: []u8) !void {
         },
         'n' & '\x1F' => {
             log("input: Ctrl-n\r\n", .{});
-            if (findSelected < 9) {
+            if (findSelected < viewable_searchable.?.len - 1) {
                 findSelected += 1;
             }
             renderState.find = true;
@@ -262,20 +298,18 @@ fn inputTyping(buffer: []u8) !void {
             return;
         },
         '\r', '\n' => {
-            //add song from uri
-            const addUri = viewable_searchable.?[findSelected].uri;
-            log("uri: {s}", .{addUri});
-            try mpd.addFromUri(wrkallocator, addUri);
-            typed = typeBuffer[0..0];
-            renderState.borders = true;
-            renderState.find = true;
-            renderState.queue = true;
-            viewable_searchable = null;
-            state_input = Input_State.normal;
-            findSelected = 0;
-            algo.resetItems();
-            _ = typingArena.reset(.free_all);
-            _ = algoArena.reset(.free_all);
+            switch (state_search) {
+                Search_State.find => {
+                    const addUri = viewable_searchable.?[findSelected].uri;
+                    try mpd.addFromUri(wrkallocator, addUri);
+                    log("added: {s}", .{addUri});
+                },
+                Search_State.browse => {
+                    //browse
+                },
+            }
+            onTypingExit();
+
             log("all items: {}\n", .{all_searchable.len});
             log("\narena state: {} \n", .{algoArena.state.end_index});
             log("\nlong state: {} \n", .{typingArena.state.end_index});
@@ -285,7 +319,6 @@ fn inputTyping(buffer: []u8) !void {
             typeFind(buffer[0]);
             const slice = try algo.algorithm(&algoArena, typingAllocator, typed[0..]);
             viewable_searchable = slice[0..];
-            // log("viewable 1: {}\n", .{viewable_searchable.?.len});
             renderState.find = true;
             return;
         },
@@ -302,6 +335,13 @@ fn inputNormal(buffer: []u8) !void {
         'h' => try mpd.prevSong(),
         'f' => {
             state_input = Input_State.typing;
+            state_search = Search_State.find;
+            renderState.find = true;
+            renderState.queue = true;
+        },
+        'b' => {
+            state_input = Input_State.typing;
+            state_search = Search_State.browse;
             renderState.find = true;
             renderState.queue = true;
         },
@@ -310,7 +350,7 @@ fn inputNormal(buffer: []u8) !void {
             if (cursorPosQ == 0) {
                 if (queue.len > 1) return;
             }
-            cursorPosQ -= 1;
+            moveCursorPos(&cursorPosQ, &prevCursorPos, .down);
         },
         '\x1B' => {
             var escBuffer: [8]u8 = undefined;
@@ -364,52 +404,72 @@ fn typeFind(char: u8) void {
 }
 
 fn getFindText() ![]const u8 {
-    return switch (state_input) {
-        Input_State.normal => "find",
-        Input_State.typing => try std.fmt.allocPrint(wrkallocator, "find: {s}_", .{typed}),
-    };
+    switch (state_search) {
+        Search_State.find => {
+            return switch (state_input) {
+                Input_State.normal => try std.fmt.allocPrint(wrkallocator, "b{s}{s}find", .{ sym.left_up, sym.right_up }),
+                Input_State.typing => try std.fmt.allocPrint(wrkallocator, "b{s}{s}find: {s}_", .{ sym.left_up, sym.right_up, typed }),
+            };
+        },
+        Search_State.browse => {
+            return switch (state_input) {
+                Input_State.normal => try std.fmt.allocPrint(wrkallocator, "f{s}{s}browse", .{ sym.left_up, sym.right_up }),
+                Input_State.typing => try std.fmt.allocPrint(wrkallocator, "f{s}{s}browse: {s}_", .{ sym.left_up, sym.right_up, typed }),
+            };
+        },
+    }
 }
 
 fn findRender(writer: std.fs.File.Writer, panel: window.Panel) !void {
     const area = panel.validArea();
 
-    if (viewable_searchable) |viewable| {
-        for (0..area.ylen) |i| {
-            try moveCursor(writer, area.ymin + i, area.xmin);
-            try writer.writeByteNTimes(' ', area.xlen);
-        }
-        for (viewable, 0..) |song, j| {
-            const len = if (song.string.?.len > area.xlen) area.xlen else song.string.?.len;
-            if (j == findSelected) try writer.writeAll("\x1B[7m");
-            try moveCursor(writer, area.ymin + j, area.xmin);
-            try writer.writeAll(song.string.?[0..len]);
-            if (j == findSelected) try writer.writeAll("\x1B[0m");
-        }
-    } else {
-        for (0..area.ylen) |i| {
-            try moveCursor(writer, area.ymin + i, area.xmin);
-            try writer.writeByteNTimes(' ', area.xlen);
-        }
+    switch (state_search) {
+        Search_State.find => {
+            if (viewable_searchable) |viewable| {
+                for (0..area.ylen) |i| {
+                    try moveCursor(writer, area.ymin + i, area.xmin);
+                    try writer.writeByteNTimes(' ', area.xlen);
+                }
+                for (viewable, 0..) |song, j| {
+                    const len = if (song.string.?.len > area.xlen) area.xlen else song.string.?.len;
+                    if (j == findSelected) try writer.writeAll("\x1B[7m");
+                    try moveCursor(writer, area.ymin + j, area.xmin);
+                    try writer.writeAll(song.string.?[0..len]);
+                    if (j == findSelected) try writer.writeAll("\x1B[0m");
+                }
+            } else {
+                for (0..area.ylen) |i| {
+                    try moveCursor(writer, area.ymin + i, area.xmin);
+                    try writer.writeByteNTimes(' ', area.xlen);
+                }
+            }
+        },
+        Search_State.browse => {
+            for (0..area.ylen) |i| {
+                try moveCursor(writer, area.ymin + i, area.xmin);
+                try writer.writeByteNTimes(' ', area.xlen);
+            }
+        },
     }
 }
 
 fn scrollQ(isUp: bool) void {
     if (isUp) {
         if (cursorPosQ == 0) return;
-        cursorPosQ -= 1;
+        moveCursorPos(&cursorPosQ, &prevCursorPos, .down);
         if (cursorPosQ < viewStartQ) {
             viewStartQ = cursorPosQ;
             viewEndQ = viewStartQ + panelQueue.validArea().ylen + 1;
         }
     } else {
         if (cursorPosQ >= queue.len - 1) return;
-        cursorPosQ += 1;
+        moveCursorPos(&cursorPosQ, &prevCursorPos, .up);
         if (cursorPosQ >= viewEndQ) {
             viewEndQ = cursorPosQ + 1;
             viewStartQ = viewEndQ - panelQueue.validArea().ylen - 1;
         }
     }
-    renderState.queue = true;
+    renderState.queueEffects = true;
 }
 
 fn fetchTime() !mpd.Time {
@@ -465,7 +525,9 @@ fn render(state: RenderState, end_index: *usize) !void {
     if (state.borders) try drawBorders(writer, panelFind);
     if (state.borders or state.find) try drawHeader(writer, panelFind, try getFindText());
     if (state.currentTrack) try currTrackRender(wrkallocator, writer, panelCurrSong, currSong, end_index);
+    if (state.bar) try barRender(writer, panelCurrSong, currSong, wrkallocator);
     if (state.queue) try queueRender(writer, wrkallocator, &wrkfba.end_index, panelQueue);
+    if (state.queueEffects) try queueEffectsRender(writer, wrkallocator, panelQueue);
     if (state.find) findRender(writer, panelFind) catch |err| log("Error: {}", .{err});
 }
 
@@ -536,48 +598,67 @@ fn formatSeconds(allocator: std.mem.Allocator, seconds: u64) ![]const u8 {
 fn queueRender(writer: fs.File.Writer, allocator: std.mem.Allocator, end_index: *usize, panel: window.Panel) !void {
     const start = end_index.*;
     defer end_index.* = start;
-
     const area = panel.validArea();
-    const n = area.xlen / 4; // idk why this looks good
-    const gapcol = area.xlen / 8;
 
     for (0..area.ylen) |i| {
         try moveCursor(writer, area.ymin + i, area.xmin);
         try writer.writeByteNTimes(' ', area.xlen);
     }
 
-    var highlighted = false;
     for (viewStartQ..viewEndQ, 0..) |i, j| {
         if (i >= queue.len) break;
+        const itemTime = try formatSeconds(allocator, queue.items[i].time);
+        try writeQueueLine(writer, area, area.ymin + j, queue.items[i], itemTime);
+    }
+}
+
+fn queueEffectsRender(writer: fs.File.Writer, allocator: std.mem.Allocator, panel: window.Panel) !void {
+    const area = panel.validArea();
+    var highlighted = false;
+
+    for (viewStartQ..viewEndQ, 0..) |i, j| {
+        if (i >= queue.len) break;
+        if (queue.items[i].pos == prevCursorPos and state_input == .normal) {
+            const itemTime = try formatSeconds(allocator, queue.items[i].time);
+            try writeQueueLine(writer, area, area.ymin + j, queue.items[i], itemTime);
+        }
         if (queue.items[i].pos == cursorPosQ and state_input == .normal) {
+            const itemTime = try formatSeconds(allocator, queue.items[i].time);
             try writer.writeAll("\x1B[7m");
+            try writeQueueLine(writer, area, area.ymin + j, queue.items[i], itemTime);
+            try writer.writeAll("\x1B[0m");
             highlighted = true;
         }
-        const itemTime = try formatSeconds(allocator, queue.items[i].time);
-        try moveCursor(writer, area.ymin + j, area.xmin);
-        if ((currSong.id == queue.items[i].id) and !highlighted) try writer.writeAll("\x1B[33m");
-        if (n > queue.items[i].title.len) {
-            try writer.writeAll(queue.items[i].title);
-            try writer.writeByteNTimes(' ', n - queue.items[i].title.len);
-        } else {
-            try writer.writeAll(queue.items[i].title[0..n]);
-        }
-        try writer.writeByteNTimes(' ', gapcol);
-        if (n > queue.items[i].artist.len) {
-            try writer.writeAll(queue.items[i].artist);
-            try writer.writeByteNTimes(' ', n - queue.items[i].artist.len);
-        } else {
-            try writer.writeAll(queue.items[i].artist[0..n]);
-        }
-        try writer.writeByteNTimes(' ', area.xlen - 4 - gapcol - 2 * n);
-        try moveCursor(writer, area.ymin + j, area.xmax - 4);
-        try writer.writeAll(itemTime);
-        if (highlighted) {
+        if ((currSong.id == queue.items[i].id) and !highlighted) {
+            const itemTime = try formatSeconds(allocator, queue.items[i].time);
+            try writer.writeAll("\x1B[33m");
+            try writeQueueLine(writer, area, area.ymin + j, queue.items[i], itemTime);
             try writer.writeAll("\x1B[0m");
-            highlighted = false;
         }
-        if (!highlighted and (queue.items[i].id == currSong.id)) try writer.writeAll("\x1B[0m");
+        highlighted = false;
     }
+}
+
+fn writeQueueLine(writer: fs.File.Writer, area: anytype, row: usize, song: mpd.QSong, itemTime: []const u8) !void {
+    const n = area.xlen / 4;
+    const gapcol = area.xlen / 8;
+    try moveCursor(writer, row, area.xmin);
+    if (n > song.title.len) {
+        try writer.writeAll(song.title);
+        try writer.writeByteNTimes(' ', n - song.title.len);
+    } else {
+        try writer.writeAll(song.title[0..n]);
+    }
+    try writer.writeByteNTimes(' ', gapcol);
+    if (n > song.artist.len) {
+        try writer.writeAll(song.artist);
+        try writer.writeByteNTimes(' ', n - song.artist.len);
+    } else {
+        try writer.writeAll(song.artist[0..n]);
+    }
+    try writer.writeByteNTimes(' ', area.xlen - 4 - gapcol - 2 * n);
+    try moveCursor(writer, row, area.xmax - 4);
+    try writer.writeAll(itemTime);
 }
 
 // fn scrollQ() !void {}
@@ -596,8 +677,6 @@ fn currTrackRender(
     const xmin = area.xmin;
     const xmax = area.xmax;
     const ycent = p.getYCentre();
-    const full_block = "\xe2\x96\x88"; // Unicode escape sequence for '█' (U+2588)
-    const light_shade = "\xe2\x96\x92"; // Unicode escape sequence for '▒' (U+2592)
 
     const has_album = s.album.len > 0;
     const has_trackno = s.trackno.len > 0;
@@ -616,36 +695,66 @@ fn currTrackRender(
             s.trackno,
         });
 
-    const elapsedTime = try formatMilli(allocator, s.time.elapsed);
-    const duration = try formatMilli(allocator, s.time.duration);
-    const songTime = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ elapsedTime, duration });
-
     //Include co-ords in the panel drawing?
 
     if (!firstRender) {
         try clearLine(writer, ycent, xmin, xmax);
         try clearLine(writer, ycent - 2, xmin, xmax);
     }
-    try moveCursor(writer, ycent, xmin);
-    try writer.writeAll(songTime);
     try writeLine(writer, s.artist, ycent, xmin, xmax);
     try writeLine(writer, trckalb, ycent - 2, xmin, xmax);
     if (firstRender) firstRender = false;
+}
 
-    // Draw progress bar
-    try moveCursor(writer, ycent + 2, xmin);
-    const progress_width = xmax - xmin;
-    const progress_ratio = @as(f32, @floatFromInt(s.time.elapsed)) / @as(f32, @floatFromInt(s.time.duration));
-    const filled_blocks = @as(usize, @intFromFloat(progress_ratio * @as(f32, @floatFromInt(progress_width))));
+fn barRender(writer: fs.File.Writer, panel: window.Panel, song: mpd.CurrentSong, allocator: std.mem.Allocator) !void {
+    const area = panel.validArea();
+    const ycent = panel.getYCentre();
 
-    var x: usize = 0;
-    while (x <= progress_width) : (x += 1) {
-        if (x < filled_blocks) {
+    if ((song.time.elapsed - last_timer) / 1000 > 1) {
+        last_timer = song.time.elapsed;
+        const elapsedTime = try formatMilli(allocator, song.time.elapsed);
+        const duration = try formatMilli(allocator, song.time.duration);
+        const songTime = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ elapsedTime, duration });
+
+        try moveCursor(writer, ycent, area.xmin);
+        try writer.writeAll(songTime);
+    }
+
+    const full_block = "\xe2\x96\x88"; // Unicode escape sequence for '█' (U+2588)
+    const light_shade = "\xe2\x96\x92"; // Unicode escape sequence for '▒' (U+2592)
+    const progress_width = area.xmax - area.xmin;
+    const progress_ratio = @as(f32, @floatFromInt(song.time.elapsed)) / @as(f32, @floatFromInt(song.time.duration));
+    const filled = @as(usize, @intFromFloat(progress_ratio * @as(f32, @floatFromInt(progress_width))));
+
+    if (filled == filled_blocks) return;
+    // Initialize bar if it's the first render
+    if (bar_init) {
+        try moveCursor(writer, ycent + 2, area.xmin);
+        var x: usize = 0;
+        while (x < area.xmax) : (x += 1) {
+            try writer.writeAll(light_shade);
+        }
+        bar_init = false;
+        return;
+    }
+
+    // Only update the changing blocks
+    if (filled > filled_blocks) {
+        // Fill in new blocks with full_block
+        try moveCursor(writer, ycent + 2, area.xmin + filled_blocks);
+        var x: usize = filled_blocks;
+        while (x < filled) : (x += 1) {
             try writer.writeAll(full_block);
-        } else {
+        }
+    } else {
+        // Replace full blocks with light_shade
+        try moveCursor(writer, ycent + 2, area.xmin + filled);
+        var x: usize = filled;
+        while (x < filled_blocks) : (x += 1) {
             try writer.writeAll(light_shade);
         }
     }
+    filled_blocks = filled;
 }
 
 fn writeLine(writer: anytype, txt: []const u8, y: usize, xmin: usize, xmax: usize) !void {
@@ -661,17 +770,34 @@ fn clearLine(writer: fs.File.Writer, y: usize, xmin: usize, xmax: usize) !void {
     try writer.writeByteNTimes(' ', width);
 }
 
+fn moveCursorPos(current: *u8, previous: *u8, direction: cursorDirection) void {
+    switch (direction) {
+        .up => {
+            previous.* = current.*;
+            current.* += 1;
+        },
+        .down => {
+            previous.* = current.*;
+            current.* -= 1;
+        },
+    }
+}
+
 const RenderState = struct {
     borders: bool,
     currentTrack: bool,
+    bar: bool,
     queue: bool,
+    queueEffects: bool,
     find: bool,
 
     fn init() RenderState {
         return .{
             .borders = false,
             .currentTrack = false,
+            .bar = false,
             .queue = false,
+            .queueEffects = false,
             .find = false,
         };
     }

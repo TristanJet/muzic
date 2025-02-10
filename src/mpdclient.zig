@@ -77,7 +77,7 @@ pub const CurrentSong = struct {
     }
 };
 
-const QSong = struct {
+pub const QSong = struct {
     const MAX_LEN = 64;
 
     bufTitle: [MAX_LEN]u8 = [_]u8{0} ** MAX_LEN,
