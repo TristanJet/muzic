@@ -10,8 +10,8 @@ pub const Searchable = struct {
 };
 
 pub const Time = struct {
-    elapsed: u64,
-    duration: u64,
+    elapsed: u16,
+    duration: u16,
 };
 
 pub const CurrentSong = struct {
@@ -84,7 +84,7 @@ pub const QSong = struct {
     title: []const u8,
     bufArtist: [MAX_LEN]u8 = [_]u8{0} ** MAX_LEN,
     artist: []const u8,
-    time: u64,
+    time: u16,
     pos: u8,
     id: u8,
 
@@ -401,8 +401,7 @@ pub fn getQueue(wrkallocator: std.mem.Allocator, end_index: *usize, bufQueue: *Q
                 } else if (std.mem.eql(u8, "Pos", key)) {
                     try song.setPos(value);
                 } else if (std.mem.eql(u8, "Time", key)) {
-                    const seconds = try std.fmt.parseInt(u64, value, 10);
-                    song.time = seconds;
+                    song.time = try std.fmt.parseInt(u16, value, 10);
                 } else if (std.mem.eql(u8, "Title", key)) {
                     try song.setTitle(value);
                 } else if (std.mem.eql(u8, "Artist", key)) {
@@ -454,12 +453,13 @@ pub fn getCurrentTrackTime(worallocator: std.mem.Allocator, end_index: *usize, s
             const key = line[0..separator_index];
             const value = line[separator_index + 2 ..];
 
-            if (std.mem.eql(u8, key, "elapsed")) {
-                const seconds = try std.fmt.parseFloat(f64, value);
-                song.time.elapsed = @intFromFloat(seconds * 1000);
-            } else if (std.mem.eql(u8, key, "duration")) {
-                const seconds = try std.fmt.parseFloat(f64, value);
-                song.time.duration = @intFromFloat(seconds * 1000);
+            if (std.mem.eql(u8, key, "time")) {
+                if (std.mem.indexOfScalar(u8, value, ':')) |index| {
+                    const elapsedSlice = value[0..index];
+                    song.time.elapsed = try std.fmt.parseInt(u16, elapsedSlice, 10);
+                    const durationSlice = value[index + 1 ..];
+                    song.time.duration = try std.fmt.parseInt(u16, durationSlice, 10);
+                } else return error.MpdError;
             }
         }
     }

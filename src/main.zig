@@ -47,9 +47,10 @@ var currSong = mpd.CurrentSong{};
 var panelCurrSong: window.Panel = undefined;
 var queue = mpd.Queue{};
 
-var filled_blocks: usize = 0;
+var currently_filled: usize = 0;
 var bar_init: bool = true;
-var last_timer: u64 = 0;
+var last_elapsed: u16 = 0;
+var last_second: i64 = 0;
 
 var panelQueue: window.Panel = undefined;
 var viewStartQ: usize = 0;
@@ -126,6 +127,7 @@ pub fn main() !void {
     _ = currSong.init();
     _ = try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &currSong);
     _ = try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &currSong);
+    log("elapsed: {}\nduration: {}\n", .{ currSong.time.elapsed, currSong.time.duration });
 
     panelCurrSong = window.Panel.init(true, .{
         .absolute = .{
@@ -196,7 +198,10 @@ pub fn main() !void {
             _ = try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &currSong);
             _ = try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &currSong);
             _ = try mpd.initIdle();
-            last_timer = 0;
+            last_elapsed = currSong.time.elapsed;
+            last_second = @divTrunc(loop_start_time, 1000);
+            bar_init = true;
+            renderState.bar = true;
             renderState.queue = true;
             renderState.queueEffects = true;
             renderState.currentTrack = true;
@@ -208,7 +213,7 @@ pub fn main() !void {
             renderState.queueEffects = true;
         }
 
-        updateProgressBar(loop_start_time, last_render_time);
+        updateElapsed(loop_start_time);
 
         render(renderState, &wrkfba.end_index) catch |err| {
             log("Couldn't render {}", .{err});
@@ -231,10 +236,14 @@ pub fn main() !void {
     }
 }
 
-fn updateProgressBar(start: i64, lastrender: i64) void {
+fn updateElapsed(start: i64) void {
     if (isPlaying) {
-        currSong.time.elapsed += @intCast(start - lastrender);
-        renderState.bar = true;
+        const current_second = @divTrunc(start, 1000);
+        if (current_second > last_second) {
+            currSong.time.elapsed += 1;
+            last_second = current_second;
+            renderState.bar = true;
+        }
     }
 }
 
@@ -258,6 +267,7 @@ fn onTypingExit() void {
     typed = typeBuffer[0..0];
     renderState.borders = true;
     renderState.find = true;
+    renderState.queueEffects = true;
     viewable_searchable = null;
     state_input = Input_State.normal;
     findSelected = 0;
@@ -698,7 +708,7 @@ fn currTrackRender(
     //Include co-ords in the panel drawing?
 
     if (!firstRender) {
-        try clearLine(writer, ycent, xmin, xmax);
+        try clearLine(writer, ycent, xmin + 11, xmax);
         try clearLine(writer, ycent - 2, xmin, xmax);
     }
     try writeLine(writer, s.artist, ycent, xmin, xmax);
@@ -710,39 +720,52 @@ fn barRender(writer: fs.File.Writer, panel: window.Panel, song: mpd.CurrentSong,
     const area = panel.validArea();
     const ycent = panel.getYCentre();
 
-    if ((song.time.elapsed - last_timer) / 1000 > 1) {
-        last_timer = song.time.elapsed;
-        const elapsedTime = try formatMilli(allocator, song.time.elapsed);
-        const duration = try formatMilli(allocator, song.time.duration);
-        const songTime = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ elapsedTime, duration });
-
-        try moveCursor(writer, ycent, area.xmin);
-        try writer.writeAll(songTime);
-    }
-
     const full_block = "\xe2\x96\x88"; // Unicode escape sequence for '█' (U+2588)
     const light_shade = "\xe2\x96\x92"; // Unicode escape sequence for '▒' (U+2592)
     const progress_width = area.xmax - area.xmin;
     const progress_ratio = @as(f32, @floatFromInt(song.time.elapsed)) / @as(f32, @floatFromInt(song.time.duration));
     const filled = @as(usize, @intFromFloat(progress_ratio * @as(f32, @floatFromInt(progress_width))));
 
-    if (filled == filled_blocks) return;
     // Initialize bar if it's the first render
     if (bar_init) {
+        //time
+        const elapsedTime = try formatSeconds(allocator, song.time.elapsed);
+        const duration = try formatSeconds(allocator, song.time.duration);
+        const timeFormatted = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ elapsedTime, duration });
+        try moveCursor(writer, ycent, area.xmin);
+        try writer.writeAll(timeFormatted);
         try moveCursor(writer, ycent + 2, area.xmin);
+        //draw whole bar
         var x: usize = 0;
-        while (x < area.xmax) : (x += 1) {
-            try writer.writeAll(light_shade);
+        while (x < progress_width) : (x += 1) {
+            if (x < filled) {
+                try writer.writeAll(full_block);
+            } else {
+                try writer.writeAll(light_shade);
+            }
         }
+        currently_filled = filled;
         bar_init = false;
         return;
     }
 
+    if (song.time.elapsed != last_elapsed) {
+        last_elapsed = song.time.elapsed;
+
+        //time
+        const elapsedTime = try formatSeconds(allocator, song.time.elapsed);
+        const duration = try formatSeconds(allocator, song.time.duration);
+        const timeFormatted = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ elapsedTime, duration });
+        try moveCursor(writer, ycent, area.xmin);
+        try writer.writeAll(timeFormatted);
+    }
+
+    if (filled == currently_filled) return;
     // Only update the changing blocks
-    if (filled > filled_blocks) {
+    if (filled > currently_filled) {
         // Fill in new blocks with full_block
-        try moveCursor(writer, ycent + 2, area.xmin + filled_blocks);
-        var x: usize = filled_blocks;
+        try moveCursor(writer, ycent + 2, area.xmin + currently_filled);
+        var x: usize = currently_filled;
         while (x < filled) : (x += 1) {
             try writer.writeAll(full_block);
         }
@@ -750,11 +773,11 @@ fn barRender(writer: fs.File.Writer, panel: window.Panel, song: mpd.CurrentSong,
         // Replace full blocks with light_shade
         try moveCursor(writer, ycent + 2, area.xmin + filled);
         var x: usize = filled;
-        while (x < filled_blocks) : (x += 1) {
+        while (x < currently_filled) : (x += 1) {
             try writer.writeAll(light_shade);
         }
     }
-    filled_blocks = filled;
+    currently_filled = filled;
 }
 
 fn writeLine(writer: anytype, txt: []const u8, y: usize, xmin: usize, xmax: usize) !void {
