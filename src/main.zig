@@ -65,7 +65,7 @@ pub fn main() !void {
 
         .queue = initial_queue,
         .viewStartQ = 0,
-        .viewEndQ = undefined,
+        .viewEndQ = window.panels.queue.validArea().ylen + 1,
         .cursorPosQ = 0,
         .prevCursorPos = 0,
 
