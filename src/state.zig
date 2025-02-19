@@ -1,0 +1,130 @@
+const std = @import("std");
+const mpd = @import("mpdclient.zig");
+const input = @import("input.zig");
+const log = @import("util.zig").log;
+const RenderState = @import("render.zig").RenderState;
+const expect = std.testing.expect;
+
+// Core application state
+pub const App = struct {
+    event_buffer: EventBuffer,
+    state: State,
+
+    // Constructor
+    pub fn init(initial_state: State) App {
+        return App{
+            .event_buffer = EventBuffer{},
+            .state = initial_state,
+        };
+    }
+
+    pub fn appendEvent(self: *App, event: Event) BufferError!void {
+        if (self.event_buffer.len >= self.event_buffer.buffer.len) {
+            return BufferError.BufferFull;
+        }
+        self.event_buffer.buffer[self.event_buffer.len] = event;
+        self.event_buffer.len += 1;
+    }
+    // Update function that processes events
+    pub fn updateState(self: *App, render_state: *RenderState) void {
+        // Process all events in the buffer
+        var i: u8 = 0;
+        while (i < self.event_buffer.len) : (i += 1) {
+            self.handleEvent(self.event_buffer.buffer[i], render_state);
+        }
+        // Clear the buffer after processing
+        self.event_buffer.len = 0;
+    }
+
+    // Handle individual events
+    fn handleEvent(self: *App, event: Event, render_state: *RenderState) void {
+        switch (event) {
+            .input_char => |char| input.handleInput(char, &self.state, render_state),
+            .idle => |idle_type| log("idle event! {}", .{idle_type}),
+            // .time => |time| log("time event {}", .{time}),
+            .time => {},
+        }
+    }
+};
+
+pub const Event = union(EventType) {
+    input_char: u8,
+    idle: Idle,
+    time: i64,
+};
+
+const BufferError = error{
+    BufferFull,
+};
+
+pub const State = struct {
+    quit: bool,
+    first_render: bool,
+
+    song: mpd.CurrentSong,
+    isPlaying: bool,
+    last_second: i64,
+    last_elapsed: u16,
+    bar_init: bool,
+    currently_filled: usize,
+
+    queue: mpd.Queue,
+    viewStartQ: usize,
+    viewEndQ: usize,
+    cursorPosQ: u8,
+    prevCursorPos: u8,
+
+    typing_display: TypingDisplay,
+    find_cursor_pos: u8,
+    viewable_searchable: ?[]mpd.Searchable,
+
+    input_state: input.Input_State,
+    search_state: input.Search_State,
+};
+
+const EventBuffer = struct {
+    buffer: [3]Event = undefined,
+    len: u8 = 0,
+};
+
+const EventType = enum {
+    input_char,
+    idle,
+    time,
+};
+
+pub const Idle = enum {
+    player,
+    queue,
+};
+
+pub const TypingDisplay = struct {
+    typeBuffer: [256]u8,
+    typed: []const u8,
+
+    pub fn init(self: *TypingDisplay) void {
+        self.typeBuffer = undefined;
+        self.typed = self.typeBuffer[0..0];
+    }
+
+    pub fn reset(self: *TypingDisplay) void {
+        self.typed = self.typeBuffer[0..0];
+    }
+};
+
+// test "event buffer" {
+//     var buf: [256]u8 = undefined;
+//     event_buffer = EventBuffer{};
+//     const event = Event{ .input_char = 'H' };
+//     try event_buffer.append(event);
+//     const event2 = Event{ .idle = Idle.player };
+//     try event_buffer.append(event2);
+//     for (0..event_buffer.len) |i| {
+//         const event_type: []const u8 = switch (event_buffer.buffer[i]) {
+//             EventType.input_char => |value| try std.fmt.bufPrint(&buf, "char: {c}", .{value}),
+//             EventType.idle => |value| try std.fmt.bufPrint(&buf, "mpd: {}", .{value}),
+//             EventType.time => |value| try std.fmt.bufPrint(&buf, "time: {}", .{value}),
+//         };
+//         std.debug.print("event type: {s}\n", .{event_type});
+//     }
+// }

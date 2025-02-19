@@ -1,8 +1,17 @@
 const std = @import("std");
 const util = @import("util.zig");
+const state = @import("state.zig");
+const Idle = state.Idle;
+const Event = state.Event;
+const assert = std.debug.assert;
 const net = std.net;
-pub var cmdStream: std.net.Stream = undefined;
-pub var idleStream: std.net.Stream = undefined;
+var cmdStream: std.net.Stream = undefined;
+var idleStream: std.net.Stream = undefined;
+
+const StreamType = enum {
+    command,
+    idle,
+};
 
 pub const Searchable = struct {
     string: ?[]const u8,
@@ -159,9 +168,13 @@ pub const Queue = struct {
     }
 };
 
-pub fn connect(buffer: []u8, stream: *std.net.Stream, nonblock: bool) !void {
+pub fn connect(buffer: []u8, stream_type: StreamType, nonblock: bool) !void {
     const peer = try net.Address.parseIp4("127.0.0.1", 8538);
     // Connect to peer
+    const stream = switch (stream_type) {
+        .idle => &idleStream,
+        .command => &cmdStream,
+    };
 
     stream.* = try net.tcpConnectToAddress(peer);
 
@@ -198,7 +211,11 @@ fn connSend(data: []const u8, stream: *std.net.Stream) !void {
     // try writer.writeAll("hello zig");
 }
 
-pub fn disconnect(stream: *std.net.Stream) void {
+pub fn disconnect(stream_type: StreamType) void {
+    const stream = switch (stream_type) {
+        .command => cmdStream,
+        .idle => idleStream,
+    };
     stream.close();
 }
 
@@ -206,13 +223,11 @@ pub fn initIdle() !void {
     try connSend("idle player playlist\n", &idleStream);
 }
 
-pub fn checkIdle(allocator: std.mem.Allocator, end_index: *usize) !u8 {
-    var buf_reader = std.io.bufferedReader(idleStream.reader());
-    var reader = buf_reader.reader();
-    const startPoint = end_index.*;
+pub fn checkIdle(buffer: []u8) !?Event {
+    assert(buffer.len == 18);
+    var reader = idleStream.reader();
     while (true) {
-        defer end_index.* = startPoint;
-        const line = reader.readUntilDelimiterAlloc(allocator, '\n', 18) catch |err| switch (err) {
+        const line = reader.readUntilDelimiter(buffer, '\n') catch |err| switch (err) {
             error.WouldBlock => return 0, // No data available
             error.EndOfStream => return 0, // EOF
             else => return err,
@@ -223,11 +238,11 @@ pub fn checkIdle(allocator: std.mem.Allocator, end_index: *usize) !u8 {
         if (std.mem.indexOf(u8, line, ": ")) |separator_index| {
             const value = line[separator_index + 2 ..];
 
-            if (std.mem.eql(u8, value, "player")) return 1;
-            if (std.mem.eql(u8, value, "playlist")) return 2;
+            if (std.mem.eql(u8, value, "player")) return Event{ .idle = Idle.player };
+            if (std.mem.eql(u8, value, "playlist")) return Event{ .idle = Idle.queue };
         }
     }
-    return 0;
+    return null;
 }
 
 pub fn togglePlaystate(isPlaying: bool) !bool {

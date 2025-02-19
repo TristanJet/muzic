@@ -1,0 +1,219 @@
+const std = @import("std");
+const term = @import("terminal.zig");
+const mpd = @import("mpdclient.zig");
+const algo = @import("algo.zig");
+const state = @import("state.zig");
+const alloc = @import("allocators.zig");
+const window = @import("window.zig");
+const mem = std.mem;
+const assert = std.debug.assert;
+const RenderState = @import("render.zig").RenderState;
+
+const log = @import("util.zig").log;
+const wrkallocator = alloc.wrkallocator;
+
+var app: *state.State = undefined;
+var render_state: *RenderState = undefined;
+var current: state.State = undefined;
+//Current is only good so long as mutations aren't dependent on mutations
+//that occur during render() function lifetime
+
+pub const Input_State = enum {
+    normal,
+    typing,
+};
+
+const cursorDirection = enum {
+    up,
+    down,
+};
+
+pub const Search_State = enum {
+    find,
+    browse,
+};
+
+pub fn checkInputEvent(buffer: []u8) !?state.Event {
+    assert(buffer.len == 1);
+    const bytes_read: usize = try term.readBytes(buffer);
+    if (bytes_read < 1) return null;
+
+    return state.Event{ .input_char = buffer[0] };
+}
+
+pub fn handleInput(char: u8, app_state: *state.State, render_state_: *RenderState) void {
+    app = app_state;
+    current = app_state.*;
+    render_state = render_state_;
+    switch (app_state.input_state) {
+        .normal => {
+            inputNormal(char) catch unreachable;
+        },
+        .typing => {
+            inputTyping(char) catch unreachable;
+        },
+    }
+}
+
+fn onTypingExit() void {
+    app.typing_display.reset();
+    render_state.borders = true;
+    render_state.find = true;
+    render_state.queueEffects = true;
+    app.viewable_searchable = null;
+    app.input_state = .normal;
+    app.find_cursor_pos = 0;
+    algo.resetItems();
+    _ = alloc.typingArena.reset(.retain_capacity);
+    _ = alloc.algoArena.reset(.free_all);
+}
+
+fn inputTyping(char: u8) !void {
+    switch (char) {
+        '\x1B' => {
+            var escBuffer: [8]u8 = undefined;
+            const escRead = try term.readEscapeCode(&escBuffer);
+
+            if (escRead == 0) {
+                onTypingExit();
+
+                // log("all items: {}\n", .{all_searchable.len});
+                // log("\narena state: {} \n", .{algoArena.state.end_index});
+                // log("\nlong state: {} \n", .{typingArena.state.end_index});
+                return;
+            }
+        },
+        'n' & '\x1F' => {
+            log("input: Ctrl-n\r\n", .{});
+            if (current.find_cursor_pos < current.viewable_searchable.?.len - 1) {
+                app.find_cursor_pos += 1;
+            }
+            render_state.find = true;
+            return;
+        },
+        'p' & '\x1F' => {
+            log("input: Ctrl-p\r\n", .{});
+            if (current.find_cursor_pos > 0) {
+                app.find_cursor_pos -= 1;
+            }
+            render_state.find = true;
+            return;
+        },
+        '\r', '\n' => {
+            switch (current.search_state) {
+                Search_State.find => {
+                    const addUri = current.viewable_searchable.?[current.find_cursor_pos].uri;
+                    try mpd.addFromUri(wrkallocator, addUri);
+                    log("added: {s}", .{addUri});
+                },
+                Search_State.browse => {
+                    //browse
+                },
+            }
+            onTypingExit();
+
+            // log("all items: {}\n", .{.len});
+            // log("\narena state: {} \n", .{algoArena.state.end_index});
+            // log("\nlong state: {} \n", .{typingArena.state.end_index});
+            return;
+        },
+        else => {
+            typeFind(char);
+            const slice = try algo.algorithm(&alloc.algoArena, alloc.typingAllocator, current.typing_display.typed);
+            app.viewable_searchable = slice[0..];
+            render_state.find = true;
+            return;
+        },
+    }
+}
+
+fn inputNormal(char: u8) !void {
+    switch (char) {
+        'q' => app.quit = true,
+        'j' => scrollQ(false),
+        'k' => scrollQ(true),
+        'p' => app.isPlaying = try mpd.togglePlaystate(current.isPlaying),
+        'l' => try mpd.nextSong(),
+        'h' => try mpd.prevSong(),
+        'f' => {
+            app.input_state = .typing;
+            app.search_state = .find;
+            render_state.find = true;
+            render_state.queue = true;
+        },
+        'b' => {
+            app.input_state = .typing;
+            app.search_state = .browse;
+            render_state.find = true;
+            render_state.queue = true;
+        },
+        'x' => {
+            try mpd.rmFromPos(wrkallocator, current.cursorPosQ);
+            if (current.cursorPosQ == 0) {
+                if (current.queue.len > 1) return;
+            }
+            moveCursorPos(&app.cursorPosQ, &app.prevCursorPos, .down);
+        },
+        '\x1B' => {
+            var escBuffer: [8]u8 = undefined;
+            const escRead = try term.readEscapeCode(&escBuffer);
+
+            if (escRead == 0) {
+                app.quit = true;
+                return;
+            }
+            if (mem.eql(u8, escBuffer[0..escRead], "[A")) {
+                // log("input: arrow up\r\n", .{});
+            } else if (mem.eql(u8, escBuffer[0..escRead], "[B")) {
+                // log("input: arrow down\r\n", .{});
+            } else if (mem.eql(u8, escBuffer[0..escRead], "[C")) {
+                try mpd.seekCur(true);
+            } else if (mem.eql(u8, escBuffer[0..escRead], "[D")) {
+                try mpd.seekCur(false);
+            } else {
+                log("unknown escape sequence", .{});
+            }
+        },
+        '\n', '\r' => {
+            try mpd.playByPos(wrkallocator, current.cursorPosQ);
+            if (!current.isPlaying) app.isPlaying = true;
+        },
+        else => log("input: {c}", .{char}),
+    }
+}
+
+fn typeFind(char: u8) void {
+    app.typing_display.typeBuffer[current.typing_display.typed.len] = char;
+    app.typing_display.typed = app.typing_display.typeBuffer[0 .. current.typing_display.typed.len + 1];
+}
+
+pub fn scrollQ(isUp: bool) void {
+    if (isUp) {
+        if (current.cursorPosQ == 0) return;
+        moveCursorPos(&app.cursorPosQ, &app.prevCursorPos, .down);
+        if (current.cursorPosQ < current.viewStartQ) {
+            app.viewStartQ = current.cursorPosQ;
+            app.viewEndQ = app.viewStartQ + window.panels.queue.validArea().ylen + 1;
+        }
+    } else {
+        if (current.cursorPosQ >= current.queue.len - 1) return;
+        moveCursorPos(&app.cursorPosQ, &app.prevCursorPos, .up);
+        if (current.cursorPosQ >= current.viewEndQ) {
+            app.viewEndQ = current.cursorPosQ + 1;
+            app.viewStartQ = app.viewEndQ - window.panels.queue.validArea().ylen - 1;
+        }
+    }
+    render_state.queueEffects = true;
+}
+fn moveCursorPos(current_dir: *u8, previous_dir: *u8, direction: cursorDirection) void {
+    switch (direction) {
+        .up => {
+            previous_dir.* = current_dir.*;
+            current_dir.* += 1;
+        },
+        .down => {
+            previous_dir.* = current_dir.*;
+            current_dir.* -= 1;
+        },
+    }
+}

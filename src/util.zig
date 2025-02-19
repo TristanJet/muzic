@@ -1,4 +1,5 @@
 const fs = @import("std").fs;
+const terminal = @import("terminal.zig");
 
 var logtty: fs.File = undefined;
 var logger: fs.File.Writer = undefined;
@@ -9,21 +10,12 @@ pub fn init() !void {
         .{ .mode = fs.File.OpenMode.write_only },
     );
     logger = logtty.writer();
-    try clear(logger);
-}
-
-pub fn clear(writer: anytype) !void {
-    try writer.writeAll("\x1B[2J");
+    try terminal.clear();
 }
 
 pub fn deinit() !void {
-    try moveCursor(logtty.writer(), 0, 0);
-    // try clear(logtty);
+    try terminal.moveCursor(0, 0);
     logtty.close();
-}
-
-pub fn moveCursor(writer: anytype, row: usize, col: usize) !void {
-    _ = try writer.print("\x1B[{};{}H", .{ row + 1, col + 1 });
 }
 
 pub fn log(comptime format: []const u8, args: anytype) void {
