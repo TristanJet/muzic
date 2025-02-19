@@ -16,7 +16,7 @@ const ReadError = error{
 
 pub fn init() !void {
     try getTty();
-    try cook();
+    try uncook();
     try setNonBlock();
 }
 
@@ -65,6 +65,25 @@ fn setNonBlock() !void {
 }
 
 pub fn deinit() !void {
+    _ = os.linux.tcgetattr(tty.handle, &cooked);
+    errdefer cook() catch {};
+
+    raw = cooked;
+    inline for (.{ "ECHO", "ICANON", "ISIG", "IEXTEN" }) |flag| {
+        @field(raw.lflag, flag) = false;
+    }
+    inline for (.{ "IXON", "ICRNL", "BRKINT", "INPCK", "ISTRIP" }) |flag| {
+        @field(raw.iflag, flag) = false;
+    }
+    raw.cc[@intFromEnum(os.linux.V.TIME)] = 0;
+    raw.cc[@intFromEnum(os.linux.V.MIN)] = 1;
+    _ = os.linux.tcsetattr(tty.handle, .FLUSH, &raw);
+
+    try hideCursor();
+    try clear();
+}
+
+fn uncook() !void {
     _ = os.linux.tcgetattr(tty.handle, &cooked);
     errdefer cook() catch {};
 
