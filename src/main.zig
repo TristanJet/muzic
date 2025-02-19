@@ -24,6 +24,9 @@ const wrkbuf = &alloc.wrkbuf;
 pub fn main() !void {
     defer alloc.deinit();
 
+    try util.init();
+    defer util.deinit() catch {};
+
     try mpd.connect(wrkbuf[0..64], .command, false);
     defer mpd.disconnect(.command);
 
@@ -34,9 +37,6 @@ pub fn main() !void {
     defer term.deinit() catch {};
 
     try window.init();
-
-    try util.init();
-    defer util.deinit() catch {};
 
     initial_song.init();
     _ = try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &initial_song);

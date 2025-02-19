@@ -119,6 +119,6 @@ pub fn clearLine(y: usize, xmin: usize, xmax: usize) !void {
 pub fn moveCursor(row: usize, col: usize) !void {
     _ = try writer.print("\x1B[{};{}H", .{ row + 1, col + 1 });
 }
-pub fn clear() !void {
+fn clear() !void {
     try writer.writeAll("\x1B[2J");
 }

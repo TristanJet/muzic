@@ -1,6 +1,4 @@
 const fs = @import("std").fs;
-const terminal = @import("terminal.zig");
-
 var logtty: fs.File = undefined;
 var logger: fs.File.Writer = undefined;
 
@@ -10,11 +8,10 @@ pub fn init() !void {
         .{ .mode = fs.File.OpenMode.write_only },
     );
     logger = logtty.writer();
-    try terminal.clear();
+    try logger.writeAll("\x1B[2J");
 }
 
 pub fn deinit() !void {
-    try terminal.moveCursor(0, 0);
     logtty.close();
 }
 
