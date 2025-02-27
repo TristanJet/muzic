@@ -12,8 +12,6 @@ pub fn build(b: *std.Build) void {
     });
 
     exe.linkLibC();
-    exe.linkSystemLibrary("mpdclient");
-    exe.addIncludePath(b.path("./include/mpd/"));
 
     b.installArtifact(exe);
 

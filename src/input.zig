@@ -119,8 +119,10 @@ fn inputTyping(char: u8) !void {
         },
         else => {
             typeFind(char);
-            const slice = try algo.algorithm(&alloc.algoArena, alloc.typingAllocator, current.typing_display.typed);
+            log("typed: {s}\n", .{app.typing_display.typed});
+            const slice = try algo.algorithm(&alloc.algoArena, alloc.typingAllocator, app.typing_display.typed);
             app.viewable_searchable = slice[0..];
+            log("viewable string: {s}\n", .{slice[0].string.?});
             render_state.find = true;
             return;
         },

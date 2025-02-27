@@ -231,8 +231,9 @@ fn barRender(writer: *fs.File.Writer, panel: window.Panel, song: mpd.CurrentSong
     const full_block = "\xe2\x96\x88"; // Unicode escape sequence for '█' (U+2588)
     const light_shade = "\xe2\x96\x92"; // Unicode escape sequence for '▒' (U+2592)
     const progress_width = area.xmax - area.xmin;
-    const progress_ratio = @as(f32, @floatFromInt(song.time.elapsed)) / @as(f32, @floatFromInt(song.time.duration));
-    const filled = @as(usize, @intFromFloat(progress_ratio * @as(f32, @floatFromInt(progress_width))));
+    const progress_ratio = if (song.time.duration == 0) 0.0 else @as(f32, @floatFromInt(song.time.elapsed)) / @as(f32, @floatFromInt(song.time.duration));
+    const float_filled = progress_ratio * @as(f32, @floatFromInt(progress_width));
+    const filled = if (float_filled < 0.0) 0 else if (float_filled > @as(f32, @floatFromInt(progress_width))) progress_width else @as(usize, @intFromFloat(float_filled));
 
     // Initialize bar if it's the first render
     if (current.bar_init) {

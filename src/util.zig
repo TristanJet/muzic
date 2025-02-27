@@ -4,7 +4,7 @@ var logger: fs.File.Writer = undefined;
 
 pub fn init() !void {
     logtty = try fs.cwd().openFile(
-        "/dev/pts/1",
+        "/dev/ttys001",
         .{ .mode = fs.File.OpenMode.write_only },
     );
     logger = logtty.writer();

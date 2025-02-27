@@ -17,6 +17,8 @@ var initial_song: mpd.CurrentSong = undefined;
 var initial_queue: mpd.Queue = mpd.Queue{};
 var initial_typing: state.TypingDisplay = undefined;
 
+var all_searchable: []mpd.Searchable = undefined;
+
 const wrkallocator = alloc.wrkallocator;
 const wrkfba = &alloc.wrkfba;
 const wrkbuf = &alloc.wrkbuf;
@@ -45,7 +47,7 @@ pub fn main() !void {
 
     initial_typing.init();
 
-    const all_searchable = try mpd.getSearchable(alloc.persistentAllocator, alloc.respAllocator);
+    all_searchable = try mpd.getSearchable(alloc.persistentAllocator, alloc.respAllocator);
     alloc.respArena.deinit();
 
     algo.pointerToAll = &all_searchable;
