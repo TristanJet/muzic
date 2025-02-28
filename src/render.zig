@@ -36,55 +36,54 @@ pub const RenderState = struct {
 };
 
 pub fn render(app_state: *state.State, render_state_: *RenderState, panels: window.Panels, end_index: *usize) !void {
-    const writer = term.getWriter();
     render_state = render_state_;
     app = app_state;
     current = app_state.*;
-    if (render_state.borders) try drawBorders(writer, panels.curr_song.area);
-    if (render_state.borders) try drawBorders(writer, panels.queue.area);
-    if (render_state.borders) try drawHeader(writer, panels.queue.area, "queue");
-    if (render_state.borders) try drawBorders(writer, panels.find.area);
-    if (render_state.borders or render_state.find) try drawHeader(writer, panels.find.area, try getFindText());
+    if (render_state.borders) try drawBorders(panels.curr_song.area);
+    if (render_state.borders) try drawBorders(panels.queue.area);
+    if (render_state.borders) try drawHeader(panels.queue.area, "queue");
+    if (render_state.borders) try drawBorders(panels.find.area);
+    if (render_state.borders or render_state.find) try drawHeader(panels.find.area, try getFindText());
     if (render_state.currentTrack) try currTrackRender(wrkallocator, panels.curr_song, app.song, end_index);
-    if (render_state.bar) try barRender(writer, panels.curr_song, app.song, wrkallocator);
-    if (render_state.queue) try queueRender(writer, wrkallocator, &alloc.wrkfba.end_index, panels.queue.validArea());
-    if (render_state.queueEffects) try queueEffectsRender(writer, wrkallocator, panels.queue.validArea());
-    if (render_state.find) try findRender(writer, panels.find);
+    if (render_state.bar) try barRender(panels.curr_song, app.song, wrkallocator);
+    if (render_state.queue) try queueRender(wrkallocator, &alloc.wrkfba.end_index, panels.queue.validArea());
+    if (render_state.queueEffects) try queueEffectsRender(wrkallocator, panels.queue.validArea());
+    if (render_state.find) try findRender(panels.find);
 }
 
-fn drawBorders(writer: *fs.File.Writer, p: window.Area) !void {
+fn drawBorders(p: window.Area) !void {
     try term.moveCursor(p.ymin, p.xmin);
-    try writer.writeAll(sym.round_left_up);
+    try term.writeAll(sym.round_left_up);
     var x: usize = p.xmin + 1;
     while (x != p.xmax) {
-        try writer.writeAll(sym.h_line);
+        try term.writeAll(sym.h_line);
         x += 1;
     }
-    try writer.writeAll(sym.round_right_up);
+    try term.writeAll(sym.round_right_up);
     var y: usize = p.ymin + 1;
     while (y != p.ymax) {
         try term.moveCursor(y, p.xmin);
-        try writer.writeAll(sym.v_line);
+        try term.writeAll(sym.v_line);
         try term.moveCursor(y, p.xmax);
-        try writer.writeAll(sym.v_line);
+        try term.writeAll(sym.v_line);
         y += 1;
     }
     try term.moveCursor(p.ymax, p.xmin);
-    try writer.writeAll(sym.round_left_down);
+    try term.writeAll(sym.round_left_down);
     x = p.xmin + 1;
     while (x != p.xmax) {
-        try writer.writeAll(sym.h_line);
+        try term.writeAll(sym.h_line);
         x += 1;
     }
-    try writer.writeAll(sym.round_right_down);
+    try term.writeAll(sym.round_right_down);
 }
 
-fn drawHeader(writer: *fs.File.Writer, p: window.Area, text: []const u8) !void {
+fn drawHeader(p: window.Area, text: []const u8) !void {
     const x = p.xmin + 1;
     try term.moveCursor(p.ymin, x);
-    try writer.writeAll(sym.right_up);
-    try writer.writeAll(text);
-    try writer.writeAll(sym.left_up);
+    try term.writeAll(sym.right_up);
+    try term.writeAll(text);
+    try term.writeAll(sym.left_up);
 }
 
 fn formatMilli(allocator: std.mem.Allocator, milli: u64) ![]const u8 {
@@ -116,68 +115,68 @@ fn formatSeconds(allocator: std.mem.Allocator, seconds: u64) ![]const u8 {
     );
 }
 
-fn queueRender(writer: *fs.File.Writer, allocator: std.mem.Allocator, end_index: *usize, area: window.Area) !void {
+fn queueRender(allocator: std.mem.Allocator, end_index: *usize, area: window.Area) !void {
     const start = end_index.*;
     defer end_index.* = start;
 
     for (0..area.ylen) |i| {
         try term.moveCursor(area.ymin + i, area.xmin);
-        try writer.writeByteNTimes(' ', area.xlen);
+        try term.writeByteNTimes(' ', area.xlen);
     }
 
     for (current.viewStartQ..current.viewEndQ, 0..) |i, j| {
         if (i >= current.queue.len) break;
         const itemTime = try formatSeconds(allocator, current.queue.items[i].time);
-        try writeQueueLine(writer, area, area.ymin + j, current.queue.items[i], itemTime);
+        try writeQueueLine(area, area.ymin + j, current.queue.items[i], itemTime);
     }
 }
 
-fn queueEffectsRender(writer: *fs.File.Writer, allocator: std.mem.Allocator, area: window.Area) !void {
+fn queueEffectsRender(allocator: std.mem.Allocator, area: window.Area) !void {
     var highlighted = false;
 
     for (current.viewStartQ..current.viewEndQ, 0..) |i, j| {
         if (i >= current.queue.len) break;
         if (current.queue.items[i].pos == current.prevCursorPos and current.input_state == .normal) {
             const itemTime = try formatSeconds(allocator, current.queue.items[i].time);
-            try writeQueueLine(writer, area, area.ymin + j, current.queue.items[i], itemTime);
+            try writeQueueLine(area, area.ymin + j, current.queue.items[i], itemTime);
         }
         if (current.queue.items[i].pos == current.cursorPosQ and current.input_state == .normal) {
             const itemTime = try formatSeconds(allocator, current.queue.items[i].time);
-            try writer.writeAll("\x1B[7m");
-            try writeQueueLine(writer, area, area.ymin + j, current.queue.items[i], itemTime);
-            try writer.writeAll("\x1B[0m");
+            try term.highlight();
+            try writeQueueLine(area, area.ymin + j, current.queue.items[i], itemTime);
+            try term.unhighlight();
             highlighted = true;
         }
         if ((current.song.id == current.queue.items[i].id) and !highlighted) {
             const itemTime = try formatSeconds(allocator, current.queue.items[i].time);
-            try writer.writeAll("\x1B[33m");
-            try writeQueueLine(writer, area, area.ymin + j, current.queue.items[i], itemTime);
-            try writer.writeAll("\x1B[0m");
+            try term.setColor("\x1B[33m");
+            try writeQueueLine(area, area.ymin + j, current.queue.items[i], itemTime);
+            try term.attributeReset();
         }
         highlighted = false;
     }
 }
 
-fn writeQueueLine(writer: *fs.File.Writer, area: window.Area, row: usize, song: mpd.QSong, itemTime: []const u8) !void {
+fn writeQueueLine(area: window.Area, row: usize, song: mpd.QSong, itemTime: []const u8) !void {
     const n = area.xlen / 4;
     const gapcol = area.xlen / 8;
     try term.moveCursor(row, area.xmin);
     if (n > song.title.len) {
-        try writer.writeAll(song.title);
-        try writer.writeByteNTimes(' ', n - song.title.len);
+        try term.writeAll(song.title);
+        try term.writeByteNTimes(' ', n - song.title.len);
     } else {
-        try writer.writeAll(song.title[0..n]);
+        try term.writeAll(song.title[0..n]);
     }
-    try writer.writeByteNTimes(' ', gapcol);
+    try term.writeByteNTimes(' ', gapcol);
     if (n > song.artist.len) {
-        try writer.writeAll(song.artist);
-        try writer.writeByteNTimes(' ', n - song.artist.len);
+        try term.writeAll(song.artist);
+        try term.writeByteNTimes(' ', n - song.artist.len);
     } else {
-        try writer.writeAll(song.artist[0..n]);
+        try term.writeAll(song.artist[0..n]);
     }
-    try writer.writeByteNTimes(' ', area.xlen - 4 - gapcol - 2 * n);
+    try term.writeByteNTimes(' ', area.xlen - 4 - gapcol - 2 * n);
     try term.moveCursor(row, area.xmax - 4);
-    try writer.writeAll(itemTime);
+    try term.writeAll(itemTime);
 }
 
 // fn scrollQ() !void {}
@@ -224,7 +223,7 @@ fn currTrackRender(
     if (current.first_render) current.first_render = false;
 }
 
-fn barRender(writer: *fs.File.Writer, panel: window.Panel, song: mpd.CurrentSong, allocator: std.mem.Allocator) !void {
+fn barRender(panel: window.Panel, song: mpd.CurrentSong, allocator: std.mem.Allocator) !void {
     const area = panel.validArea();
     const ycent = panel.getYCentre();
 
@@ -242,15 +241,15 @@ fn barRender(writer: *fs.File.Writer, panel: window.Panel, song: mpd.CurrentSong
         const duration = try formatSeconds(allocator, song.time.duration);
         const timeFormatted = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ elapsedTime, duration });
         try term.moveCursor(ycent, area.xmin);
-        try writer.writeAll(timeFormatted);
+        try term.writeAll(timeFormatted);
         try term.moveCursor(ycent + 2, area.xmin);
         //draw whole bar
         var x: usize = 0;
         while (x < progress_width) : (x += 1) {
             if (x < filled) {
-                try writer.writeAll(full_block);
+                try term.writeAll(full_block);
             } else {
-                try writer.writeAll(light_shade);
+                try term.writeAll(light_shade);
             }
         }
         current.currently_filled = filled;
@@ -266,7 +265,7 @@ fn barRender(writer: *fs.File.Writer, panel: window.Panel, song: mpd.CurrentSong
         const duration = try formatSeconds(allocator, song.time.duration);
         const timeFormatted = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ elapsedTime, duration });
         try term.moveCursor(ycent, area.xmin);
-        try writer.writeAll(timeFormatted);
+        try term.writeAll(timeFormatted);
     }
 
     if (filled == current.currently_filled) return;
@@ -276,27 +275,27 @@ fn barRender(writer: *fs.File.Writer, panel: window.Panel, song: mpd.CurrentSong
         try term.moveCursor(ycent + 2, area.xmin + current.currently_filled);
         var x: usize = current.currently_filled;
         while (x < filled) : (x += 1) {
-            try writer.writeAll(full_block);
+            try term.writeAll(full_block);
         }
     } else {
         // Replace full blocks with light_shade
         try term.moveCursor(ycent + 2, area.xmin + filled);
         var x: usize = filled;
         while (x < current.currently_filled) : (x += 1) {
-            try writer.writeAll(light_shade);
+            try term.writeAll(light_shade);
         }
     }
     current.currently_filled = filled;
 }
 
-fn browseOneRender(writer: *fs.File.Writer, panels: window.Panels) !void {
+fn browseOneRender(panels: window.Panels) !void {
     for (0..panels.browse1.area.ylen) |i| {
         try term.moveCursor(panels.browse1.area.ymin + i, panels.browse1.area.xmin);
-        try writer.writeBytesNTimes("\xe2\x96\x88", panels.browse1.area.xlen);
+        try term.writeBytesNTimesChunked("\xe2\x96\x88", panels.browse1.area.xlen);
     }
 }
 
-fn findRender(writer: *fs.File.Writer, panel: window.Panel) !void {
+fn findRender(panel: window.Panel) !void {
     const area = panel.validArea();
 
     switch (current.search_state) {
@@ -304,26 +303,26 @@ fn findRender(writer: *fs.File.Writer, panel: window.Panel) !void {
             if (current.viewable_searchable) |viewable| {
                 for (0..area.ylen) |i| {
                     try term.moveCursor(area.ymin + i, area.xmin);
-                    try writer.writeByteNTimes(' ', area.xlen);
+                    try term.writeByteNTimes(' ', area.xlen);
                 }
                 for (viewable, 0..) |song, j| {
                     const len = if (song.string.?.len > area.xlen) area.xlen else song.string.?.len;
-                    if (j == current.find_cursor_pos) try writer.writeAll("\x1B[7m");
+                    if (j == current.find_cursor_pos) try term.highlight();
                     try term.moveCursor(area.ymin + j, area.xmin);
-                    try writer.writeAll(song.string.?[0..len]);
-                    if (j == current.find_cursor_pos) try writer.writeAll("\x1B[0m");
+                    try term.writeAll(song.string.?[0..len]);
+                    if (j == current.find_cursor_pos) try term.unhighlight();
                 }
             } else {
                 for (0..area.ylen) |i| {
                     try term.moveCursor(area.ymin + i, area.xmin);
-                    try writer.writeByteNTimes(' ', area.xlen);
+                    try term.writeByteNTimes(' ', area.xlen);
                 }
             }
         },
         .browse => {
             for (0..area.ylen) |i| {
                 try term.moveCursor(area.ymin + i, area.xmin);
-                try writer.writeByteNTimes(' ', area.xlen);
+                try term.writeByteNTimes(' ', area.xlen);
             }
         },
     }

@@ -1,6 +1,7 @@
 const std = @import("std");
 const util = @import("util.zig");
 const terminal = @import("terminal.zig");
+const algoNRanked = &@import("algo.zig").nRanked;
 const os = std.os;
 const mem = std.mem;
 const fs = std.fs;
@@ -49,20 +50,20 @@ pub fn init() !void {
 fn getWindow(tty: *const fs.File) !void {
     // Using posix.winsize which is platform-independent
     var win_size = mem.zeroes(posix.winsize);
-    
+
     // TIOCGWINSZ is a standard terminal ioctl call, but might need to be used with the right numeric value
     // The value below is typically defined for both Linux and macOS
     const TIOCGWINSZ: u32 = 0x5413; // On macOS it's typically 0x40087468
-    
+
     // For macOS compatibility, we'll use system.ioctl directly
     const is_macos = @import("builtin").os.tag == .macos;
     const ioctl_code = if (is_macos) 0x40087468 else TIOCGWINSZ;
-    
+
     const err = std.c.ioctl(tty.handle, ioctl_code, @intFromPtr(&win_size));
     if (err < 0) {
         return error.WindowSizeError;
     }
-    
+
     window = .{
         .xmin = 0,
         .xmax = win_size.ws_col - 1, // Columns (width) minus 1 for zero-based indexing

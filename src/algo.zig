@@ -1,6 +1,7 @@
 const std = @import("std");
 const mpd = @import("mpdclient.zig");
 const util = @import("util.zig");
+const assert = std.debug.assert;
 
 pub var nRanked: usize = undefined;
 
@@ -19,8 +20,15 @@ const ScoredString = struct {
     score: u16,
 };
 
-pub fn algorithm(arena: *std.heap.ArenaAllocator, heapAllocator: std.mem.Allocator, input: []const u8) ![]mpd.Searchable {
+const AlgoError = error{
+    NoWindowLength,
+    OutOfMemory,
+};
+
+pub fn algorithm(arena: *std.heap.ArenaAllocator, heapAllocator: std.mem.Allocator, input: []const u8) AlgoError![]mpd.Searchable {
+    if (nRanked == 0) return AlgoError.NoWindowLength;
     util.log("items: {s}", .{items.*[0].string.?});
+    util.log("items length: {}", .{items.*.len});
     util.log("input: {s}", .{input});
     const arenaAllocator = arena.allocator();
     if (input.len == 1) return try contains(heapAllocator, arena, input[0]);
@@ -60,6 +68,8 @@ pub fn algorithm(arena: *std.heap.ArenaAllocator, heapAllocator: std.mem.Allocat
         try result.append(scored.song);
     }
 
+    util.log("result algo: {}", .{result.items.len});
+
     return try result.toOwnedSlice();
 }
 
@@ -81,6 +91,8 @@ fn contains(heapAllocator: std.mem.Allocator, arena: *std.heap.ArenaAllocator, i
             }
         }
     }
+    util.log("items len {}", .{itemArray.items.len});
+    util.log("ranked len {}", .{rankedStrings.items.len});
     const new_items = try heapAllocator.dupe(mpd.Searchable, itemArray.items);
     items = try heapAllocator.create([]mpd.Searchable);
     items.* = new_items;

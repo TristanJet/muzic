@@ -39,6 +39,7 @@ pub fn main() !void {
     defer term.deinit() catch {};
 
     try window.init();
+    algo.nRanked = window.panels.find.validArea().ylen;
 
     initial_song.init();
     _ = try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &initial_song);
