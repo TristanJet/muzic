@@ -1,4 +1,6 @@
 const std = @import("std");
+const time = std.time;
+
 const state = @import("state.zig");
 const mpd = @import("mpdclient.zig");
 const input = @import("input.zig");
@@ -12,6 +14,9 @@ const RenderState = render.RenderState;
 const log = util.log;
 const Event = state.Event;
 const App = state.App;
+
+const target_fps = 60;
+const target_frame_time_ms = 1000 / target_fps;
 
 var initial_song: mpd.CurrentSong = undefined;
 var initial_queue: mpd.Queue = mpd.Queue{};
@@ -84,9 +89,12 @@ pub fn main() !void {
 
     var render_state = RenderState.init();
 
+    var frames: u8 = 0;
     while (!app.state.quit) {
         defer wrkfba.reset();
-        const loop_start_time = std.time.milliTimestamp();
+        const loop_start_time = time.milliTimestamp();
+        frames = if (frames < 60) frames + 1 else 0;
+        log("frame: {}", .{frames});
 
         const input_event: ?Event = try input.checkInputEvent(wrkbuf[wrkfba.end_index .. wrkfba.end_index + 1]);
         // const idle_event: ?Event = mpd.checkIdle(wrkbuf[wrkfba.end_index .. wrkfba.end_index + 18]);
@@ -99,5 +107,12 @@ pub fn main() !void {
         app.updateState(&render_state);
         try render.render(&app.state, &render_state, window.panels, &wrkfba.end_index);
         render_state = RenderState{};
+
+        // Calculate remaining time in frame and sleep if necessary
+        const frame_time = time.milliTimestamp() - loop_start_time;
+        if (frame_time < target_frame_time_ms) {
+            const sleep_time: u64 = @intCast((target_frame_time_ms - frame_time) * time.ns_per_ms);
+            time.sleep(sleep_time);
+        }
     }
 }
