@@ -131,8 +131,7 @@ pub fn deinit() !void {
     raw.cc[@intFromEnum(posix.V.MIN)] = 1;
     try posix.tcsetattr(tty.handle, .FLUSH, raw);
 
-    try hideCursor();
-    try clear();
+    try cook();
 }
 
 fn uncook() !void {
