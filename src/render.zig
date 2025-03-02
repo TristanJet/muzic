@@ -214,13 +214,14 @@ fn currTrackRender(
 
     //Include co-ords in the panel drawing?
 
+    util.log("first_render {}\n", .{current.first_render});
     if (!current.first_render) {
         try term.clearLine(ycent, xmin + 11, xmax);
         try term.clearLine(ycent - 2, xmin, xmax);
     }
     try term.writeLine(s.artist, ycent, xmin, xmax);
     try term.writeLine(trckalb, ycent - 2, xmin, xmax);
-    if (current.first_render) current.first_render = false;
+    if (current.first_render) app.first_render = false;
 }
 
 fn barRender(panel: window.Panel, song: mpd.CurrentSong, allocator: std.mem.Allocator) !void {

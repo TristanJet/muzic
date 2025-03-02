@@ -4,6 +4,10 @@ const input = @import("input.zig");
 const log = @import("util.zig").log;
 const RenderState = @import("render.zig").RenderState;
 const expect = std.testing.expect;
+const time = std.time;
+
+const alloc = @import("allocators.zig");
+const wrkallocator = alloc.wrkallocator;
 
 // Core application state
 pub const App = struct {
@@ -40,9 +44,10 @@ pub const App = struct {
     fn handleEvent(self: *App, event: Event, render_state: *RenderState) void {
         switch (event) {
             .input_char => |char| input.handleInput(char, &self.state, render_state),
-            .idle => |idle_type| log("idle event! {}", .{idle_type}),
-            // .time => |time| log("time event {}", .{time}),
-            .time => |time| handleTime(time, &self.state, render_state) catch |err| {
+            .idle => |idle_type| handleIdle(idle_type, &self.state, render_state) catch |err| {
+                log("IDLE EVENT ERROR: {}", .{err});
+            },
+            .time => |start_time| handleTime(start_time, &self.state, render_state) catch |err| {
                 log("TIME EVENT ERROR: {}", .{err});
             },
         }
@@ -116,9 +121,35 @@ pub const TypingDisplay = struct {
     }
 };
 
-fn handleTime(time: i64, app: *State, _render_state: *RenderState) !void {
-    updateElapsed(time, app, app, _render_state);
-    try ping(time, app);
+fn handleTime(time_: i64, app: *State, _render_state: *RenderState) !void {
+    updateElapsed(time_, app, app, _render_state);
+    try ping(time_, app);
+}
+
+fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState) !void {
+    switch (idle_event) {
+        .player => {
+            _ = app.song.init();
+            _ = try mpd.getCurrentSong(wrkallocator, &alloc.wrkfba.end_index, &app.song);
+            _ = try mpd.getCurrentTrackTime(wrkallocator, &alloc.wrkfba.end_index, &app.song);
+            _ = try mpd.initIdle();
+            app.last_elapsed = app.song.time.elapsed;
+            //lazy
+            app.last_second = @divTrunc(time.milliTimestamp(), 1000);
+            app.bar_init = true;
+            render_state.bar = true;
+            render_state.queue = true;
+            render_state.queueEffects = true;
+            render_state.currentTrack = true;
+        },
+        .queue => {
+            app.queue = mpd.Queue{};
+            _ = try mpd.getQueue(wrkallocator, &alloc.wrkfba.end_index, &app.queue);
+            _ = try mpd.initIdle();
+            render_state.queue = true;
+            render_state.queueEffects = true;
+        },
+    }
 }
 
 fn updateElapsed(start: i64, crnt: *const State, app: *State, render_state: *RenderState) void {

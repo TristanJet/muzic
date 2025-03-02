@@ -240,8 +240,8 @@ pub fn checkIdle(buffer: []u8) !?Event {
     var reader = idleStream.reader();
     while (true) {
         const line = reader.readUntilDelimiter(buffer, '\n') catch |err| switch (err) {
-            error.WouldBlock => return 0, // No data available
-            error.EndOfStream => return 0, // EOF
+            error.WouldBlock => return null, // No data available
+            error.EndOfStream => return null, // EOF
             else => return err,
         };
         if (std.mem.eql(u8, line, "OK")) break;

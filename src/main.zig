@@ -39,6 +39,7 @@ pub fn main() !void {
 
     try mpd.connect(wrkbuf[0..64], .idle, true);
     defer mpd.disconnect(.idle);
+    try mpd.initIdle();
 
     try term.init();
     defer term.deinit() catch {};
@@ -96,11 +97,11 @@ pub fn main() !void {
         const loop_start_time = time.milliTimestamp();
 
         const input_event: ?Event = try input.checkInputEvent(wrkbuf[wrkfba.end_index .. wrkfba.end_index + 1]);
-        // const idle_event: ?Event = mpd.checkIdle(wrkbuf[wrkfba.end_index .. wrkfba.end_index + 18]);
+        const idle_event: ?Event = try mpd.checkIdle(wrkbuf[wrkfba.end_index .. wrkfba.end_index + 18]);
         const time_event: Event = Event{ .time = loop_start_time };
 
         if (input_event) |event| try app.appendEvent(event);
-        // if (idle_event) |event| app.appendEvent(event);
+        if (idle_event) |event| try app.appendEvent(event);
         try app.appendEvent(time_event);
 
         app.updateState(&render_state);
