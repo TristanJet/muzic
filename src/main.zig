@@ -71,6 +71,8 @@ pub fn main() !void {
         .bar_init = true,
         .currently_filled = 0,
 
+        .last_ping = time.milliTimestamp(),
+
         .queue = initial_queue,
         .viewStartQ = 0,
         .viewEndQ = window.panels.queue.validArea().ylen + 1,
@@ -89,12 +91,9 @@ pub fn main() !void {
 
     var render_state = RenderState.init();
 
-    var frames: u8 = 0;
     while (!app.state.quit) {
         defer wrkfba.reset();
         const loop_start_time = time.milliTimestamp();
-        frames = if (frames < 60) frames + 1 else 0;
-        log("frame: {}", .{frames});
 
         const input_event: ?Event = try input.checkInputEvent(wrkbuf[wrkfba.end_index .. wrkfba.end_index + 1]);
         // const idle_event: ?Event = mpd.checkIdle(wrkbuf[wrkfba.end_index .. wrkfba.end_index + 18]);

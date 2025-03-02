@@ -42,7 +42,9 @@ pub const App = struct {
             .input_char => |char| input.handleInput(char, &self.state, render_state),
             .idle => |idle_type| log("idle event! {}", .{idle_type}),
             // .time => |time| log("time event {}", .{time}),
-            .time => {},
+            .time => |time| handleTime(time, &self.state, render_state) catch |err| {
+                log("TIME EVENT ERROR: {}", .{err});
+            },
         }
     }
 };
@@ -67,6 +69,8 @@ pub const State = struct {
     last_elapsed: u16,
     bar_init: bool,
     currently_filled: usize,
+
+    last_ping: i64,
 
     queue: mpd.Queue,
     viewStartQ: usize,
@@ -111,6 +115,29 @@ pub const TypingDisplay = struct {
         self.typed = self.typeBuffer[0..0];
     }
 };
+
+fn handleTime(time: i64, app: *State, _render_state: *RenderState) !void {
+    updateElapsed(time, app, app, _render_state);
+    try ping(time, app);
+}
+
+fn updateElapsed(start: i64, crnt: *const State, app: *State, render_state: *RenderState) void {
+    if (crnt.isPlaying) {
+        const current_second = @divTrunc(start, 1000);
+        if (current_second > crnt.last_second) {
+            app.song.time.elapsed += 1;
+            app.last_second = current_second;
+            render_state.bar = true;
+        }
+    }
+}
+
+fn ping(start: i64, app: *State) !void {
+    if ((start - app.last_ping) >= 25 * 1000) {
+        try mpd.checkConnection();
+        app.last_ping = start;
+    }
+}
 
 // test "event buffer" {
 //     var buf: [256]u8 = undefined;
