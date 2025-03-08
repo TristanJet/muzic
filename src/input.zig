@@ -6,6 +6,7 @@ const state = @import("state.zig");
 const alloc = @import("allocators.zig");
 const window = @import("window.zig");
 const mem = std.mem;
+const time = std.time;
 const assert = std.debug.assert;
 const RenderState = @import("render.zig").RenderState;
 
@@ -15,6 +16,8 @@ const wrkallocator = alloc.wrkallocator;
 var app: *state.State = undefined;
 var render_state: *RenderState = undefined;
 var current: state.State = undefined;
+
+var last_input: i64 = 0;
 //Current is only good so long as mutations aren't dependent on mutations
 //that occur during render() function lifetime
 
@@ -134,9 +137,18 @@ fn inputNormal(char: u8) !void {
         'q' => app.quit = true,
         'j' => scrollQ(false),
         'k' => scrollQ(true),
-        'p' => app.isPlaying = try mpd.togglePlaystate(current.isPlaying),
-        'l' => try mpd.nextSong(),
-        'h' => try mpd.prevSong(),
+        'p' => {
+            if (debounce()) return;
+            app.isPlaying = try mpd.togglePlaystate(current.isPlaying);
+        },
+        'l' => {
+            if (debounce()) return;
+            try mpd.nextSong();
+        },
+        'h' => {
+            if (debounce()) return;
+            try mpd.prevSong();
+        },
         'f' => {
             app.input_state = .typing;
             app.search_state = .find;
@@ -150,6 +162,7 @@ fn inputNormal(char: u8) !void {
             render_state.queue = true;
         },
         'x' => {
+            if (debounce()) return;
             try mpd.rmFromPos(wrkallocator, current.cursorPosQ);
             if (current.cursorPosQ == 0) {
                 if (current.queue.len > 1) return;
@@ -177,11 +190,24 @@ fn inputNormal(char: u8) !void {
             }
         },
         '\n', '\r' => {
+            if (debounce()) return;
             try mpd.playByPos(wrkallocator, current.cursorPosQ);
             if (!current.isPlaying) app.isPlaying = true;
         },
         else => log("input: {c}", .{char}),
     }
+}
+
+fn debounce() bool {
+    //input debounce
+    const current_time = time.milliTimestamp();
+    const diff = current_time - last_input;
+    if (diff < 80) {
+        log("diff: {}", .{diff});
+        return true;
+    }
+    last_input = current_time;
+    return false;
 }
 
 fn typeFind(char: u8) void {

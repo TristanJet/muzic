@@ -49,6 +49,10 @@ pub fn render(app_state: *state.State, render_state_: *RenderState, panels: wind
     if (render_state.queue) try queueRender(wrkallocator, &alloc.wrkfba.end_index, panels.queue.validArea());
     if (render_state.queueEffects) try queueEffectsRender(wrkallocator, panels.queue.validArea());
     if (render_state.find) try findRender(panels.find);
+
+    // Flush terminal buffer after all rendering is done
+
+    term.flushBuffer() catch |err| if (err != error.WouldBlock) return err;
 }
 
 fn drawBorders(p: window.Area) !void {
@@ -214,7 +218,6 @@ fn currTrackRender(
 
     //Include co-ords in the panel drawing?
 
-    util.log("first_render {}\n", .{current.first_render});
     if (!current.first_render) {
         try term.clearLine(ycent, xmin + 11, xmax);
         try term.clearLine(ycent - 2, xmin, xmax);

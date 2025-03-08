@@ -1,4 +1,5 @@
 const std = @import("std");
+const mem = std.mem;
 
 const log = @import("util.zig").log;
 const fs = std.fs;
@@ -12,6 +13,11 @@ var writer: fs.File.Writer = undefined;
 var raw: posix.termios = undefined;
 var cooked: posix.termios = undefined;
 
+// Buffer for terminal output
+const BUFFER_SIZE = 1024;
+var buffer: [BUFFER_SIZE]u8 = undefined;
+var buffer_pos: usize = 0;
+
 const ReadError = error{
     UnknownReadError,
     NotATerminal,
@@ -19,15 +25,15 @@ const ReadError = error{
     Unexpected,
 };
 
-// For chunked writes to prevent WouldBlock errors on macOS
-// Use smaller chunk sizes for macOS which has stricter buffer limits
-const DEFAULT_CHUNK_SIZE = 16;
-const MULTIBYTE_CHUNK_SIZE = 8;
+const WriteError = error{
+    BufferFull,
+};
 
 pub fn init() !void {
     try getTty();
     try uncook();
     try setNonBlock();
+    buffer_pos = 0;
 }
 
 fn getTty() !void {
@@ -44,21 +50,21 @@ pub fn ttyFile() *const fs.File {
     return &tty;
 }
 
-pub fn readBytes(buffer: []u8) ReadError!usize {
-    return tty.read(buffer) catch |err| switch (err) {
+pub fn readBytes(read_buffer: []u8) ReadError!usize {
+    return tty.read(read_buffer) catch |err| switch (err) {
         error.WouldBlock => 0, // No input available
         else => return ReadError.UnknownReadError,
     };
 }
 
-pub fn readEscapeCode(buffer: []u8) ReadError!usize {
+pub fn readEscapeCode(read_buffer: []u8) ReadError!usize {
     // Use platform-independent constants for terminal settings
     // VTIME and VMIN are standardized by POSIX
     raw.cc[@intFromEnum(posix.V.TIME)] = 1;
     raw.cc[@intFromEnum(posix.V.MIN)] = 0;
     try posix.tcsetattr(tty.handle, .NOW, raw);
 
-    const escRead = tty.read(buffer) catch |err| switch (err) {
+    const escRead = tty.read(read_buffer) catch |err| switch (err) {
         error.WouldBlock => 0, // No input available
         else => return ReadError.UnknownReadError,
     };
@@ -78,44 +84,9 @@ fn setNonBlock() !void {
     _ = try posix.fcntl(tty.handle, posix.F.SETFL, flags | NONBLOCK);
 }
 
-// Basic write functions with chunking to handle WouldBlock
-fn writeAllInternal(str: []const u8) !void {
-    // Write one byte at a time for maximum compatibility with macOS
-    for (str) |byte| {
-        try writer.writeByte(byte);
-    }
-}
-
-fn writeByteInternal(byte: u8) !void {
-    try writer.writeByte(byte);
-}
-
-fn writeByteNTimesInternal(byte: u8, n: usize) !void {
-    var remaining = n;
-    while (remaining > 0) {
-        const chunk_size = @min(remaining, DEFAULT_CHUNK_SIZE);
-        // Break it down even further - writing one byte at a time for maximum compatibility
-        var i: usize = 0;
-        while (i < chunk_size) : (i += 1) {
-            try writer.writeByte(byte);
-        }
-        remaining -= chunk_size;
-    }
-}
-
-fn printInternal(comptime fmt: []const u8, args: anytype) !void {
-    // For very small outputs, try direct print
-    var buf: [128]u8 = undefined;
-    const result = std.fmt.bufPrint(&buf, fmt, args) catch {
-        // If it doesn't fit in our buffer, use standard print
-        return writer.print(fmt, args);
-    };
-
-    // Write the formatted result as a string
-    return writeAllInternal(result);
-}
-
 pub fn deinit() !void {
+    try flushBuffer();
+
     cooked = try posix.tcgetattr(tty.handle);
     errdefer cook() catch {};
 
@@ -151,6 +122,7 @@ fn uncook() !void {
 
     try hideCursor();
     try clear();
+    try flushBuffer();
 }
 
 fn cook() !void {
@@ -159,69 +131,115 @@ fn cook() !void {
     try showCursor();
     try attributeReset();
     try moveCursor(0, 0);
+    try flushBuffer();
+}
+
+pub fn flushBuffer() !void {
+    if (buffer_pos == 0) return;
+
+    while (buffer_pos > 0) {
+        const n = writer.write(buffer[0..buffer_pos]) catch |err| {
+            switch (err) {
+                error.WouldBlock => {
+                    std.time.sleep(5);
+                    continue;
+                },
+                else => return err,
+            }
+        };
+        if (n < buffer_pos) {
+            mem.copyForwards(u8, buffer[0 .. buffer_pos - n], buffer[n..buffer_pos]);
+        }
+        buffer_pos -= n;
+    }
+}
+
+fn writeToBuffer(data: []const u8) !void {
+    // Check if we need to flush before adding more data
+    if (buffer_pos + data.len > BUFFER_SIZE) {
+        try flushBuffer();
+
+        // If data is larger than buffer, write directly
+        if (data.len > BUFFER_SIZE) {
+            _ = try writer.write(data);
+            return;
+        }
+    }
+
+    // Copy data to buffer
+    mem.copyForwards(u8, buffer[buffer_pos..], data);
+    buffer_pos += data.len;
+}
+
+fn writeByteToBuffer(byte: u8) !void {
+    // Check if buffer is full
+    if (buffer_pos >= BUFFER_SIZE) {
+        try flushBuffer();
+    }
+
+    buffer[buffer_pos] = byte;
+    buffer_pos += 1;
 }
 
 // Terminal control sequences
 pub fn attributeReset() !void {
-    try writeAllInternal("\x1B[0m");
+    try writeToBuffer("\x1B[0m");
 }
 
 pub fn hideCursor() !void {
-    try writeAllInternal("\x1B[?25l");
+    try writeToBuffer("\x1B[?25l");
 }
 
 pub fn showCursor() !void {
-    try writeAllInternal("\x1B[?25h");
+    try writeToBuffer("\x1B[?25h");
 }
 
 pub fn highlight() !void {
-    try writeAllInternal("\x1B[7m");
+    try writeToBuffer("\x1B[7m");
 }
 
 pub fn unhighlight() !void {
-    try writeAllInternal("\x1B[0m");
+    try writeToBuffer("\x1B[0m");
 }
 
 pub fn setColor(color: []const u8) !void {
-    try writeAllInternal(color);
+    try writeToBuffer(color);
 }
 
 // Text output functions
 pub fn writeAll(str: []const u8) !void {
-    try writeAllInternal(str);
+    try writeToBuffer(str);
 }
 
 pub fn print(comptime fmt: []const u8, args: anytype) !void {
-    try printInternal(fmt, args);
+    var temp_buf: [512]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&temp_buf);
+    try std.fmt.format(fbs.writer(), fmt, args);
+    try writeToBuffer(fbs.getWritten());
 }
 
 pub fn writeByte(byte: u8) !void {
-    try writeByteInternal(byte);
+    try writeByteToBuffer(byte);
 }
 
 pub fn writeByteNTimes(byte: u8, n: usize) !void {
-    try writeByteNTimesInternal(byte, n);
-}
+    for (0..n) |_| {
+        try writeByteToBuffer(byte);
 
-pub fn writeBytesNTimes(bytes: []const u8, n: usize) !void {
-    var remaining = n;
-    while (remaining > 0) {
-        const chunk_size = @min(remaining, MULTIBYTE_CHUNK_SIZE);
-        var i: usize = 0;
-        while (i < chunk_size) : (i += 1) {
-            try writeAllInternal(bytes);
+        // If buffer gets full, flush it automatically
+        if (buffer_pos == BUFFER_SIZE) {
+            try flushBuffer();
         }
-        remaining -= chunk_size;
     }
 }
 
 // Cursor and position control
 pub fn moveCursor(row: usize, col: usize) !void {
-    try printInternal("\x1B[{};{}H", .{ row + 1, col + 1 });
+    try print("\x1B[{};{}H", .{ row + 1, col + 1 });
 }
 
 pub fn clear() !void {
-    try writeAllInternal("\x1B[2J");
+    try writeToBuffer("\x1B[2J");
 }
 
 // Higher-level rendering functions
@@ -236,4 +254,16 @@ pub fn clearLine(y: usize, xmin: usize, xmax: usize) !void {
     try moveCursor(y, xmin);
     const width = xmax - xmin + 1;
     try writeByteNTimes(' ', width);
+}
+
+// Helper function to write a byte sequence multiple times
+pub fn writeBytesNTimesChunked(bytes: []const u8, n: usize) !void {
+    for (0..n) |_| {
+        try writeToBuffer(bytes);
+
+        // If buffer gets full, flush it automatically
+        if (buffer_pos + bytes.len > BUFFER_SIZE) {
+            try flushBuffer();
+        }
+    }
 }
