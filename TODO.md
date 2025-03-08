@@ -8,3 +8,5 @@
 ## Features 
 - [ ] Browser
 - [ ] True color
+- [ ] shift arrow to seek faster
+- [ ] mute on seek hold
