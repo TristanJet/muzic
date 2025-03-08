@@ -182,8 +182,10 @@ fn inputNormal(char: u8) !void {
             } else if (mem.eql(u8, escBuffer[0..escRead], "[B")) {
                 // log("input: arrow down\r\n", .{});
             } else if (mem.eql(u8, escBuffer[0..escRead], "[C")) {
+                if (debounce()) return;
                 try mpd.seekCur(true);
             } else if (mem.eql(u8, escBuffer[0..escRead], "[D")) {
+                if (debounce()) return;
                 try mpd.seekCur(false);
             } else {
                 log("unknown escape sequence", .{});
@@ -202,7 +204,7 @@ fn debounce() bool {
     //input debounce
     const current_time = time.milliTimestamp();
     const diff = current_time - last_input;
-    if (diff < 80) {
+    if (diff < 100) {
         log("diff: {}", .{diff});
         return true;
     }
