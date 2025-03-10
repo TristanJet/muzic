@@ -205,7 +205,6 @@ fn debounce() bool {
     const current_time = time.milliTimestamp();
     const diff = current_time - last_input;
     if (diff < 100) {
-        log("diff: {}", .{diff});
         return true;
     }
     last_input = current_time;

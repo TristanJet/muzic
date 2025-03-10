@@ -19,7 +19,6 @@ var buffer: [BUFFER_SIZE]u8 = undefined;
 var buffer_pos: usize = 0;
 
 const ReadError = error{
-    UnknownReadError,
     NotATerminal,
     ProcessOrphaned,
     Unexpected,
@@ -27,6 +26,7 @@ const ReadError = error{
 
 const WriteError = error{
     BufferFull,
+    Unexpected,
 };
 
 pub fn init() !void {
@@ -53,7 +53,7 @@ pub fn ttyFile() *const fs.File {
 pub fn readBytes(read_buffer: []u8) ReadError!usize {
     return tty.read(read_buffer) catch |err| switch (err) {
         error.WouldBlock => 0, // No input available
-        else => return ReadError.UnknownReadError,
+        else => return ReadError.Unexpected,
     };
 }
 
@@ -66,7 +66,7 @@ pub fn readEscapeCode(read_buffer: []u8) ReadError!usize {
 
     const escRead = tty.read(read_buffer) catch |err| switch (err) {
         error.WouldBlock => 0, // No input available
-        else => return ReadError.UnknownReadError,
+        else => return ReadError.Unexpected,
     };
 
     raw.cc[@intFromEnum(posix.V.MIN)] = 1;
@@ -138,10 +138,11 @@ pub fn flushBuffer() !void {
     if (buffer_pos == 0) return;
 
     while (buffer_pos > 0) {
+        //resolves to darwin libc write
         const n = writer.write(buffer[0..buffer_pos]) catch |err| {
             switch (err) {
                 error.WouldBlock => {
-                    std.time.sleep(5);
+                    std.time.sleep(1);
                     continue;
                 },
                 else => return err,
@@ -266,4 +267,27 @@ pub fn writeBytesNTimesChunked(bytes: []const u8, n: usize) !void {
             try flushBuffer();
         }
     }
+}
+
+test "buffer write" {
+    if (buffer_pos == 0) return;
+
+    var count: usize = 0;
+    while (buffer_pos > 0) : (count += 1) {
+        //resolves to darwin libc write
+        const n = writer.write(buffer[0..buffer_pos]) catch |err| {
+            switch (err) {
+                error.WouldBlock => {
+                    std.time.sleep(1);
+                    continue;
+                },
+                else => return err,
+            }
+        };
+        if (n < buffer_pos) {
+            mem.copyForwards(u8, buffer[0 .. buffer_pos - n], buffer[n..buffer_pos]);
+        }
+        buffer_pos -= n;
+    }
+    log("count: {}", .{count});
 }

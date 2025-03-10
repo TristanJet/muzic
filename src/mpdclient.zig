@@ -275,7 +275,6 @@ pub fn seekCur(isForward: bool) !void {
     var buf: [12]u8 = undefined;
     const dir = if (isForward) "+5" else "-5";
     const msg = try std.fmt.bufPrint(&buf, "seekcur {s}\n", .{dir});
-    util.log("msg: {s}\n", .{msg});
     try connSend(msg, &cmdStream);
     _ = try cmdStream.read(&buf);
     if (!std.mem.eql(u8, buf[0..2], "OK")) return error.BadConnection;
