@@ -88,19 +88,11 @@ fn inputTyping(char: u8) !void {
         },
         'n' & '\x1F' => {
             log("input: Ctrl-n\r\n", .{});
-            if (current.find_cursor_pos < current.viewable_searchable.?.len - 1) {
-                app.find_cursor_pos += 1;
-            }
-            render_state.find = true;
-            return;
+            scroll(&app.find_cursor_pos, current.viewable_searchable.?.len - 1, .down);
         },
         'p' & '\x1F' => {
             log("input: Ctrl-p\r\n", .{});
-            if (current.find_cursor_pos > 0) {
-                app.find_cursor_pos -= 1;
-            }
-            render_state.find = true;
-            return;
+            scroll(&app.find_cursor_pos, null, .up);
         },
         '\r', '\n' => {
             switch (current.search_state) {
@@ -244,6 +236,23 @@ fn moveCursorPos(current_dir: *u8, previous_dir: *u8, direction: cursorDirection
         .down => {
             previous_dir.* = current_dir.*;
             current_dir.* -= 1;
+        },
+    }
+}
+
+fn scroll(cursor_pos: *u8, max: ?usize, dir: cursorDirection) void {
+    switch (dir) {
+        .up => {
+            if (cursor_pos.* > 0) {
+                cursor_pos.* -= 1;
+            }
+            render_state.find = true;
+        },
+        .down => {
+            if (cursor_pos.* < max.?) {
+                cursor_pos.* += 1;
+            }
+            render_state.find = true;
         },
     }
 }

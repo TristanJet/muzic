@@ -262,12 +262,12 @@ pub fn togglePlaystate(isPlaying: bool) !bool {
     if (isPlaying) {
         try connSend("pause\n", &cmdStream);
         _ = try cmdStream.read(&buf);
-        if (!std.mem.eql(u8, buf[0..2], "OK")) return error.BadConnection;
+        if (!std.mem.eql(u8, buf[0..2], "OK")) return error.ConnectionError;
         return false;
     }
     try connSend("play\n", &cmdStream);
     _ = try cmdStream.read(&buf);
-    if (!std.mem.eql(u8, buf[0..2], "OK")) return error.BadConnection;
+    if (!std.mem.eql(u8, buf[0..2], "OK")) return error.ConnectionError;
     return true;
 }
 
@@ -277,21 +277,21 @@ pub fn seekCur(isForward: bool) !void {
     const msg = try std.fmt.bufPrint(&buf, "seekcur {s}\n", .{dir});
     try connSend(msg, &cmdStream);
     _ = try cmdStream.read(&buf);
-    if (!std.mem.eql(u8, buf[0..2], "OK")) return error.BadConnection;
+    if (!std.mem.eql(u8, buf[0..2], "OK")) return error.ConnectionError;
 }
 
 pub fn nextSong() !void {
     var buf: [2]u8 = undefined;
     try connSend("next\n", &cmdStream);
     _ = try cmdStream.read(&buf);
-    if (!std.mem.eql(u8, buf[0..2], "OK")) return error.BadConnection;
+    if (!std.mem.eql(u8, buf[0..2], "OK")) return error.ConnectionError;
 }
 
 pub fn prevSong() !void {
     var buf: [2]u8 = undefined;
     try connSend("previous\n", &cmdStream);
     _ = try cmdStream.read(&buf);
-    if (!std.mem.eql(u8, buf[0..2], "OK")) return error.BadConnection;
+    if (!std.mem.eql(u8, buf[0..2], "OK")) return error.ConnectionError;
 }
 
 pub fn playByPos(allocator: std.mem.Allocator, pos: u8) !void {
@@ -299,7 +299,7 @@ pub fn playByPos(allocator: std.mem.Allocator, pos: u8) !void {
     const string = try std.fmt.allocPrint(allocator, "play {}\n", .{pos});
     try connSend(string, &cmdStream);
     _ = try cmdStream.read(&buf);
-    if (!std.mem.eql(u8, buf[0..2], "OK")) return error.BadConnection;
+    if (!std.mem.eql(u8, buf[0..2], "OK")) return error.ConnectionError;
 }
 
 pub fn getCurrentSong(
@@ -562,7 +562,7 @@ pub fn addFromUri(allocator: std.mem.Allocator, uri: []const u8) !void {
     const message = try std.fmt.allocPrint(allocator, "add \"{s}\"\n", .{uri});
     try connSend(message, &cmdStream);
     _ = try cmdStream.read(&buf);
-    if (!std.mem.eql(u8, buf[0..2], "OK")) return error.BadConnection;
+    if (!std.mem.eql(u8, buf[0..2], "OK")) return error.ConnectionError;
 }
 
 pub fn rmFromPos(allocator: std.mem.Allocator, pos: u8) !void {
@@ -570,7 +570,7 @@ pub fn rmFromPos(allocator: std.mem.Allocator, pos: u8) !void {
     const message = try std.fmt.allocPrint(allocator, "delete {}\n", .{pos});
     try connSend(message, &cmdStream);
     _ = try cmdStream.read(&buf);
-    if (!std.mem.eql(u8, buf[0..2], "OK")) return error.BadConnection;
+    if (!std.mem.eql(u8, buf[0..2], "OK")) return error.ConnectionError;
 }
 
 test "do it work" {

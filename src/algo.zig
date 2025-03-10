@@ -27,9 +27,6 @@ const AlgoError = error{
 
 pub fn algorithm(arena: *std.heap.ArenaAllocator, heapAllocator: std.mem.Allocator, input: []const u8) AlgoError![]mpd.Searchable {
     if (nRanked == 0) return AlgoError.NoWindowLength;
-    util.log("items: {s}", .{items.*[0].string.?});
-    util.log("items length: {}", .{items.*.len});
-    util.log("input: {s}", .{input});
     const arenaAllocator = arena.allocator();
     if (input.len == 1) return try contains(heapAllocator, arena, input[0]);
     var scoredStrings = std.ArrayList(ScoredString).init(heapAllocator);
