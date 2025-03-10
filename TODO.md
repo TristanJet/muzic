@@ -2,6 +2,8 @@
 
 ## Bugs/Fixes
 - [x] FUCKING MAC BLOCK TERMINAL WRITES
+- [ ] More robust input debounce; I suspect, library size has an effect on mpd response speed.
+- [ ] if holding, render keypress then on release send command
 - [ ] Don't render if cursor doesn't move
 - [ ] don't render queue on seek?
 
