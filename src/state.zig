@@ -89,8 +89,9 @@ pub const State = struct {
     find_cursor_pos: u8,
     viewable_searchable: ?[]mpd.Searchable,
 
+    browse_cursor: BrowseCursor,
+
     input_state: input.Input_State,
-    search_state: input.Search_State,
 };
 
 const EventBuffer = struct {
@@ -121,6 +122,12 @@ pub const TypingDisplay = struct {
     pub fn reset(self: *TypingDisplay) void {
         self.typed = self.typeBuffer[0..0];
     }
+};
+
+pub const BrowseCursor = struct {
+    column: u8,
+    position: u8,
+    prev_position: u8,
 };
 
 fn handleTime(time_: i64, app: *State, _render_state: *RenderState) !void {

@@ -84,8 +84,13 @@ pub fn main() !void {
         .find_cursor_pos = 0,
         .viewable_searchable = null,
 
-        .input_state = .normal,
-        .search_state = .find,
+        .browse_cursor = .{
+            .column = 0,
+            .position = 0,
+            .prev_position = 0,
+        },
+
+        .input_state = .normal_queue,
     };
 
     var app = App.init(initial_state);

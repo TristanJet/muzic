@@ -22,18 +22,15 @@ var last_input: i64 = 0;
 //that occur during render() function lifetime
 
 pub const Input_State = enum {
-    normal,
-    typing,
+    normal_queue,
+    typing_find,
+    normal_browse,
+    typing_browse,
 };
 
 const cursorDirection = enum {
     up,
     down,
-};
-
-pub const Search_State = enum {
-    find,
-    browse,
 };
 
 pub fn checkInputEvent(buffer: []u8) !?state.Event {
@@ -49,12 +46,17 @@ pub fn handleInput(char: u8, app_state: *state.State, render_state_: *RenderStat
     current = app_state.*;
     render_state = render_state_;
     switch (app_state.input_state) {
-        .normal => {
-            inputNormal(char) catch unreachable;
+        .normal_queue => {
+            normalQueue(char) catch unreachable;
         },
-        .typing => {
-            inputTyping(char) catch unreachable;
+        .typing_find => {
+            typingFind(char) catch unreachable;
         },
+        .normal_browse => {
+            normalBrowse(char) catch unreachable;
+            log("cursor pos: {}\n", .{app.browse_cursor.position});
+        },
+        else => unreachable,
     }
 }
 
@@ -64,14 +66,14 @@ fn onTypingExit() void {
     render_state.find = true;
     render_state.queueEffects = true;
     app.viewable_searchable = null;
-    app.input_state = .normal;
+    app.input_state = .normal_queue;
     app.find_cursor_pos = 0;
     algo.resetItems();
     _ = alloc.typingArena.reset(.retain_capacity);
     _ = alloc.algoArena.reset(.free_all);
 }
 
-fn inputTyping(char: u8) !void {
+fn typingFind(char: u8) !void {
     switch (char) {
         '\x1B' => {
             var escBuffer: [8]u8 = undefined;
@@ -79,37 +81,24 @@ fn inputTyping(char: u8) !void {
 
             if (escRead == 0) {
                 onTypingExit();
-
-                // log("all items: {}\n", .{all_searchable.len});
-                // log("\narena state: {} \n", .{algoArena.state.end_index});
-                // log("\nlong state: {} \n", .{typingArena.state.end_index});
                 return;
             }
         },
         'n' & '\x1F' => {
             log("input: Ctrl-n\r\n", .{});
             scroll(&app.find_cursor_pos, current.viewable_searchable.?.len - 1, .down);
+            render_state.find = true;
         },
         'p' & '\x1F' => {
             log("input: Ctrl-p\r\n", .{});
             scroll(&app.find_cursor_pos, null, .up);
+            render_state.find = true;
         },
         '\r', '\n' => {
-            switch (current.search_state) {
-                Search_State.find => {
-                    const addUri = current.viewable_searchable.?[current.find_cursor_pos].uri;
-                    try mpd.addFromUri(wrkallocator, addUri);
-                    log("added: {s}", .{addUri});
-                },
-                Search_State.browse => {
-                    //browse
-                },
-            }
+            const addUri = current.viewable_searchable.?[current.find_cursor_pos].uri;
+            try mpd.addFromUri(wrkallocator, addUri);
+            log("added: {s}", .{addUri});
             onTypingExit();
-
-            // log("all items: {}\n", .{.len});
-            // log("\narena state: {} \n", .{algoArena.state.end_index});
-            // log("\nlong state: {} \n", .{typingArena.state.end_index});
             return;
         },
         else => {
@@ -124,7 +113,7 @@ fn inputTyping(char: u8) !void {
     }
 }
 
-fn inputNormal(char: u8) !void {
+fn normalQueue(char: u8) !void {
     switch (char) {
         'q' => app.quit = true,
         'j' => scrollQ(false),
@@ -142,15 +131,15 @@ fn inputNormal(char: u8) !void {
             try mpd.prevSong();
         },
         'f' => {
-            app.input_state = .typing;
-            app.search_state = .find;
+            app.input_state = .typing_find;
             render_state.find = true;
             render_state.queue = true;
         },
         'b' => {
-            app.input_state = .typing;
-            app.search_state = .browse;
+            app.input_state = .normal_browse;
             render_state.find = true;
+            render_state.browse = true;
+            render_state.browse_cursor = true;
             render_state.queue = true;
         },
         'x' => {
@@ -192,11 +181,39 @@ fn inputNormal(char: u8) !void {
     }
 }
 
+fn normalBrowse(char: u8) !void {
+    switch (char) {
+        'q' => app.quit = true,
+        '\x1B' => {
+            var escBuffer: [8]u8 = undefined;
+            const escRead = try term.readEscapeCode(&escBuffer);
+
+            if (escRead == 0) {
+                // render_state.borders = true;
+                // render_state.find = true;
+                render_state.queueEffects = true;
+                app.input_state = .normal_queue;
+                app.find_cursor_pos = 0;
+            }
+        },
+        'j' => {
+            app.browse_cursor.prev_position = current.browse_cursor.position;
+            scroll(&app.browse_cursor.position, 2, .down);
+            render_state.browse_cursor = true;
+        },
+        'k' => {
+            app.browse_cursor.prev_position = current.browse_cursor.position;
+            scroll(&app.browse_cursor.position, null, .up);
+            render_state.browse_cursor = true;
+        },
+        else => unreachable,
+    }
+}
+
 fn debounce() bool {
     //input debounce
     const current_time = time.milliTimestamp();
     const diff = current_time - last_input;
-    log("diff: {}", .{diff});
     if (diff < 300) {
         return true;
     }
@@ -246,13 +263,11 @@ fn scroll(cursor_pos: *u8, max: ?usize, dir: cursorDirection) void {
             if (cursor_pos.* > 0) {
                 cursor_pos.* -= 1;
             }
-            render_state.find = true;
         },
         .down => {
             if (cursor_pos.* < max.?) {
                 cursor_pos.* += 1;
             }
-            render_state.find = true;
         },
     }
 }

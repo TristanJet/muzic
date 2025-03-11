@@ -15,6 +15,8 @@ var app: *state.State = undefined;
 var render_state: *RenderState = undefined;
 var current: state.State = undefined;
 
+const browse_types: [3][]const u8 = .{ "Albums", "Artists", "Songs" };
+
 pub const RenderState = struct {
     borders: bool = false,
     currentTrack: bool = false,
@@ -22,6 +24,8 @@ pub const RenderState = struct {
     queue: bool = false,
     queueEffects: bool = false,
     find: bool = false,
+    browse: bool = false,
+    browse_cursor: bool = false,
 
     pub fn init() RenderState {
         return .{
@@ -31,6 +35,7 @@ pub const RenderState = struct {
             .queue = true,
             .queueEffects = true,
             .find = true,
+            .browse_cursor = false,
         };
     }
 };
@@ -49,7 +54,8 @@ pub fn render(app_state: *state.State, render_state_: *RenderState, panels: wind
     if (render_state.queue) try queueRender(wrkallocator, &alloc.wrkfba.end_index, panels.queue.validArea());
     if (render_state.queueEffects) try queueEffectsRender(wrkallocator, panels.queue.validArea());
     if (render_state.find) try findRender(panels.find);
-
+    if (render_state.browse) try browseOneRender(panels.browse1);
+    if (render_state.browse_cursor) try browseCursorRender(current.browse_cursor);
     // Flush terminal buffer after all rendering is done
 
     term.flushBuffer() catch |err| if (err != error.WouldBlock) return err;
@@ -140,11 +146,11 @@ fn queueEffectsRender(allocator: std.mem.Allocator, area: window.Area) !void {
 
     for (current.viewStartQ..current.viewEndQ, 0..) |i, j| {
         if (i >= current.queue.len) break;
-        if (current.queue.items[i].pos == current.prevCursorPos and current.input_state == .normal) {
+        if (current.queue.items[i].pos == current.prevCursorPos and current.input_state == .normal_queue) {
             const itemTime = try formatSeconds(allocator, current.queue.items[i].time);
             try writeQueueLine(area, area.ymin + j, current.queue.items[i], itemTime);
         }
-        if (current.queue.items[i].pos == current.cursorPosQ and current.input_state == .normal) {
+        if (current.queue.items[i].pos == current.cursorPosQ and current.input_state == .normal_queue) {
             const itemTime = try formatSeconds(allocator, current.queue.items[i].time);
             try term.highlight();
             try writeQueueLine(area, area.ymin + j, current.queue.items[i], itemTime);
@@ -292,18 +298,47 @@ fn barRender(panel: window.Panel, song: mpd.CurrentSong, allocator: std.mem.Allo
     current.currently_filled = filled;
 }
 
-fn browseOneRender(panels: window.Panels) !void {
-    for (0..panels.browse1.area.ylen) |i| {
-        try term.moveCursor(panels.browse1.area.ymin + i, panels.browse1.area.xmin);
-        try term.writeBytesNTimesChunked("\xe2\x96\x88", panels.browse1.area.xlen);
+fn browseOneRender(panel: window.Panel) !void {
+    for (0..browse_types.len) |i| {
+        try term.moveCursor(panel.area.ymin + i, panel.area.xmin);
+        try term.writeAll(browse_types[i]);
     }
+}
+
+fn browseCursorRender(cursor: state.BrowseCursor) !void {
+    const xmin = switch (cursor.column) {
+        0 => window.panels.browse1.validArea().xmin,
+        1 => window.panels.browse2.validArea().xmin,
+        2 => window.panels.browse3.validArea().xmin,
+        else => unreachable,
+    };
+    const xlen = switch (cursor.column) {
+        0 => window.panels.browse1.validArea().xlen,
+        1 => window.panels.browse2.validArea().xlen,
+        2 => window.panels.browse3.validArea().xlen,
+        else => unreachable,
+    };
+    const ymin = window.panels.find.validArea().ymin;
+
+    var nSpace = xlen - browse_types[cursor.prev_position].len;
+
+    try term.moveCursor(ymin + cursor.prev_position, xmin);
+    try term.attributeReset();
+    try term.writeAll(browse_types[cursor.prev_position]);
+    try term.writeByteNTimes(' ', nSpace);
+    try term.moveCursor(ymin + cursor.position, xmin);
+    try term.highlight();
+    try term.writeAll(browse_types[cursor.position]);
+    nSpace = xlen - browse_types[cursor.position].len;
+    try term.writeByteNTimes(' ', nSpace);
+    try term.attributeReset();
 }
 
 fn findRender(panel: window.Panel) !void {
     const area = panel.validArea();
 
-    switch (current.search_state) {
-        .find => {
+    switch (current.input_state) {
+        .typing_find => {
             if (current.viewable_searchable) |viewable| {
                 for (0..area.ylen) |i| {
                     try term.moveCursor(area.ymin + i, area.xmin);
@@ -323,28 +358,21 @@ fn findRender(panel: window.Panel) !void {
                 }
             }
         },
-        .browse => {
+        .normal_browse => {
             for (0..area.ylen) |i| {
                 try term.moveCursor(area.ymin + i, area.xmin);
                 try term.writeByteNTimes(' ', area.xlen);
             }
         },
+        else => {},
     }
 }
 
 fn getFindText() ![]const u8 {
-    switch (current.search_state) {
-        .find => {
-            return switch (current.input_state) {
-                .normal => try std.fmt.allocPrint(wrkallocator, "b{s}{s}find", .{ sym.left_up, sym.right_up }),
-                .typing => try std.fmt.allocPrint(wrkallocator, "b{s}{s}find: {s}_", .{ sym.left_up, sym.right_up, current.typing_display.typed }),
-            };
-        },
-        .browse => {
-            return switch (current.input_state) {
-                .normal => try std.fmt.allocPrint(wrkallocator, "f{s}{s}browse", .{ sym.left_up, sym.right_up }),
-                .typing => try std.fmt.allocPrint(wrkallocator, "f{s}{s}browse: {s}_", .{ sym.left_up, sym.right_up, current.typing_display.typed }),
-            };
-        },
-    }
+    return switch (current.input_state) {
+        .normal_queue => try std.fmt.allocPrint(wrkallocator, "b{s}{s}find", .{ sym.left_up, sym.right_up }),
+        .typing_find => try std.fmt.allocPrint(wrkallocator, "b{s}{s}find: {s}_", .{ sym.left_up, sym.right_up, current.typing_display.typed }),
+        .normal_browse => try std.fmt.allocPrint(wrkallocator, "f{s}{s}browse", .{ sym.left_up, sym.right_up }),
+        .typing_browse => try std.fmt.allocPrint(wrkallocator, "f{s}{s}browse: {s}_", .{ sym.left_up, sym.right_up, current.typing_display.typed }),
+    };
 }

@@ -107,7 +107,6 @@ pub const Panel = struct {
 
         const x_len = x_max - x_min + 1;
         const y_len = y_max - y_min + 1;
-        util.log("xlen: {}", .{x_len});
 
         return .{
             .borders = borders,
