@@ -4,8 +4,10 @@ const state = @import("state.zig");
 const Idle = state.Idle;
 const Event = state.Event;
 const assert = std.debug.assert;
+
 const net = std.net;
 const mem = std.mem;
+const fmt = std.fmt;
 
 const host = "127.0.0.1";
 const port = 6600;
@@ -21,6 +23,7 @@ const StreamType = enum {
 const MpdError = error{
     InvalidResponse,
     ConnectionError,
+    CommandFailed,
     MpdError,
     EndOfStream,
     TooLong,
@@ -37,15 +40,15 @@ fn setStringValue(buffer: []u8, value: []const u8, max_len: usize) ![]const u8 {
 /// Parses a string as a u8
 fn parseU8(value: []const u8) !u8 {
     if (value.len > 3) return error.TooLong;
-    return try std.fmt.parseInt(u8, value, 10);
+    return try fmt.parseInt(u8, value, 10);
 }
 
 /// Sends an MPD command and checks for OK response
 fn sendCommand(command: []const u8) !void {
     try connSend(command, &cmdStream);
-    var buf: [2]u8 = undefined;
+    var buf: [3]u8 = undefined;
     _ = try cmdStream.read(&buf);
-    if (!mem.eql(u8, buf[0..2], "OK")) return error.ConnectionError;
+    if (!mem.eql(u8, buf[0..3], "OK\n")) return error.CommandFailed;
 }
 
 /// Creates a buffered reader and processes MPD response line by line
@@ -60,9 +63,9 @@ fn processResponse(
     var reader = buf_reader.reader();
 
     const startPoint = end_index.*;
-    defer end_index.* = startPoint;
 
     while (true) {
+        defer end_index.* = startPoint;
         var line = try reader.readUntilDelimiterAlloc(allocator, '\n', 1024);
 
         if (mem.eql(u8, line, "OK")) break;
@@ -153,9 +156,9 @@ pub const CurrentSong = struct {
         } else if (mem.eql(u8, key, "time")) {
             if (mem.indexOfScalar(u8, value, ':')) |index| {
                 const elapsedSlice = value[0..index];
-                self.time.elapsed = try std.fmt.parseInt(u16, elapsedSlice, 10);
+                self.time.elapsed = try fmt.parseInt(u16, elapsedSlice, 10);
                 const durationSlice = value[index + 1 ..];
-                self.time.duration = try std.fmt.parseInt(u16, durationSlice, 10);
+                self.time.duration = try fmt.parseInt(u16, durationSlice, 10);
             } else return error.MpdError;
         }
     }
@@ -204,7 +207,7 @@ pub const QSong = struct {
 
     pub fn setTime(self: *QSong, duration: []const u8) !void {
         if (duration.len > 3) return error.TooLong;
-        self.time = try std.fmt.parseInt(u16, duration, 10);
+        self.time = try fmt.parseInt(u16, duration, 10);
     }
 
     fn handleField(self: *QSong, key: []const u8, value: []const u8) !void {
@@ -339,7 +342,7 @@ pub fn togglePlaystate(isPlaying: bool) !bool {
 pub fn seekCur(isForward: bool) !void {
     var buf: [12]u8 = undefined;
     const dir = if (isForward) "+5" else "-5";
-    const command = try std.fmt.bufPrint(&buf, "seekcur {s}\n", .{dir});
+    const command = try fmt.bufPrint(&buf, "seekcur {s}\n", .{dir});
     try sendCommand(command);
 }
 
@@ -352,7 +355,7 @@ pub fn prevSong() !void {
 }
 
 pub fn playByPos(allocator: mem.Allocator, pos: u8) !void {
-    const command = try std.fmt.allocPrint(allocator, "play {}\n", .{pos});
+    const command = try fmt.allocPrint(allocator, "play {}\n", .{pos});
     try sendCommand(command);
 }
 
@@ -474,7 +477,7 @@ fn processLargeResponse(data: []u8) !mem.SplitIterator(u8, .sequence) {
 }
 
 fn getAllType(data_type: []const u8, heapAllocator: mem.Allocator, respAllocator: std.mem.Allocator) ![][]const u8 {
-    const command = try std.fmt.allocPrint(respAllocator, "list {s}\n", .{data_type});
+    const command = try fmt.allocPrint(respAllocator, "list {s}\n", .{data_type});
     const data = try readLargeResponse(respAllocator, command);
     var lines = try processLargeResponse(data);
     var array = std.ArrayList([]const u8).init(heapAllocator);
@@ -490,6 +493,9 @@ fn getAllType(data_type: []const u8, heapAllocator: mem.Allocator, respAllocator
     return array.toOwnedSlice();
 }
 
+////
+/// list album “(Artist == \”{}\”)” .{Artist}
+///
 pub fn getAllAlbums(heapAllocator: mem.Allocator, respAllocator: std.mem.Allocator) ![][]const u8 {
     const data_type = "album";
     return getAllType(data_type, heapAllocator, respAllocator);
@@ -503,6 +509,42 @@ pub fn getAllSongTitles(heapAllocator: mem.Allocator, respAllocator: std.mem.All
 pub fn getAllArtists(heapAllocator: mem.Allocator, respAllocator: std.mem.Allocator) ![][]const u8 {
     const data_type = "artist";
     return getAllType(data_type, heapAllocator, respAllocator);
+}
+
+////
+/// findadd "((Title == \"{}\") AND (Album == \"{}\") AND (Artist == \"{}\"))"
+///
+const Find_Song = struct {
+    artist: ?[]const u8,
+    album: ?[]const u8,
+    title: []const u8,
+};
+
+pub fn findAdd(song: *const Find_Song, allocator: mem.Allocator) !void {
+    const artist = if (song.artist) |artist| try fmt.allocPrint(allocator, " AND (Artist == \\\"{s}\\\")", .{artist}) else "";
+    const album = if (song.album) |album| try fmt.allocPrint(allocator, " AND (Album == \\\"{s}\\\")", .{album}) else "";
+
+    const command = try fmt.allocPrint(allocator, "findadd \"((Title == \\\"{s}\\\"){s}{s})\"\n", .{ song.title, album, artist });
+    util.log("command: {s}", .{command});
+    try sendCommand(command);
+}
+
+test "findAdd" {
+    var heapArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer heapArena.deinit();
+    const heapAllocator = heapArena.allocator();
+
+    var wrkbuf: [16]u8 = undefined;
+    _ = try connect(wrkbuf[0..16], .command, false);
+    std.debug.print("connected\n", .{});
+
+    const song = Find_Song{
+        .artist = null,
+        .album = "Thriller",
+        .title = "Thriller",
+    };
+
+    try findAdd(&song, heapAllocator);
 }
 
 test "getAllAlbums" {
@@ -559,7 +601,7 @@ pub fn getSearchable(heapAllocator: mem.Allocator, respAllocator: std.mem.Alloca
                 title = title orelse "";
                 artist = artist orelse "";
 
-                current.string = try std.fmt.allocPrint(heapAllocator, "{s} {s} {s}", .{ title.?, artist.?, album.? });
+                current.string = try fmt.allocPrint(heapAllocator, "{s} {s} {s}", .{ title.?, artist.?, album.? });
                 try array.append(current);
                 title = null;
                 artist = null;
@@ -578,12 +620,12 @@ pub fn getSearchable(heapAllocator: mem.Allocator, respAllocator: std.mem.Alloca
 }
 
 pub fn addFromUri(allocator: mem.Allocator, uri: []const u8) !void {
-    const command = try std.fmt.allocPrint(allocator, "add \"{s}\"\n", .{uri});
+    const command = try fmt.allocPrint(allocator, "add \"{s}\"\n", .{uri});
     try sendCommand(command);
 }
 
 pub fn rmFromPos(allocator: mem.Allocator, pos: u8) !void {
-    const command = try std.fmt.allocPrint(allocator, "delete {}\n", .{pos});
+    const command = try fmt.allocPrint(allocator, "delete {}\n", .{pos});
     try sendCommand(command);
 }
 

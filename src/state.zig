@@ -46,9 +46,11 @@ pub const App = struct {
             .input_char => |char| input.handleInput(char, &self.state, render_state),
             .idle => |idle_type| handleIdle(idle_type, &self.state, render_state) catch |err| {
                 log("IDLE EVENT ERROR: {}", .{err});
+                unreachable;
             },
             .time => |start_time| handleTime(start_time, &self.state, render_state) catch |err| {
                 log("TIME EVENT ERROR: {}", .{err});
+                unreachable;
             },
         }
     }
