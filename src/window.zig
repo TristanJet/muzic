@@ -6,6 +6,11 @@ const os = std.os;
 const mem = std.mem;
 const fs = std.fs;
 const posix = std.posix;
+const math = std.math;
+
+const scroll_min: *u8 = &@import("input.zig").min_scroll;
+const scroll_max: *u8 = &@import("input.zig").max_scroll;
+const threshold: *f16 = &@import("input.zig").scroll_threshold;
 
 pub var window: Area = undefined;
 pub var panels: Panels = undefined;
@@ -45,6 +50,12 @@ pub fn init() !void {
     const tty = terminal.ttyFile();
     try getWindow(tty);
     panels.init(window);
+    const find_area = panels.find.validArea();
+    const ylen_float: f64 = @floatFromInt(find_area.ylen);
+    const ymax_float: f64 = @floatFromInt(find_area.ymax);
+    const ymin_float: f64 = @floatFromInt(find_area.ymin);
+    scroll_min.* = @intFromFloat(math.ceil((threshold.* * ylen_float) + ymin_float));
+    scroll_max.* = @intFromFloat(math.ceil(ymax_float - (threshold.* * ylen_float)));
 }
 
 fn getWindow(tty: *const fs.File) !void {

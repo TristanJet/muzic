@@ -22,11 +22,11 @@ var initial_song: mpd.CurrentSong = undefined;
 var initial_queue: mpd.Queue = mpd.Queue{};
 var initial_typing: state.TypingDisplay = undefined;
 
-var all_searchable: []mpd.Searchable = undefined;
-
 const wrkallocator = alloc.wrkallocator;
 const wrkfba = &alloc.wrkfba;
 const wrkbuf = &alloc.wrkbuf;
+
+var browse_types: [3][]const u8 = .{ "Albums", "Artists", "Songs" };
 
 pub fn main() !void {
     defer alloc.deinit();
@@ -54,12 +54,12 @@ pub fn main() !void {
 
     initial_typing.init();
 
-    all_searchable = try mpd.getSearchable(alloc.persistentAllocator, alloc.respAllocator);
-    alloc.respArena.deinit();
+    // change to const eventually ???
+    var data = try state.Data.init();
+    input.data = data;
 
-    algo.pointerToAll = &all_searchable;
+    algo.pointerToAll = &data.searchable;
     algo.resetItems();
-    log("allsearchable len: {}", .{all_searchable.len});
 
     const initial_state = state.State{
         .quit = false,
@@ -84,16 +84,30 @@ pub fn main() !void {
         .find_cursor_pos = 0,
         .viewable_searchable = null,
 
-        .browse_cursor = .{
-            .column = 0,
-            .position = 0,
-            .prev_position = 0,
+        .selected_column = .one,
+        .column_1 = .{
+            .displaying = browse_types[0..],
+            .pos = 0,
+            .prev_pos = 0,
+            .slice_inc = 0,
+        },
+        .column_2 = .{
+            .displaying = data.albums,
+            .pos = 0,
+            .prev_pos = 0,
+            .slice_inc = 0,
+        },
+        .column_3 = .{
+            .displaying = undefined,
+            .pos = 0,
+            .prev_pos = 0,
+            .slice_inc = 0,
         },
 
         .input_state = .normal_queue,
     };
 
-    var app = App.init(initial_state);
+    var app = App.init(initial_state, &data);
 
     var render_state = RenderState.init();
 

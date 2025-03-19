@@ -16,10 +16,13 @@ const wrkallocator = alloc.wrkallocator;
 var app: *state.State = undefined;
 var render_state: *RenderState = undefined;
 var current: state.State = undefined;
+pub var data: state.Data = undefined;
 
 var last_input: i64 = 0;
-//Current is only good so long as mutations aren't dependent on mutations
-//that occur during render() function lifetime
+
+pub var scroll_threshold: f16 = 0.2;
+pub var min_scroll: u8 = 0;
+pub var max_scroll: u8 = undefined;
 
 pub const Input_State = enum {
     normal_queue,
@@ -28,7 +31,7 @@ pub const Input_State = enum {
     typing_browse,
 };
 
-const cursorDirection = enum {
+pub const cursorDirection = enum {
     up,
     down,
 };
@@ -54,7 +57,6 @@ pub fn handleInput(char: u8, app_state: *state.State, render_state_: *RenderStat
         },
         .normal_browse => {
             normalBrowse(char) catch unreachable;
-            log("cursor pos: {}\n", .{app.browse_cursor.position});
         },
         else => unreachable,
     }
@@ -138,8 +140,9 @@ fn normalQueue(char: u8) !void {
         'b' => {
             app.input_state = .normal_browse;
             render_state.find = true;
-            render_state.browse = true;
-            render_state.browse_cursor = true;
+            render_state.browse_one = true;
+            render_state.browse_two = true;
+            // render_state.browse_cursor = true;
             render_state.queue = true;
         },
         'x' => {
@@ -197,14 +200,39 @@ fn normalBrowse(char: u8) !void {
             }
         },
         'j' => {
-            app.browse_cursor.prev_position = current.browse_cursor.position;
-            scroll(&app.browse_cursor.position, 2, .down);
-            render_state.browse_cursor = true;
+            switch (app.selected_column) {
+                .one => {
+                    const max: u8 = @intCast(@min(window.panels.browse1.validArea().ylen, app.column_1.displaying.len));
+                    app.column_1.scroll(.down, max);
+                    app.column_2.displaying = switch (app.column_1.pos) {
+                        0 => data.albums,
+                        1 => data.artists,
+                        2 => data.songs,
+                        else => unreachable,
+                    };
+                    render_state.browse_one = true;
+                    render_state.browse_two = true;
+                },
+                .two => {},
+                .three => {},
+            }
         },
         'k' => {
-            app.browse_cursor.prev_position = current.browse_cursor.position;
-            scroll(&app.browse_cursor.position, null, .up);
-            render_state.browse_cursor = true;
+            switch (app.selected_column) {
+                .one => {
+                    app.column_1.scroll(.up, 0);
+                    app.column_2.displaying = switch (app.column_1.pos) {
+                        0 => data.albums,
+                        1 => data.artists,
+                        2 => data.songs,
+                        else => unreachable,
+                    };
+                    render_state.browse_one = true;
+                    render_state.browse_two = true;
+                },
+                .two => {},
+                .three => {},
+            }
         },
         else => unreachable,
     }

@@ -15,8 +15,6 @@ var app: *state.State = undefined;
 var render_state: *RenderState = undefined;
 var current: state.State = undefined;
 
-const browse_types: [3][]const u8 = .{ "Albums", "Artists", "Songs" };
-
 pub const RenderState = struct {
     borders: bool = false,
     currentTrack: bool = false,
@@ -24,8 +22,12 @@ pub const RenderState = struct {
     queue: bool = false,
     queueEffects: bool = false,
     find: bool = false,
-    browse: bool = false,
-    browse_cursor: bool = false,
+    browse_one: bool = false,
+    browse_two: bool = false,
+    browse_three: bool = false,
+    browse_cursor_one: bool = false,
+    browse_cursor_two: bool = false,
+    browse_cursor_three: bool = false,
 
     pub fn init() RenderState {
         return .{
@@ -35,7 +37,12 @@ pub const RenderState = struct {
             .queue = true,
             .queueEffects = true,
             .find = true,
-            .browse_cursor = false,
+            .browse_one = false,
+            .browse_two = false,
+            .browse_three = false,
+            .browse_cursor_one = false,
+            .browse_cursor_two = false,
+            .browse_cursor_three = false,
         };
     }
 };
@@ -54,9 +61,9 @@ pub fn render(app_state: *state.State, render_state_: *RenderState, panels: wind
     if (render_state.queue) try queueRender(wrkallocator, &alloc.wrkfba.end_index, panels.queue.validArea());
     if (render_state.queueEffects) try queueEffectsRender(wrkallocator, panels.queue.validArea());
     if (render_state.find) try findRender(panels.find);
-    if (render_state.browse) try browseOneRender(panels.browse1);
-    if (render_state.browse_cursor) try browseCursorRender(current.browse_cursor);
-    // Flush terminal buffer after all rendering is done
+    if (render_state.browse_one) try columnOne(panels.browse1.validArea(), app.column_1.displaying, app.column_1.slice_inc);
+    if (render_state.browse_two) try columnTwo(panels.browse2.validArea(), app.column_2.displaying, app.column_2.slice_inc);
+    if (render_state.browse_three) try columnThree(panels.browse3.validArea(), app.column_3.displaying, app.column_3.slice_inc);
 
     term.flushBuffer() catch |err| if (err != error.WouldBlock) return err;
 }
@@ -298,42 +305,58 @@ fn barRender(panel: window.Panel, song: mpd.CurrentSong, allocator: std.mem.Allo
     current.currently_filled = filled;
 }
 
-fn browseOneRender(panel: window.Panel) !void {
-    for (0..browse_types.len) |i| {
-        try term.moveCursor(panel.area.ymin + i, panel.area.xmin);
-        try term.writeAll(browse_types[i]);
+fn columnOne(area: window.Area, strings: []const []const u8, inc: usize) !void {
+    try browseColumn(area, strings, inc);
+}
+
+fn columnTwo(area: window.Area, strings: []const []const u8, inc: usize) !void {
+    try browseColumn(area, strings, inc);
+}
+
+fn columnThree(area: window.Area, strings: []const []const u8, inc: usize) !void {
+    try browseColumn(area, strings, inc);
+}
+
+fn browseColumn(area: window.Area, strings: []const []const u8, inc: usize) !void {
+    for (0..area.ylen) |i| {
+        if (i >= strings.len) return;
+        const string = strings[i + inc];
+        const xmax = if (area.xlen > string.len) string.len else area.xlen;
+        try term.moveCursor(area.ymin + i, area.xmin);
+        try term.writeAll(string[0..xmax]);
     }
 }
-
-fn browseCursorRender(cursor: state.BrowseCursor) !void {
-    const xmin = switch (cursor.column) {
-        0 => window.panels.browse1.validArea().xmin,
-        1 => window.panels.browse2.validArea().xmin,
-        2 => window.panels.browse3.validArea().xmin,
-        else => unreachable,
-    };
-    const xlen = switch (cursor.column) {
-        0 => window.panels.browse1.validArea().xlen,
-        1 => window.panels.browse2.validArea().xlen,
-        2 => window.panels.browse3.validArea().xlen,
-        else => unreachable,
-    };
-    const ymin = window.panels.find.validArea().ymin;
-
-    var nSpace = xlen - browse_types[cursor.prev_position].len;
-
-    try term.moveCursor(ymin + cursor.prev_position, xmin);
-    try term.attributeReset();
-    try term.writeAll(browse_types[cursor.prev_position]);
-    try term.writeByteNTimes(' ', nSpace);
-    try term.moveCursor(ymin + cursor.position, xmin);
-    try term.highlight();
-    try term.writeAll(browse_types[cursor.position]);
-    nSpace = xlen - browse_types[cursor.position].len;
-    try term.writeByteNTimes(' ', nSpace);
-    try term.attributeReset();
-}
-
+//
+// fn browseCursorOne() !void {
+//     browseCursorRender();
+// }
+//
+// fn browseCursorTwo() !void {
+//     browseCursorRender();
+// }
+//
+// fn browseCursorThree() !void {
+//     browseCursorRender();
+// }
+// fn browseCursorRender(cursor: state.BrowseCursor, area: window.Area) !void {
+//     const xmin = area.xmin;
+//     const xlen = area.xlen;
+//     const ymin = area.ymin;
+//
+//     var nSpace = xlen - browse_types[cursor.prev_position].len;
+//
+//     try term.moveCursor(ymin + cursor.prev_position, xmin);
+//     try term.attributeReset();
+//     try term.writeAll(browse_types[cursor.prev_position]);
+//     try term.writeByteNTimes(' ', nSpace);
+//     try term.moveCursor(ymin + cursor.position, xmin);
+//     try term.highlight();
+//     try term.writeAll(browse_types[cursor.position]);
+//     nSpace = xlen - browse_types[cursor.position].len;
+//     try term.writeByteNTimes(' ', nSpace);
+//     try term.attributeReset();
+// }
+//
 fn findRender(panel: window.Panel) !void {
     const area = panel.validArea();
 

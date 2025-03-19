@@ -4,8 +4,8 @@ pub var wrkbuf: [4096]u8 = undefined;
 pub var wrkfba = std.heap.FixedBufferAllocator.init(&wrkbuf);
 pub const wrkallocator = wrkfba.allocator();
 
-pub var respArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-pub const respAllocator = respArena.allocator();
+pub var respArena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+pub const respAllocator: std.mem.Allocator = respArena.allocator();
 
 pub var persistentArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 pub const persistentAllocator = persistentArena.allocator();

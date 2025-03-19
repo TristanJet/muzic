@@ -1,6 +1,7 @@
 const std = @import("std");
 const mpd = @import("mpdclient.zig");
 const input = @import("input.zig");
+const algo = @import("algo.zig");
 const log = @import("util.zig").log;
 const RenderState = @import("render.zig").RenderState;
 const expect = std.testing.expect;
@@ -9,16 +10,110 @@ const time = std.time;
 const alloc = @import("allocators.zig");
 const wrkallocator = alloc.wrkallocator;
 
+pub const State = struct {
+    quit: bool,
+    first_render: bool,
+
+    song: mpd.CurrentSong,
+    isPlaying: bool,
+    last_second: i64,
+    last_elapsed: u16,
+    bar_init: bool,
+    currently_filled: usize,
+
+    last_ping: i64,
+
+    queue: mpd.Queue,
+    viewStartQ: usize,
+    viewEndQ: usize,
+    cursorPosQ: u8,
+    prevCursorPos: u8,
+
+    typing_display: TypingDisplay,
+    find_cursor_pos: u8,
+    viewable_searchable: ?[]mpd.Searchable,
+
+    selected_column: Columns,
+    column_1: BrowseColumn,
+    column_2: BrowseColumn,
+    column_3: BrowseColumn,
+
+    input_state: input.Input_State,
+};
+
+pub const Data = struct {
+    searchable: []mpd.Searchable,
+    albums: []const []const u8,
+    artists: []const []const u8,
+    songs: []const []const u8,
+
+    pub fn init() !Data {
+        const searchable = try mpd.getSearchable(alloc.persistentAllocator, alloc.respAllocator);
+        _ = alloc.respArena.reset(.retain_capacity);
+
+        const albums = try mpd.getAllAlbums(alloc.persistentAllocator, alloc.respAllocator);
+        _ = alloc.respArena.reset(.retain_capacity);
+        const artists = try mpd.getAllArtists(alloc.persistentAllocator, alloc.respAllocator);
+        _ = alloc.respArena.reset(.retain_capacity);
+        const songs = try mpd.getAllSongTitles(alloc.persistentAllocator, alloc.respAllocator);
+        _ = alloc.respArena.reset(.free_all);
+        return .{
+            .searchable = searchable,
+            .albums = albums,
+            .artists = artists,
+            .songs = songs,
+        };
+    }
+};
+
+pub const Columns = enum {
+    one,
+    two,
+    three,
+};
+
+pub const BrowseColumn = struct {
+    pos: u8,
+    prev_pos: u8,
+    slice_inc: usize,
+    displaying: []const []const u8,
+
+    pub fn scroll(self: *BrowseColumn, direction: input.cursorDirection, min_max: u8) void {
+        self.prev_pos = self.pos;
+        log("min: {}\n", .{min_max});
+        switch (direction) {
+            .up => {
+                if (self.pos > min_max) {
+                    self.pos -= 1;
+                }
+                // else {
+                //     self.slice_inc -= 1;
+                // }
+            },
+            .down => {
+                if (self.pos < min_max - 1) {
+                    self.pos += 1;
+                }
+                // else {
+                //     self.slice_inc += 1;
+                // }
+            },
+        }
+        log("position: {}\n", .{self.pos});
+    }
+};
 // Core application state
 pub const App = struct {
     event_buffer: EventBuffer,
     state: State,
+    data: *Data,
 
     // Constructor
-    pub fn init(initial_state: State) App {
+    pub fn init(initial_state: State, data: *Data) App {
         return App{
             .event_buffer = EventBuffer{},
             .state = initial_state,
+            .data = data,
         };
     }
 
@@ -66,32 +161,11 @@ const BufferError = error{
     BufferFull,
 };
 
-pub const State = struct {
-    quit: bool,
-    first_render: bool,
-
-    song: mpd.CurrentSong,
-    isPlaying: bool,
-    last_second: i64,
-    last_elapsed: u16,
-    bar_init: bool,
-    currently_filled: usize,
-
-    last_ping: i64,
-
-    queue: mpd.Queue,
-    viewStartQ: usize,
-    viewEndQ: usize,
-    cursorPosQ: u8,
-    prevCursorPos: u8,
-
-    typing_display: TypingDisplay,
-    find_cursor_pos: u8,
-    viewable_searchable: ?[]mpd.Searchable,
-
-    browse_cursor: BrowseCursor,
-
-    input_state: input.Input_State,
+const BrowseDisplayType = enum {
+    types,
+    albums,
+    artists,
+    tracks,
 };
 
 const EventBuffer = struct {
@@ -124,10 +198,9 @@ pub const TypingDisplay = struct {
     }
 };
 
-pub const BrowseCursor = struct {
-    column: u8,
-    position: u8,
-    prev_position: u8,
+pub const BrowseCursorPos = struct {
+    pos: u8,
+    prev_pos: u8,
 };
 
 fn handleTime(time_: i64, app: *State, _render_state: *RenderState) !void {

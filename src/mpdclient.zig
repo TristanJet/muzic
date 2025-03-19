@@ -496,17 +496,17 @@ fn getAllType(data_type: []const u8, heapAllocator: mem.Allocator, respAllocator
 ////
 /// list album “(Artist == \”{}\”)” .{Artist}
 ///
-pub fn getAllAlbums(heapAllocator: mem.Allocator, respAllocator: std.mem.Allocator) ![][]const u8 {
+pub fn getAllAlbums(heapAllocator: mem.Allocator, respAllocator: std.mem.Allocator) ![]const []const u8 {
     const data_type = "album";
     return getAllType(data_type, heapAllocator, respAllocator);
 }
 
-pub fn getAllSongTitles(heapAllocator: mem.Allocator, respAllocator: std.mem.Allocator) ![][]const u8 {
+pub fn getAllSongTitles(heapAllocator: mem.Allocator, respAllocator: std.mem.Allocator) ![]const []const u8 {
     const data_type = "title";
     return getAllType(data_type, heapAllocator, respAllocator);
 }
 
-pub fn getAllArtists(heapAllocator: mem.Allocator, respAllocator: std.mem.Allocator) ![][]const u8 {
+pub fn getAllArtists(heapAllocator: mem.Allocator, respAllocator: std.mem.Allocator) ![]const []const u8 {
     const data_type = "artist";
     return getAllType(data_type, heapAllocator, respAllocator);
 }
@@ -520,6 +520,17 @@ const Find_Song = struct {
     title: []const u8,
 };
 
+const Find_Filter = struct {
+    artist: ?[]const u8,
+    album: []const u8,
+};
+pub fn findTracks(filter: *const Find_Filter, allocator: std.mem.Allocator) !void {
+    const artist = if (filter.artist) |artist| try fmt.allocPrint(allocator, " AND (Artist == \\\"{s}\\\")", .{artist}) else "";
+    const command = try fmt.allocPrint(allocator, "find \"((Album == \\\"{s}\\\"){s})\"\n", .{ filter.album, artist });
+    util.log("command: {s}", .{command});
+    try sendCommand(command);
+}
+
 pub fn findAdd(song: *const Find_Song, allocator: mem.Allocator) !void {
     const artist = if (song.artist) |artist| try fmt.allocPrint(allocator, " AND (Artist == \\\"{s}\\\")", .{artist}) else "";
     const album = if (song.album) |album| try fmt.allocPrint(allocator, " AND (Album == \\\"{s}\\\")", .{album}) else "";
@@ -527,6 +538,23 @@ pub fn findAdd(song: *const Find_Song, allocator: mem.Allocator) !void {
     const command = try fmt.allocPrint(allocator, "findadd \"((Title == \\\"{s}\\\"){s}{s})\"\n", .{ song.title, album, artist });
     util.log("command: {s}", .{command});
     try sendCommand(command);
+}
+
+test "findTracks" {
+    var heapArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer heapArena.deinit();
+    const heapAllocator = heapArena.allocator();
+
+    var wrkbuf: [16]u8 = undefined;
+    _ = try connect(wrkbuf[0..16], .command, false);
+    std.debug.print("connected\n", .{});
+
+    const filter = Find_Filter{
+        .artist = "Steve Lacy",
+        .album = "Gemini Rights",
+    };
+
+    try findTracks(&filter, heapAllocator);
 }
 
 test "findAdd" {
