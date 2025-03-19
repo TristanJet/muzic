@@ -141,8 +141,8 @@ fn normalQueue(char: u8) !void {
             app.input_state = .normal_browse;
             render_state.find = true;
             render_state.browse_one = true;
+            render_state.browse_cursor_one = true;
             render_state.browse_two = true;
-            // render_state.browse_cursor = true;
             render_state.queue = true;
         },
         'x' => {
@@ -211,6 +211,7 @@ fn normalBrowse(char: u8) !void {
                         else => unreachable,
                     };
                     render_state.browse_one = true;
+                    render_state.browse_cursor_one = true;
                     render_state.browse_two = true;
                 },
                 .two => {},
@@ -218,7 +219,7 @@ fn normalBrowse(char: u8) !void {
             }
         },
         'k' => {
-            switch (app.selected_column) {
+            switch (current.selected_column) {
                 .one => {
                     app.column_1.scroll(.up, 0);
                     app.column_2.displaying = switch (app.column_1.pos) {
@@ -228,11 +229,21 @@ fn normalBrowse(char: u8) !void {
                         else => unreachable,
                     };
                     render_state.browse_one = true;
+                    render_state.browse_cursor_one = true;
                     render_state.browse_two = true;
                 },
                 .two => {},
                 .three => {},
             }
+        },
+        '\n', '\r' => {
+            // switch (current.selected_column) {
+            //     .one => {
+            //         app.selected_column = .two;
+            //     },
+            //     .two => .three,
+            //     .three => .one,
+            // }
         },
         else => unreachable,
     }
