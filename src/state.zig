@@ -38,6 +38,8 @@ pub const State = struct {
     column_2: BrowseColumn,
     column_3: BrowseColumn,
 
+    find_filter: mpd.Filter_Songs,
+
     input_state: input.Input_State,
 };
 
@@ -90,7 +92,7 @@ pub const BrowseColumn = struct {
                 // }
             },
             .down => {
-                if (self.pos < min_max - 1) {
+                if (self.pos < min_max - 1 and min_max > 0) {
                     self.pos += 1;
                 }
                 // else {
@@ -134,7 +136,7 @@ pub const App = struct {
     fn handleEvent(self: *App, event: Event, render_state: *RenderState) void {
         switch (event) {
             .input => |char| input.handleInput(char, &self.state, render_state),
-            .release => |char| log("Released: {}", .{char}),
+            .release => |char| input.handleRelease(char, &self.state, render_state),
             .idle => |idle_type| handleIdle(idle_type, &self.state, render_state) catch |err| {
                 log("IDLE EVENT ERROR: {}", .{err});
                 unreachable;

@@ -104,6 +104,11 @@ pub fn main() !void {
             .slice_inc = 0,
         },
 
+        .find_filter = .{
+            .album = undefined,
+            .artist = null,
+        },
+
         .input_state = .normal_queue,
     };
 

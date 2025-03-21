@@ -332,6 +332,10 @@ fn browseColumn(area: window.Area, strings: []const []const u8, inc: usize) !voi
 }
 
 fn browseCursorRender(area: window.Area, strings: []const []const u8, prev_pos: u8, pos: u8) !void {
+    // Ensure that the positions are valid for the array
+    if (strings.len == 0) return;
+    if (prev_pos >= strings.len or pos >= strings.len) return;
+
     const prev = strings[prev_pos];
     const curr = strings[pos];
     var nSpace: usize = 0;
@@ -360,6 +364,9 @@ fn browseCursorRender(area: window.Area, strings: []const []const u8, prev_pos: 
 }
 
 fn clearCursor(area: window.Area, strings: []const []const u8, pos: u8) !void {
+    // Safety check for valid position
+    if (strings.len == 0 or pos >= strings.len) return;
+    
     const curr = strings[pos];
 
     var nSpace: usize = 0;

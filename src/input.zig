@@ -28,6 +28,8 @@ pub var max_scroll: u8 = undefined;
 
 var key_down: ?u8 = null;
 
+var tracks_from_album: mpd.SongTitleAndUri = undefined;
+
 pub const Input_State = enum {
     normal_queue,
     typing_find,
@@ -91,6 +93,26 @@ pub fn handleInput(char: u8, app_state: *state.State, render_state_: *RenderStat
         },
         .normal_browse => {
             normalBrowse(char) catch unreachable;
+        },
+        else => unreachable,
+    }
+}
+
+pub fn handleRelease(char: u8, app_state: *state.State, render_state_: *RenderState) void {
+    log("released: {}", .{char});
+    app = app_state;
+    current = app_state.*;
+    render_state = render_state_;
+    switch (app_state.input_state) {
+        .normal_queue => {
+            return;
+            // normalQueue(char) catch unreachable;
+        },
+        .typing_find => {
+            return;
+        },
+        .normal_browse => {
+            normalBrowseRelease(char) catch unreachable;
         },
         else => unreachable,
     }
@@ -250,10 +272,13 @@ fn normalBrowse(char: u8) !void {
                     render_state.browse_two = true;
                 },
                 .two => {
-                    const max: u8 = @intCast(@min(window.panels.browse1.validArea().ylen, app.column_2.displaying.len));
-                    app.column_2.scroll(.down, max);
-                    render_state.browse_two = true;
-                    render_state.browse_cursor_two = true;
+                    // Ensure that we're checking if there are items in the column
+                    if (app.column_2.displaying.len > 0) {
+                        const max: u8 = @intCast(@min(window.panels.browse1.validArea().ylen, app.column_2.displaying.len));
+                        app.column_2.scroll(.down, max);
+                        render_state.browse_two = true;
+                        render_state.browse_cursor_two = true;
+                    }
                 },
                 .three => {},
             }
@@ -274,9 +299,12 @@ fn normalBrowse(char: u8) !void {
                     render_state.browse_two = true;
                 },
                 .two => {
-                    app.column_2.scroll(.up, 0);
-                    render_state.browse_two = true;
-                    render_state.browse_cursor_two = true;
+                    // Add safety check before scrolling
+                    if (app.column_2.displaying.len > 0) {
+                        app.column_2.scroll(.up, 0);
+                        render_state.browse_two = true;
+                        render_state.browse_cursor_two = true;
+                    }
                     // render_state.browse_three = true;
                 },
                 .three => {},
@@ -323,6 +351,32 @@ fn normalBrowse(char: u8) !void {
             }
         },
         else => unreachable,
+    }
+}
+
+fn oneToTwo() void {
+    app.selected_column = .two;
+    render_state.browse_cursor_two = true;
+    render_state.clear_browse_cursor_one = true;
+}
+
+fn normalBrowseRelease(char: u8) !void {
+    switch (char) {
+        'j', 'k' => {
+            if (current.selected_column != .two) return;
+            if (current.column_2.displaying.len == 0 or current.column_2.pos >= current.column_2.displaying.len) {
+                return;
+            }
+            log("{s}", .{current.column_2.displaying[0]});
+            app.find_filter.album = current.column_2.displaying[current.column_2.pos];
+            tracks_from_album = try mpd.findTracksFromAlbum(&app.find_filter, alloc.respAllocator, alloc.typingAllocator);
+            _ = alloc.respArena.reset(.free_all);
+            app.column_3.displaying = tracks_from_album.title;
+            render_state.browse_three = true;
+        },
+        else => {
+            log("unrecognized key", .{});
+        },
     }
 }
 

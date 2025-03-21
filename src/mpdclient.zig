@@ -8,6 +8,7 @@ const assert = std.debug.assert;
 const net = std.net;
 const mem = std.mem;
 const fmt = std.fmt;
+const ArrayList = std.ArrayList;
 
 const host = "127.0.0.1";
 const port = 6600;
@@ -517,43 +518,53 @@ const Find_add_Song = struct {
     title: []const u8,
 };
 
-const Filter_Songs = struct {
+pub const Filter_Songs = struct {
     artist: ?[]const u8,
     album: []const u8,
 };
 
-const SongTitleAndUri = struct {
-    title: []const u8,
-    uri: []const u8,
+pub const SongTitleAndUri = struct {
+    title: [][]const u8,
+    uri: [][]const u8,
 };
 
 pub fn findTracksFromAlbum(
     filter: *const Filter_Songs,
     temp_alloc: mem.Allocator,
     persist_alloc: mem.Allocator,
-) ![]SongTitleAndUri {
-    const artist = if (filter.artist) |artist| try fmt.allocPrint(temp_alloc, " AND (Artist == \\\"{s}\\\")", .{artist}) else "";
-    const command = try fmt.allocPrint(temp_alloc, "find \"((Album == \\\"{s}\\\"){s})\"\n", .{ filter.album, artist });
+) !SongTitleAndUri {
+    var artist: []const u8 = "";
+    if (filter.artist) |raw| {
+        artist = try fmt.allocPrint(temp_alloc, " AND (Artist == \\\"{s}\\\")", .{try escapeMpdString(temp_alloc, raw)});
+    }
+    const escaped_album = try escapeMpdString(temp_alloc, filter.album);
+    util.log("escaped: {s}", .{escaped_album});
+    const command = try fmt.allocPrint(temp_alloc, "find \"((Album == \\\"{s}\\\"){s})\"\n", .{ escaped_album, artist });
+    util.log("MPD command: {s}", .{command});
 
     const data = try readLargeResponse(temp_alloc, command);
     var lines = try processLargeResponse(data);
-    var array = std.ArrayList(SongTitleAndUri).init(persist_alloc);
+    var array_uri = ArrayList([]const u8).init(persist_alloc);
+    var array_title = ArrayList([]const u8).init(persist_alloc);
 
-    var title_and_uri: SongTitleAndUri = undefined;
     while (lines.next()) |line| {
         if (mem.indexOf(u8, line, ": ")) |separator_index| {
             const key = line[0..separator_index];
             const value = line[separator_index + 2 ..];
             if (mem.eql(u8, key, "file")) {
-                title_and_uri.uri = try array.allocator.dupe(u8, value);
+                try array_uri.append(try array_uri.allocator.dupe(u8, value));
             }
             if (mem.eql(u8, key, "Title")) {
-                title_and_uri.title = try array.allocator.dupe(u8, value);
-                try array.append(title_and_uri);
+                try array_title.append(try array_title.allocator.dupe(u8, value));
             }
         }
     }
-    return array.toOwnedSlice();
+    const titles_and_uris = SongTitleAndUri{
+        .title = try array_title.toOwnedSlice(),
+        .uri = try array_uri.toOwnedSlice(),
+    };
+
+    return titles_and_uris;
 }
 
 pub fn findAdd(song: *const Find_add_Song, allocator: mem.Allocator) !void {
@@ -585,9 +596,11 @@ test "findTracks" {
 
     const songs = try findTracksFromAlbum(&filter, tempAllocator, heapAllocator);
     _ = tempArena.reset(.free_all);
-    for (songs) |song| {
-        util.log("URI: {s}", .{song.uri});
-        util.log("Title: {s}", .{song.title});
+    for (songs.title) |song| {
+        util.log("Title: {s}", .{song});
+    }
+    for (songs.uri) |uri| {
+        util.log("URI: {s}", .{uri});
     }
 }
 
@@ -640,6 +653,25 @@ test "getAllAlbums" {
     std.debug.print("song : {s}\n", .{songs[100]});
     std.debug.print("n songs: {}\n", .{songs.len});
     std.debug.print("resp end index: {}\n", .{respArena.state.end_index});
+}
+fn escapeMpdString(alloc: mem.Allocator, str: []const u8) ![]u8 {
+    // Initialize a dynamic array to build the escaped string
+    var result = ArrayList(u8).init(alloc);
+    defer result.deinit(); // Ensure cleanup if toOwnedSlice fails
+
+    // Iterate over each character in the input string
+    for (str) |char| {
+        // Escape double quotes and backslashes by prefixing with a backslash
+        if (char == '"') {
+            try result.append('\\');
+            try result.append('\\');
+            try result.append('\\');
+        }
+        try result.append(char);
+    }
+
+    // Convert the ArrayList to an owned slice and return it
+    return result.toOwnedSlice();
 }
 
 pub fn getSearchable(heapAllocator: mem.Allocator, respAllocator: std.mem.Allocator) ![]Searchable {

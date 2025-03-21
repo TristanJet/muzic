@@ -2,6 +2,8 @@
 
 ## Bugs/Fixes
 - [x] FUCKING MAC BLOCK TERMINAL WRITES
+- [x] key release event
+- [ ] key release based on time
 - [ ] const pointer and pointer to state shared with all each loop
 - [ ] Batch HOLD events on release
 - [ ] More robust input debounce; I suspect, library size has an effect on mpd response speed.
