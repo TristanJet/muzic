@@ -2,6 +2,7 @@
 
 ## Bugs/Fixes
 - [x] FUCKING MAC BLOCK TERMINAL WRITES
+- [ ] const pointer and pointer to state shared with all each loop
 - [ ] Batch HOLD events on release
 - [ ] More robust input debounce; I suspect, library size has an effect on mpd response speed.
 - [ ] hold x from the top breaks

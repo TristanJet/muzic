@@ -19,10 +19,14 @@ var current: state.State = undefined;
 pub var data: state.Data = undefined;
 
 var last_input: i64 = 0;
+const release_threshold: u8 = 15;
+var nloops: u8 = 0;
 
 pub var scroll_threshold: f16 = 0.2;
 pub var min_scroll: u8 = 0;
 pub var max_scroll: u8 = undefined;
+
+var key_down: ?u8 = null;
 
 pub const Input_State = enum {
     normal_queue,
@@ -40,8 +44,38 @@ pub fn checkInputEvent(buffer: []u8) !?state.Event {
     assert(buffer.len == 1);
     const bytes_read: usize = try term.readBytes(buffer);
     if (bytes_read < 1) return null;
+    return state.Event{ .input = buffer[0] };
+}
 
-    return state.Event{ .input_char = buffer[0] };
+pub fn checkReleaseEvent(input_event: ?state.Event) !?state.Event {
+    if (key_down) |down| {
+        if (input_event) |event| {
+            if (down == event.input) {
+                nloops = 0; // Key is still pressed, reset nloops
+                return null;
+            } else {
+                // New key pressed, release the old one and track the new one
+                nloops = 0;
+                key_down = event.input;
+                return state.Event{ .release = down };
+            }
+        } else {
+            // No input, increment nloops
+            nloops += 1;
+            if (nloops >= release_threshold) {
+                nloops = 0;
+                key_down = null;
+                return state.Event{ .release = down };
+            }
+            return null;
+        }
+    } else {
+        if (input_event) |event| {
+            key_down = event.input;
+            nloops = 0; // Start tracking new key
+        }
+        return null;
+    }
 }
 
 pub fn handleInput(char: u8, app_state: *state.State, render_state_: *RenderState) void {
@@ -196,7 +230,7 @@ fn normalBrowse(char: u8) !void {
                 // render_state.find = true;
                 render_state.queueEffects = true;
                 app.input_state = .normal_queue;
-                app.find_cursor_pos = 0;
+                app.selected_column = .one;
             }
         },
         'j' => {
@@ -204,6 +238,7 @@ fn normalBrowse(char: u8) !void {
                 .one => {
                     const max: u8 = @intCast(@min(window.panels.browse1.validArea().ylen, app.column_1.displaying.len));
                     app.column_1.scroll(.down, max);
+                    if (current.column_2.pos != 0) app.column_2.pos = 0;
                     app.column_2.displaying = switch (app.column_1.pos) {
                         0 => data.albums,
                         1 => data.artists,
@@ -214,7 +249,12 @@ fn normalBrowse(char: u8) !void {
                     render_state.browse_cursor_one = true;
                     render_state.browse_two = true;
                 },
-                .two => {},
+                .two => {
+                    const max: u8 = @intCast(@min(window.panels.browse1.validArea().ylen, app.column_2.displaying.len));
+                    app.column_2.scroll(.down, max);
+                    render_state.browse_two = true;
+                    render_state.browse_cursor_two = true;
+                },
                 .three => {},
             }
         },
@@ -222,6 +262,7 @@ fn normalBrowse(char: u8) !void {
             switch (current.selected_column) {
                 .one => {
                     app.column_1.scroll(.up, 0);
+                    if (current.column_2.pos != 0) app.column_2.pos = 0;
                     app.column_2.displaying = switch (app.column_1.pos) {
                         0 => data.albums,
                         1 => data.artists,
@@ -232,18 +273,54 @@ fn normalBrowse(char: u8) !void {
                     render_state.browse_cursor_one = true;
                     render_state.browse_two = true;
                 },
-                .two => {},
+                .two => {
+                    app.column_2.scroll(.up, 0);
+                    render_state.browse_two = true;
+                    render_state.browse_cursor_two = true;
+                    // render_state.browse_three = true;
+                },
+                .three => {},
+            }
+        },
+        'h' => {
+            switch (current.selected_column) {
+                .one => {},
+                .two => {
+                    app.selected_column = .one;
+                    render_state.clear_browse_cursor_two = true;
+                    render_state.browse_cursor_one = true;
+                },
+                .three => {
+                    app.selected_column = .two;
+                },
+            }
+        },
+        'l' => {
+            switch (current.selected_column) {
+                .one => {
+                    app.selected_column = .two;
+                    render_state.browse_cursor_two = true;
+                    render_state.clear_browse_cursor_one = true;
+                },
+                .two => {
+                    app.selected_column = .three;
+                    render_state.browse_cursor_three = true;
+                },
                 .three => {},
             }
         },
         '\n', '\r' => {
-            // switch (current.selected_column) {
-            //     .one => {
-            //         app.selected_column = .two;
-            //     },
-            //     .two => .three,
-            //     .three => .one,
-            // }
+            switch (current.selected_column) {
+                .one => {
+                    app.selected_column = .two;
+                    render_state.browse_cursor_two = true;
+                },
+                .two => {
+                    app.selected_column = .three;
+                    render_state.browse_cursor_three = true;
+                },
+                .three => {},
+            }
         },
         else => unreachable,
     }

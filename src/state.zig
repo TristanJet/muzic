@@ -80,7 +80,6 @@ pub const BrowseColumn = struct {
 
     pub fn scroll(self: *BrowseColumn, direction: input.cursorDirection, min_max: u8) void {
         self.prev_pos = self.pos;
-        log("min: {}\n", .{min_max});
         switch (direction) {
             .up => {
                 if (self.pos > min_max) {
@@ -99,7 +98,6 @@ pub const BrowseColumn = struct {
                 // }
             },
         }
-        log("position: {}\n", .{self.pos});
     }
 };
 // Core application state
@@ -117,10 +115,7 @@ pub const App = struct {
         };
     }
 
-    pub fn appendEvent(self: *App, event: Event) BufferError!void {
-        if (self.event_buffer.len >= self.event_buffer.buffer.len) {
-            return BufferError.BufferFull;
-        }
+    pub fn appendEvent(self: *App, event: Event) void {
         self.event_buffer.buffer[self.event_buffer.len] = event;
         self.event_buffer.len += 1;
     }
@@ -138,7 +133,8 @@ pub const App = struct {
     // Handle individual events
     fn handleEvent(self: *App, event: Event, render_state: *RenderState) void {
         switch (event) {
-            .input_char => |char| input.handleInput(char, &self.state, render_state),
+            .input => |char| input.handleInput(char, &self.state, render_state),
+            .release => |char| log("Released: {}", .{char}),
             .idle => |idle_type| handleIdle(idle_type, &self.state, render_state) catch |err| {
                 log("IDLE EVENT ERROR: {}", .{err});
                 unreachable;
@@ -152,7 +148,8 @@ pub const App = struct {
 };
 
 pub const Event = union(EventType) {
-    input_char: u8,
+    input: u8,
+    release: u8,
     idle: Idle,
     time: i64,
 };
@@ -169,12 +166,13 @@ const BrowseDisplayType = enum {
 };
 
 const EventBuffer = struct {
-    buffer: [3]Event = undefined,
+    buffer: [4]Event = undefined,
     len: u8 = 0,
 };
 
 const EventType = enum {
-    input_char,
+    input,
+    release,
     idle,
     time,
 };
