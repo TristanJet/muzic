@@ -74,11 +74,19 @@ pub const Columns = enum {
     three,
 };
 
+pub const Column_Type = enum {
+    Select,
+    Artists,
+    Albums,
+    Tracks,
+};
+
 pub const BrowseColumn = struct {
     pos: u8,
     prev_pos: u8,
     slice_inc: usize,
     displaying: []const []const u8,
+    type: Column_Type,
 
     pub fn scroll(self: *BrowseColumn, direction: input.cursorDirection, min_max: u8) void {
         self.prev_pos = self.pos;

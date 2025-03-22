@@ -528,6 +528,29 @@ pub const SongTitleAndUri = struct {
     uri: [][]const u8,
 };
 
+pub fn findAlbumsFromArtists(
+    artist: []const u8,
+    temp_alloc: mem.Allocator,
+    persist_alloc: mem.Allocator,
+) ![][]const u8 {
+    const escaped = try escapeMpdString(temp_alloc, artist);
+    const command = try fmt.allocPrint(temp_alloc, "list album \"(Artist == \\\"{s}\\\")\"\n", .{escaped});
+    std.debug.print("{s}", .{command});
+    const data = try readLargeResponse(temp_alloc, command);
+    var lines = try processLargeResponse(data);
+    var array = std.ArrayList([]const u8).init(persist_alloc);
+
+    while (lines.next()) |line| {
+        if (mem.indexOf(u8, line, ": ")) |separator_index| {
+            const value = line[separator_index + 2 ..];
+            const copied_value = try persist_alloc.dupe(u8, value);
+            try array.append(copied_value);
+        }
+    }
+
+    return array.toOwnedSlice();
+}
+
 pub fn findTracksFromAlbum(
     filter: *const Filter_Songs,
     temp_alloc: mem.Allocator,
@@ -576,6 +599,25 @@ pub fn findAdd(song: *const Find_add_Song, allocator: mem.Allocator) !void {
     try sendCommand(command);
 }
 
+test "albumsFromArtist" {
+    var heapArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer heapArena.deinit();
+    const heapAllocator = heapArena.allocator();
+
+    var tempArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer tempArena.deinit();
+    const tempAllocator = tempArena.allocator();
+
+    var wrkbuf: [16]u8 = undefined;
+    _ = try connect(wrkbuf[0..16], .command, false);
+    std.debug.print("connected lal lala \n", .{});
+
+    const songs = try findAlbumsFromArtists("Playboi Carti", tempAllocator, heapAllocator);
+    _ = tempArena.reset(.free_all);
+    for (songs) |song| {
+        util.log("{s}", .{song});
+    }
+}
 test "findTracks" {
     var heapArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer heapArena.deinit();
@@ -670,7 +712,6 @@ fn escapeMpdString(alloc: mem.Allocator, str: []const u8) ![]u8 {
         try result.append(char);
     }
 
-    // Convert the ArrayList to an owned slice and return it
     return result.toOwnedSlice();
 }
 

@@ -90,18 +90,21 @@ pub fn main() !void {
             .pos = 0,
             .prev_pos = 0,
             .slice_inc = 0,
+            .type = .Select,
         },
         .column_2 = .{
             .displaying = data.albums,
             .pos = 0,
             .prev_pos = 0,
             .slice_inc = 0,
+            .type = undefined,
         },
         .column_3 = .{
             .displaying = undefined,
             .pos = 0,
             .prev_pos = 0,
             .slice_inc = 0,
+            .type = undefined,
         },
 
         .find_filter = .{

@@ -13,6 +13,8 @@ const RenderState = @import("render.zig").RenderState;
 const log = @import("util.zig").log;
 const wrkallocator = alloc.wrkallocator;
 
+const ui_order: [4]state.Column_Type = .{ .Select, .Artists, .Albums, .Tracks };
+
 var app: *state.State = undefined;
 var render_state: *RenderState = undefined;
 var current: state.State = undefined;
@@ -261,12 +263,22 @@ fn normalBrowse(char: u8) !void {
                     const max: u8 = @intCast(@min(window.panels.browse1.validArea().ylen, app.column_1.displaying.len));
                     app.column_1.scroll(.down, max);
                     if (current.column_2.pos != 0) app.column_2.pos = 0;
-                    app.column_2.displaying = switch (app.column_1.pos) {
-                        0 => data.albums,
-                        1 => data.artists,
-                        2 => data.songs,
+
+                    switch (app.column_1.pos) {
+                        0 => {
+                            app.column_2.type = .Albums;
+                            app.column_2.displaying = data.albums;
+                        },
+                        1 => {
+                            app.column_2.type = .Artists;
+                            app.column_2.displaying = data.artists;
+                        },
+                        2 => {
+                            app.column_2.type = .Tracks;
+                            app.column_2.displaying = data.songs;
+                        },
                         else => unreachable,
-                    };
+                    }
                     render_state.browse_one = true;
                     render_state.browse_cursor_one = true;
                     render_state.browse_two = true;
