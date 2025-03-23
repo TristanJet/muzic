@@ -8,6 +8,7 @@ const sym = @import("symbols.zig");
 const mpd = @import("mpdclient.zig");
 const io = std.io;
 const fs = std.fs;
+const mem = std.mem;
 
 const wrkallocator = alloc.wrkallocator;
 
@@ -322,13 +323,18 @@ fn barRender(panel: window.Panel, song: mpd.CurrentSong, allocator: std.mem.Allo
 }
 
 fn browseColumn(area: window.Area, strings: []const []const u8, inc: usize) !void {
+    // Clear the display area
     for (0..area.ylen) |i| {
         try term.moveCursor(area.ymin + i, area.xmin);
         try term.writeByteNTimes(' ', area.xlen);
     }
+    
+    // Display only visible items based on slice_inc
     for (0..area.ylen) |i| {
-        if (i >= strings.len) return;
-        const string = strings[i + inc];
+        const item_index = i + inc;
+        if (item_index >= strings.len) break;
+        
+        const string = strings[item_index];
         const xmax = if (area.xlen > string.len) string.len else area.xlen;
         try term.moveCursor(area.ymin + i, area.xmin);
         try term.writeAll(string[0..xmax]);
@@ -345,21 +351,52 @@ fn clear(area: window.Area) !void {
 fn browseCursorRender(area: window.Area, strings: []const []const u8, prev_pos: u8, pos: u8) !void {
     // Ensure that the positions are valid for the array
     if (strings.len == 0) return;
-    if (prev_pos >= strings.len or pos >= strings.len) return;
-
-    const prev = strings[prev_pos];
-    const curr = strings[pos];
+    
+    // Get currently displayed slice indexes
+    const col = for (0..3) |i| {
+        const column = switch (i) {
+            0 => current.column_1,
+            1 => current.column_2,
+            2 => current.column_3,
+            else => unreachable,
+        };
+        if (std.meta.eql(column.displaying.ptr, strings.ptr)) {
+            break column;
+        }
+    } else {
+        return; // Column not found
+    };
+    
+    const slice_inc = col.slice_inc;
+    
+    // Positions in the visible window (absolute index is pos + slice_inc)
+    const prev_visible_pos = prev_pos;
+    const curr_visible_pos = pos;
+    
+    // Check if these positions are visible in the current view window
+    if (prev_visible_pos >= area.ylen or curr_visible_pos >= area.ylen) return;
+    
+    // Check if we have valid indices in the original array 
+    if (prev_visible_pos + slice_inc >= strings.len or 
+        curr_visible_pos + slice_inc >= strings.len) return;
+    
+    // Get the actual strings to render
+    const prev = strings[prev_visible_pos + slice_inc];
+    const curr = strings[curr_visible_pos + slice_inc];
+    
+    // Un-highlight the previous cursor position
     var nSpace: usize = 0;
     var xmax = area.xlen;
     if (prev.len < area.xlen) {
         nSpace = area.xlen - prev.len;
         xmax = prev.len;
     }
-    try term.moveCursor(area.ymin + prev_pos, area.xmin);
+    try term.moveCursor(area.ymin + prev_visible_pos, area.xmin);
     try term.attributeReset();
     try term.writeAll(prev[0..xmax]);
     if (nSpace > 0) try term.writeByteNTimes(' ', nSpace);
 
+    // Highlight the current cursor position
     if (curr.len < area.xlen) {
         nSpace = area.xlen - curr.len;
         xmax = curr.len;
@@ -367,7 +404,7 @@ fn browseCursorRender(area: window.Area, strings: []const []const u8, prev_pos: 
         nSpace = 0;
         xmax = area.xlen;
     }
-    try term.moveCursor(area.ymin + pos, area.xmin);
+    try term.moveCursor(area.ymin + curr_visible_pos, area.xmin);
     try term.highlight();
     try term.writeAll(curr[0..xmax]);
     if (nSpace > 0) try term.writeByteNTimes(' ', nSpace);
@@ -376,9 +413,36 @@ fn browseCursorRender(area: window.Area, strings: []const []const u8, prev_pos: 
 
 fn clearCursor(area: window.Area, strings: []const []const u8, pos: u8) !void {
     // Safety check for valid position
-    if (strings.len == 0 or pos >= strings.len) return;
-
-    const curr = strings[pos];
+    if (strings.len == 0) return;
+    
+    // Get currently displayed slice indexes
+    const col = for (0..3) |i| {
+        const column = switch (i) {
+            0 => current.column_1,
+            1 => current.column_2,
+            2 => current.column_3,
+            else => unreachable,
+        };
+        if (std.meta.eql(column.displaying.ptr, strings.ptr)) {
+            break column;
+        }
+    } else {
+        return; // Column not found
+    };
+    
+    const slice_inc = col.slice_inc;
+    
+    // Position in the visible window
+    const visible_pos = pos;
+    
+    // Check if this position is visible
+    if (visible_pos >= area.ylen) return;
+    
+    // Check if we have a valid index in the original array
+    if (visible_pos + slice_inc >= strings.len) return;
+    
+    // Get the actual string to render
+    const curr = strings[visible_pos + slice_inc];
 
     var nSpace: usize = 0;
     var xmax = area.xlen;
@@ -386,7 +450,7 @@ fn clearCursor(area: window.Area, strings: []const []const u8, pos: u8) !void {
         nSpace = area.xlen - curr.len;
         xmax = curr.len;
     }
-    try term.moveCursor(area.ymin + pos, area.xmin);
+    try term.moveCursor(area.ymin + visible_pos, area.xmin);
     try term.attributeReset();
     try term.writeAll(curr[0..xmax]);
     if (nSpace > 0) try term.writeByteNTimes(' ', nSpace);

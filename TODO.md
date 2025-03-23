@@ -3,8 +3,8 @@
 ## Bugs/Fixes
 - [x] FUCKING MAC BLOCK TERMINAL WRITES
 - [x] key release event
-- [ ] key release based on time
-- [ ] const pointer and pointer to state shared with all each loop
+- [ ] get the uris for all_songs
+- [ ] const pointer retrieved at START of handle
 - [ ] Batch HOLD events on release
 - [ ] More robust input debounce; I suspect, library size has an effect on mpd response speed.
 - [ ] hold x from the top breaks

@@ -89,24 +89,30 @@ pub const BrowseColumn = struct {
     displaying: []const []const u8,
     type: Column_Type,
 
-    pub fn scroll(self: *BrowseColumn, direction: input.cursorDirection, max: ?u8) void {
+    pub fn scroll(self: *BrowseColumn, direction: input.cursorDirection, max: ?u8, area_height: usize) void {
         self.prev_pos = self.pos;
+        const scroll_threshold: f32 = 0.8;
+        const threshold_pos = @as(u8, @intFromFloat(@as(f32, @floatFromInt(area_height)) * scroll_threshold));
+        
         switch (direction) {
             .up => {
                 if (self.pos > 0) {
                     self.pos -= 1;
+                } else if (self.slice_inc > 0) {
+                    self.slice_inc -= 1;
                 }
-                // else {
-                //     self.slice_inc -= 1;
-                // }
             },
             .down => {
                 if (self.pos < max.? - 1 and max.? > 0) {
                     self.pos += 1;
+                    // If cursor position exceeds threshold (80% of visible area)
+                    if (self.pos >= threshold_pos and self.slice_inc + area_height < self.displaying.len) {
+                        self.slice_inc += 1;
+                        self.pos -= 1;
+                    }
+                } else if (self.slice_inc + area_height < self.displaying.len) {
+                    self.slice_inc += 1;
                 }
-                // else {
-                //     self.slice_inc += 1;
-                // }
             },
         }
     }

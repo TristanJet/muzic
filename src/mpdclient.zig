@@ -501,6 +501,7 @@ pub fn getAllAlbums(heapAllocator: mem.Allocator, respAllocator: std.mem.Allocat
     return getAllType("album", heapAllocator, respAllocator);
 }
 
+// rewrite, you can get the uris
 pub fn getAllSongTitles(heapAllocator: mem.Allocator, respAllocator: std.mem.Allocator) ![]const []const u8 {
     return getAllType("title", heapAllocator, respAllocator);
 }
