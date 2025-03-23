@@ -524,8 +524,8 @@ pub const Filter_Songs = struct {
 };
 
 pub const SongTitleAndUri = struct {
-    title: [][]const u8,
-    uri: [][]const u8,
+    titles: [][]const u8,
+    uris: [][]const u8,
 };
 
 pub fn findAlbumsFromArtists(
@@ -535,7 +535,6 @@ pub fn findAlbumsFromArtists(
 ) ![][]const u8 {
     const escaped = try escapeMpdString(temp_alloc, artist);
     const command = try fmt.allocPrint(temp_alloc, "list album \"(Artist == \\\"{s}\\\")\"\n", .{escaped});
-    std.debug.print("{s}", .{command});
     const data = try readLargeResponse(temp_alloc, command);
     var lines = try processLargeResponse(data);
     var array = std.ArrayList([]const u8).init(persist_alloc);
@@ -583,8 +582,8 @@ pub fn findTracksFromAlbum(
         }
     }
     const titles_and_uris = SongTitleAndUri{
-        .title = try array_title.toOwnedSlice(),
-        .uri = try array_uri.toOwnedSlice(),
+        .titles = try array_title.toOwnedSlice(),
+        .uris = try array_uri.toOwnedSlice(),
     };
 
     return titles_and_uris;

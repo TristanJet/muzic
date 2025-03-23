@@ -79,6 +79,7 @@ pub const Column_Type = enum {
     Artists,
     Albums,
     Tracks,
+    None,
 };
 
 pub const BrowseColumn = struct {
@@ -88,11 +89,11 @@ pub const BrowseColumn = struct {
     displaying: []const []const u8,
     type: Column_Type,
 
-    pub fn scroll(self: *BrowseColumn, direction: input.cursorDirection, min_max: u8) void {
+    pub fn scroll(self: *BrowseColumn, direction: input.cursorDirection, max: ?u8) void {
         self.prev_pos = self.pos;
         switch (direction) {
             .up => {
-                if (self.pos > min_max) {
+                if (self.pos > 0) {
                     self.pos -= 1;
                 }
                 // else {
@@ -100,7 +101,7 @@ pub const BrowseColumn = struct {
                 // }
             },
             .down => {
-                if (self.pos < min_max - 1 and min_max > 0) {
+                if (self.pos < max.? - 1 and max.? > 0) {
                     self.pos += 1;
                 }
                 // else {

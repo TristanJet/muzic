@@ -97,7 +97,7 @@ pub fn main() !void {
             .pos = 0,
             .prev_pos = 0,
             .slice_inc = 0,
-            .type = undefined,
+            .type = .Albums,
         },
         .column_3 = .{
             .displaying = undefined,

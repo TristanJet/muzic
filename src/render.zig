@@ -31,6 +31,8 @@ pub const RenderState = struct {
     clear_browse_cursor_one: bool = false,
     clear_browse_cursor_two: bool = false,
     clear_browse_cursor_three: bool = false,
+    clear_col_two: bool = false,
+    clear_col_three: bool = false,
 
     pub fn init() RenderState {
         return .{
@@ -76,6 +78,8 @@ pub fn render(app_state: *state.State, render_state_: *RenderState, panels: wind
     if (render_state.clear_browse_cursor_one) try clearCursor(panels.browse1.validArea(), current.column_1.displaying, current.column_1.pos);
     if (render_state.clear_browse_cursor_two) try clearCursor(panels.browse2.validArea(), current.column_2.displaying, current.column_2.pos);
     if (render_state.clear_browse_cursor_three) try clearCursor(panels.browse3.validArea(), current.column_3.displaying, current.column_3.pos);
+    if (render_state.clear_col_two) try clear(panels.browse2.validArea());
+    if (render_state.clear_col_three) try clear(panels.browse3.validArea());
 
     term.flushBuffer() catch |err| if (err != error.WouldBlock) return err;
 }
@@ -331,6 +335,13 @@ fn browseColumn(area: window.Area, strings: []const []const u8, inc: usize) !voi
     }
 }
 
+fn clear(area: window.Area) !void {
+    for (0..area.ylen) |i| {
+        try term.moveCursor(area.ymin + i, area.xmin);
+        try term.writeByteNTimes(' ', area.xlen);
+    }
+}
+
 fn browseCursorRender(area: window.Area, strings: []const []const u8, prev_pos: u8, pos: u8) !void {
     // Ensure that the positions are valid for the array
     if (strings.len == 0) return;
@@ -366,7 +377,7 @@ fn browseCursorRender(area: window.Area, strings: []const []const u8, prev_pos: 
 fn clearCursor(area: window.Area, strings: []const []const u8, pos: u8) !void {
     // Safety check for valid position
     if (strings.len == 0 or pos >= strings.len) return;
-    
+
     const curr = strings[pos];
 
     var nSpace: usize = 0;

@@ -133,6 +133,13 @@ fn onTypingExit() void {
     _ = alloc.algoArena.reset(.free_all);
 }
 
+fn onBrowseExit() void {
+    render_state.queueEffects = true;
+    app.input_state = .normal_queue;
+    app.selected_column = .one;
+    _ = alloc.typingArena.reset(.retain_capacity);
+}
+
 fn typingFind(char: u8) !void {
     switch (char) {
         '\x1B' => {
@@ -250,78 +257,11 @@ fn normalBrowse(char: u8) !void {
             const escRead = try term.readEscapeCode(&escBuffer);
 
             if (escRead == 0) {
-                // render_state.borders = true;
-                // render_state.find = true;
-                render_state.queueEffects = true;
-                app.input_state = .normal_queue;
-                app.selected_column = .one;
+                onBrowseExit();
             }
         },
-        'j' => {
-            switch (app.selected_column) {
-                .one => {
-                    const max: u8 = @intCast(@min(window.panels.browse1.validArea().ylen, app.column_1.displaying.len));
-                    app.column_1.scroll(.down, max);
-                    if (current.column_2.pos != 0) app.column_2.pos = 0;
-
-                    switch (app.column_1.pos) {
-                        0 => {
-                            app.column_2.type = .Albums;
-                            app.column_2.displaying = data.albums;
-                        },
-                        1 => {
-                            app.column_2.type = .Artists;
-                            app.column_2.displaying = data.artists;
-                        },
-                        2 => {
-                            app.column_2.type = .Tracks;
-                            app.column_2.displaying = data.songs;
-                        },
-                        else => unreachable,
-                    }
-                    render_state.browse_one = true;
-                    render_state.browse_cursor_one = true;
-                    render_state.browse_two = true;
-                },
-                .two => {
-                    // Ensure that we're checking if there are items in the column
-                    if (app.column_2.displaying.len > 0) {
-                        const max: u8 = @intCast(@min(window.panels.browse1.validArea().ylen, app.column_2.displaying.len));
-                        app.column_2.scroll(.down, max);
-                        render_state.browse_two = true;
-                        render_state.browse_cursor_two = true;
-                    }
-                },
-                .three => {},
-            }
-        },
-        'k' => {
-            switch (current.selected_column) {
-                .one => {
-                    app.column_1.scroll(.up, 0);
-                    if (current.column_2.pos != 0) app.column_2.pos = 0;
-                    app.column_2.displaying = switch (app.column_1.pos) {
-                        0 => data.albums,
-                        1 => data.artists,
-                        2 => data.songs,
-                        else => unreachable,
-                    };
-                    render_state.browse_one = true;
-                    render_state.browse_cursor_one = true;
-                    render_state.browse_two = true;
-                },
-                .two => {
-                    // Add safety check before scrolling
-                    if (app.column_2.displaying.len > 0) {
-                        app.column_2.scroll(.up, 0);
-                        render_state.browse_two = true;
-                        render_state.browse_cursor_two = true;
-                    }
-                    // render_state.browse_three = true;
-                },
-                .three => {},
-            }
-        },
+        'j' => verticalScroll(.down),
+        'k' => verticalScroll(.up),
         'h' => {
             switch (current.selected_column) {
                 .one => {},
@@ -329,40 +269,81 @@ fn normalBrowse(char: u8) !void {
                     app.selected_column = .one;
                     render_state.clear_browse_cursor_two = true;
                     render_state.browse_cursor_one = true;
+                    render_state.clear_col_three = true;
                 },
                 .three => {
                     app.selected_column = .two;
                 },
             }
         },
-        'l' => {
-            switch (current.selected_column) {
-                .one => {
-                    app.selected_column = .two;
-                    render_state.browse_cursor_two = true;
-                    render_state.clear_browse_cursor_one = true;
-                },
-                .two => {
-                    app.selected_column = .three;
-                    render_state.browse_cursor_three = true;
-                },
-                .three => {},
-            }
-        },
-        '\n', '\r' => {
-            switch (current.selected_column) {
-                .one => {
-                    app.selected_column = .two;
-                    render_state.browse_cursor_two = true;
-                },
-                .two => {
-                    app.selected_column = .three;
-                    render_state.browse_cursor_three = true;
-                },
-                .three => {},
-            }
-        },
+        'l' => selectNextColumn(),
+        '\n', '\r' => selectNextColumn(),
         else => unreachable,
+    }
+}
+
+fn verticalScroll(dir: cursorDirection) void {
+    switch (current.selected_column) {
+        .one => {
+            const max: ?u8 = if (dir == .up) null else @intCast(@min(window.panels.browse1.validArea().ylen, app.column_1.displaying.len));
+            app.column_1.scroll(dir, max);
+            if (current.column_2.pos != 0) app.column_2.pos = 0;
+            switch (app.column_1.pos) {
+                0 => {
+                    app.column_2.type = .Albums;
+                    app.column_2.displaying = data.albums;
+                },
+                1 => {
+                    app.column_2.type = .Artists;
+                    app.column_2.displaying = data.artists;
+                },
+                2 => {
+                    app.column_2.type = .Tracks;
+                    app.column_2.displaying = data.songs;
+                },
+                else => unreachable,
+            }
+            render_state.browse_one = true;
+            render_state.browse_cursor_one = true;
+            render_state.browse_two = true;
+        },
+        .two => {
+            // Add safety check before scrolling
+            if (app.column_2.displaying.len > 0) {
+                const max: ?u8 = if (dir == .up) null else @intCast(@min(window.panels.browse1.validArea().ylen, app.column_2.displaying.len));
+                app.column_2.scroll(dir, max);
+                render_state.browse_two = true;
+                render_state.browse_cursor_two = true;
+            }
+            // render_state.browse_three = true;
+        },
+        .three => {
+            const max: ?u8 = if (dir == .up) null else @intCast(@min(window.panels.browse1.validArea().ylen, app.column_3.displaying.len));
+            app.column_3.scroll(dir, max);
+            render_state.browse_three = true;
+            render_state.browse_cursor_three = true;
+        },
+    }
+}
+
+fn selectNextColumn() void {
+    log("{}", .{current.column_2.type});
+    switch (current.selected_column) {
+        .one => {
+            app.column_3.type = switch (current.column_2.type) {
+                .Albums => .Tracks,
+                .Artists => .Albums,
+                .Tracks => .None,
+                else => unreachable,
+            };
+            app.selected_column = .two;
+            render_state.browse_cursor_two = true;
+        },
+        .two => {
+            app.selected_column = .three;
+            render_state.browse_cursor_three = true;
+        },
+        .three => {},
     }
 }
 
@@ -379,17 +360,41 @@ fn normalBrowseRelease(char: u8) !void {
             if (current.column_2.displaying.len == 0 or current.column_2.pos >= current.column_2.displaying.len) {
                 return;
             }
-            log("{s}", .{current.column_2.displaying[0]});
-            app.find_filter.album = current.column_2.displaying[current.column_2.pos];
-            tracks_from_album = try mpd.findTracksFromAlbum(&app.find_filter, alloc.respAllocator, alloc.typingAllocator);
-            _ = alloc.respArena.reset(.free_all);
-            app.column_3.displaying = tracks_from_album.title;
-            render_state.browse_three = true;
+            try column2Release();
+        },
+        'l', '\n', '\r' => {
+            if (current.selected_column != .two) return;
+            if (current.column_2.displaying.len == 0 or current.column_2.pos >= current.column_2.displaying.len) {
+                return;
+            }
+            try column2Release();
         },
         else => {
             log("unrecognized key", .{});
         },
     }
+}
+
+fn column2Release() !void {
+    var next_col_display: [][]const u8 = undefined;
+    log("{}", .{current.column_2.type});
+    switch (current.column_2.type) {
+        .Albums => {
+            app.find_filter.album = current.column_2.displaying[current.column_2.pos];
+            log("album: {s}", .{app.find_filter.album});
+            tracks_from_album = try mpd.findTracksFromAlbum(&app.find_filter, alloc.respAllocator, alloc.typingAllocator);
+            next_col_display = tracks_from_album.titles;
+        },
+        .Artists => {
+            next_col_display = try mpd.findAlbumsFromArtists(current.column_2.displaying[current.column_2.pos], alloc.respAllocator, alloc.typingAllocator);
+        },
+        .Tracks => return,
+        else => unreachable,
+    }
+    _ = alloc.respArena.reset(.free_all);
+
+    app.column_3.displaying = next_col_display;
+    render_state.browse_three = true;
 }
 
 fn debounce() bool {
