@@ -13,8 +13,6 @@ const RenderState = @import("render.zig").RenderState;
 const log = @import("util.zig").log;
 const wrkallocator = alloc.wrkallocator;
 
-const ui_order: [4]state.Column_Type = .{ .Select, .Artists, .Albums, .Tracks };
-
 var app: *state.State = undefined;
 var render_state: *RenderState = undefined;
 var current: state.State = undefined;
@@ -31,6 +29,12 @@ pub var max_scroll: u8 = undefined;
 var key_down: ?u8 = null;
 
 var tracks_from_album: mpd.SongTitleAndUri = undefined;
+var albums_from_artist: []const []const u8 = undefined;
+
+// to save before switching back
+var temp_col2_inc: usize = 0;
+
+pub const browse_types: [3][]const u8 = .{ "Albums", "Artists", "Songs" };
 
 pub const Input_State = enum {
     normal_queue,
@@ -273,6 +277,14 @@ fn normalBrowse(char: u8) !void {
                     render_state.clear_col_three = true;
                 },
                 .three => {
+                    if (current.column_3.type == .Tracks) {
+                        columnRevert();
+                        render_state.browse_one = true;
+                        render_state.browse_two = true;
+                        render_state.browse_three = true;
+                        render_state.browse_cursor_three = true;
+                        return;
+                    }
                     app.selected_column = .two;
                     app.column_3.pos = 0;
 
@@ -319,14 +331,17 @@ fn verticalScroll(dir: cursorDirection) void {
             switch (app.column_1.pos) {
                 0 => {
                     app.column_2.type = .Albums;
+                    app.column_3.type = .Artists;
                     app.column_2.displaying = data.albums;
                 },
                 1 => {
                     app.column_2.type = .Artists;
+                    app.column_3.type = .Albums;
                     app.column_2.displaying = data.artists;
                 },
                 2 => {
                     app.column_2.type = .Tracks;
+                    app.column_3.type = .None;
                     app.column_2.displaying = data.songs.titles;
                 },
                 else => unreachable,
@@ -375,8 +390,51 @@ fn selectNextColumn() void {
             render_state.clear_browse_cursor_two = true;
             render_state.browse_cursor_three = true;
         },
-        .three => {},
+        .three => {
+            switch (current.column_3.type) {
+                .Albums => {
+                    columnSwitcheroo() catch |err|
+                        log("oopsy {}", .{err});
+                    render_state.browse_one = true;
+                    render_state.browse_two = true;
+                    render_state.browse_three = true;
+                    render_state.browse_cursor_three = true;
+                },
+                .Tracks => {},
+                else => unreachable,
+            }
+        },
     }
+}
+
+fn columnSwitcheroo() !void {
+    app.find_filter.album = current.column_3.displaying[current.column_3.absolutePos()];
+    const artists = current.column_2.displaying;
+    const albums = current.column_3.displaying;
+    log("album one : {s}", .{albums[0]});
+
+    //technically should do this for col 3
+    temp_col2_inc = app.column_2.slice_inc;
+    app.column_2.slice_inc = 0;
+    app.column_3.pos = 0;
+    app.column_1.displaying = artists;
+    app.column_2.displaying = albums;
+    log("album one : {s}", .{app.column_2.displaying[0]});
+    app.column_3.type = .Tracks;
+    tracks_from_album = try mpd.findTracksFromAlbum(&app.find_filter, alloc.respAllocator, alloc.persistentAllocator);
+    app.column_3.displaying = tracks_from_album.titles;
+}
+
+fn columnRevert() void {
+    const artists = current.column_1.displaying;
+    const albums = current.column_2.displaying;
+    const select = browse_types[0..];
+
+    app.column_3.pos = 0;
+    app.column_1.displaying = select;
+    app.column_2.displaying = artists;
+    app.column_3.displaying = albums;
+    app.column_3.type = .Albums;
 }
 
 fn normalBrowseRelease(char: u8) !void {
@@ -386,17 +444,11 @@ fn normalBrowseRelease(char: u8) !void {
             if (current.selected_column != .two) return;
             if (current.column_2.displaying.len == 0) return;
 
-            // if (current.column_2.absolutePos() >= current.column_2.displaying.len) return;
-
             try column2Release();
         },
         'l', '\n', '\r' => {
             if (current.selected_column != .two) return;
             if (current.column_2.displaying.len == 0) return;
-
-            // Get actual position including slice_inc offset
-            const actual_pos = current.column_2.pos + current.column_2.slice_inc;
-            if (actual_pos >= current.column_2.displaying.len) return;
 
             try column2Release();
         },
@@ -406,12 +458,13 @@ fn normalBrowseRelease(char: u8) !void {
     }
 }
 
+// runs indifferent of key
 fn column2Release() !void {
     // Check if there's anything to display
     if (current.column_2.displaying.len == 0) return;
 
     // Get the actual index with slice_inc offset
-    const actual_index = current.column_2.pos + current.column_2.slice_inc;
+    const actual_index = current.column_2.absolutePos();
 
     // Make sure the index is valid
     if (actual_index >= current.column_2.displaying.len) return;
@@ -426,6 +479,7 @@ fn column2Release() !void {
             next_col_display = tracks_from_album.titles;
         },
         .Artists => {
+            app.find_filter.artist = current.column_2.displaying[actual_index];
             next_col_display = try mpd.findAlbumsFromArtists(current.column_2.displaying[actual_index], alloc.respAllocator, alloc.typingAllocator);
         },
         .Tracks => return,

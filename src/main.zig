@@ -26,8 +26,6 @@ const wrkallocator = alloc.wrkallocator;
 const wrkfba = &alloc.wrkfba;
 const wrkbuf = &alloc.wrkbuf;
 
-var browse_types: [3][]const u8 = .{ "Albums", "Artists", "Songs" };
-
 pub fn main() !void {
     defer alloc.deinit();
 
@@ -86,7 +84,7 @@ pub fn main() !void {
 
         .selected_column = .one,
         .column_1 = .{
-            .displaying = browse_types[0..],
+            .displaying = input.browse_types[0..],
             .pos = 0,
             .prev_pos = 0,
             .slice_inc = 0,

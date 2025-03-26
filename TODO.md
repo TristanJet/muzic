@@ -4,6 +4,7 @@
 - [x] MAC BLOCK TERMINAL WRITES
 - [x] key release event
 - [x] get the uris for all_songs
+- [ ] don't let switch column before correct song item displaying
 - [ ] alphabetical order all_songs
 - [ ] const pointer retrieved at START of handle (should fix the weird cursor rendering issue)
 - [ ] Batch HOLD events on release
