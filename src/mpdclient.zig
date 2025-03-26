@@ -471,7 +471,7 @@ pub fn readLargeResponse(tempAllocator: mem.Allocator, command: []const u8) ![]u
     return list.toOwnedSlice();
 }
 
-fn processLargeResponse(data: []u8) !mem.SplitIterator(u8, .sequence) {
+fn processLargeResponse(data: []const u8) !mem.SplitIterator(u8, .sequence) {
     if (mem.startsWith(u8, data, "ACK")) return error.MpdError;
     if (mem.startsWith(u8, data, "OK")) return error.NoSongs;
     return mem.splitSequence(u8, data, "\n");
@@ -499,11 +499,6 @@ fn getAllType(data_type: []const u8, heapAllocator: mem.Allocator, respAllocator
 ///
 pub fn getAllAlbums(heapAllocator: mem.Allocator, respAllocator: std.mem.Allocator) ![]const []const u8 {
     return getAllType("album", heapAllocator, respAllocator);
-}
-
-// rewrite, you can get the uris
-pub fn getAllSongTitles(heapAllocator: mem.Allocator, respAllocator: std.mem.Allocator) ![]const []const u8 {
-    return getAllType("title", heapAllocator, respAllocator);
 }
 
 pub fn getAllArtists(heapAllocator: mem.Allocator, respAllocator: std.mem.Allocator) ![]const []const u8 {
@@ -582,12 +577,10 @@ pub fn findTracksFromAlbum(
             }
         }
     }
-    const titles_and_uris = SongTitleAndUri{
+    return SongTitleAndUri{
         .titles = try array_title.toOwnedSlice(),
         .uris = try array_uri.toOwnedSlice(),
     };
-
-    return titles_and_uris;
 }
 
 pub fn findAdd(song: *const Find_add_Song, allocator: mem.Allocator) !void {
@@ -688,7 +681,7 @@ test "getAllAlbums" {
     _ = respArena.reset(.retain_capacity);
     std.debug.print("artist : {s}\n", .{artists[100]});
     std.debug.print("n artists: {}\n", .{artists.len});
-    const songs = try getAllSongTitles(heapAllocator, respAllocator);
+    const songs = try getAllSongs(heapAllocator, respAllocator);
     std.debug.print("resp end index: {}\n", .{respArena.state.end_index});
     std.debug.print("arena end index: {}\n", .{heapArena.state.end_index});
     _ = respArena.reset(.free_all);
@@ -715,11 +708,37 @@ fn escapeMpdString(alloc: mem.Allocator, str: []const u8) ![]u8 {
     return result.toOwnedSlice();
 }
 
-pub fn getSearchable(heapAllocator: mem.Allocator, respAllocator: std.mem.Allocator) ![]Searchable {
-    const data = try readLargeResponse(respAllocator, "listallinfo\n");
-    var lines = try processLargeResponse(data);
-    var array = std.ArrayList(Searchable).init(heapAllocator);
+pub fn listAllData(respAllocator: std.mem.Allocator) ![]u8 {
+    return try readLargeResponse(respAllocator, "listallinfo\n");
+}
 
+pub fn getAllSongs(heapAllocator: mem.Allocator, data: []const u8) !SongTitleAndUri {
+    var array_uri = std.ArrayList([]const u8).init(heapAllocator);
+    var array_title = std.ArrayList([]const u8).init(heapAllocator);
+    var lines = try processLargeResponse(data);
+
+    while (lines.next()) |line| {
+        if (mem.indexOf(u8, line, ": ")) |separator_index| {
+            const key = line[0..separator_index];
+            const value = line[separator_index + 2 ..];
+            if (mem.eql(u8, key, "file")) {
+                try array_uri.append(try array_uri.allocator.dupe(u8, value));
+            }
+            if (mem.eql(u8, key, "Title")) {
+                try array_title.append(try array_title.allocator.dupe(u8, value));
+            }
+        }
+    }
+
+    return SongTitleAndUri{
+        .titles = try array_title.toOwnedSlice(),
+        .uris = try array_uri.toOwnedSlice(),
+    };
+}
+
+pub fn getSearchable(heapAllocator: mem.Allocator, data: []const u8) ![]Searchable {
+    var array = std.ArrayList(Searchable).init(heapAllocator);
+    var lines = try processLargeResponse(data);
     var current = Searchable{ .string = null, .uri = undefined };
     var title: ?[]const u8 = null;
     var artist: ?[]const u8 = null;

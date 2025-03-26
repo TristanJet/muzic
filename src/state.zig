@@ -47,18 +47,18 @@ pub const Data = struct {
     searchable: []mpd.Searchable,
     albums: []const []const u8,
     artists: []const []const u8,
-    songs: []const []const u8,
+    songs: mpd.SongTitleAndUri,
 
     pub fn init() !Data {
-        const searchable = try mpd.getSearchable(alloc.persistentAllocator, alloc.respAllocator);
+        const data = try mpd.listAllData(alloc.respAllocator);
+        const searchable = try mpd.getSearchable(alloc.persistentAllocator, data);
+        const songs = try mpd.getAllSongs(alloc.persistentAllocator, data);
         _ = alloc.respArena.reset(.retain_capacity);
 
         const albums = try mpd.getAllAlbums(alloc.persistentAllocator, alloc.respAllocator);
         _ = alloc.respArena.reset(.retain_capacity);
         const artists = try mpd.getAllArtists(alloc.persistentAllocator, alloc.respAllocator);
         _ = alloc.respArena.reset(.retain_capacity);
-        const songs = try mpd.getAllSongTitles(alloc.persistentAllocator, alloc.respAllocator);
-        _ = alloc.respArena.reset(.free_all);
         return .{
             .searchable = searchable,
             .albums = albums,
@@ -89,11 +89,16 @@ pub const BrowseColumn = struct {
     displaying: []const []const u8,
     type: Column_Type,
 
+    pub fn absolutePos(self: *const BrowseColumn) usize {
+        return self.pos + self.slice_inc;
+    }
+
     pub fn scroll(self: *BrowseColumn, direction: input.cursorDirection, max: ?u8, area_height: usize) void {
         self.prev_pos = self.pos;
+        //do this earlier and once
         const scroll_threshold: f32 = 0.8;
         const threshold_pos = @as(u8, @intFromFloat(@as(f32, @floatFromInt(area_height)) * scroll_threshold));
-        
+
         switch (direction) {
             .up => {
                 if (self.pos > 0) {

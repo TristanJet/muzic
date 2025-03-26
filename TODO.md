@@ -1,10 +1,11 @@
 # MUZIG
 
 ## Bugs/Fixes
-- [x] FUCKING MAC BLOCK TERMINAL WRITES
+- [x] MAC BLOCK TERMINAL WRITES
 - [x] key release event
-- [ ] get the uris for all_songs
-- [ ] const pointer retrieved at START of handle
+- [x] get the uris for all_songs
+- [ ] alphabetical order all_songs
+- [ ] const pointer retrieved at START of handle (should fix the weird cursor rendering issue)
 - [ ] Batch HOLD events on release
 - [ ] More robust input debounce; I suspect, library size has an effect on mpd response speed.
 - [ ] hold x from the top breaks

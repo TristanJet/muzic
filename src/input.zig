@@ -135,6 +135,9 @@ fn onTypingExit() void {
 
 fn onBrowseExit() void {
     render_state.queueEffects = true;
+    render_state.clear_browse_cursor_one = true;
+    render_state.clear_browse_cursor_two = true;
+    render_state.clear_browse_cursor_three = true;
     app.input_state = .normal_queue;
     app.selected_column = .one;
     _ = alloc.typingArena.reset(.retain_capacity);
@@ -284,14 +287,17 @@ fn normalBrowse(char: u8) !void {
                 .one => selectNextColumn(),
                 .two => {
                     switch (current.column_2.type) {
-                        .Tracks => {},
+                        .Tracks => {
+                            const uri = data.songs.uris[current.column_2.absolutePos()];
+                            try mpd.addFromUri(alloc.typingAllocator, uri);
+                        },
                         else => selectNextColumn(),
                     }
                 },
                 .three => {
                     switch (current.column_3.type) {
                         .Tracks => {
-                            const uri = tracks_from_album.uris[current.column_3.pos];
+                            const uri = tracks_from_album.uris[current.column_3.absolutePos()];
                             try mpd.addFromUri(alloc.typingAllocator, uri);
                         },
                         else => selectNextColumn(),
@@ -321,7 +327,7 @@ fn verticalScroll(dir: cursorDirection) void {
                 },
                 2 => {
                     app.column_2.type = .Tracks;
-                    app.column_2.displaying = data.songs;
+                    app.column_2.displaying = data.songs.titles;
                 },
                 else => unreachable,
             }
@@ -348,9 +354,6 @@ fn verticalScroll(dir: cursorDirection) void {
             render_state.browse_cursor_three = true;
         },
     }
-
-    // No longer update column 3 during scrolling to reduce MPD queries
-    // Will be updated on key release instead
 }
 
 fn selectNextColumn() void {
@@ -364,20 +367,16 @@ fn selectNextColumn() void {
                 else => unreachable,
             };
             app.selected_column = .two;
+            render_state.clear_browse_cursor_one = true;
             render_state.browse_cursor_two = true;
         },
         .two => {
             app.selected_column = .three;
+            render_state.clear_browse_cursor_two = true;
             render_state.browse_cursor_three = true;
         },
         .three => {},
     }
-}
-
-fn oneToTwo() void {
-    app.selected_column = .two;
-    render_state.browse_cursor_two = true;
-    render_state.clear_browse_cursor_one = true;
 }
 
 fn normalBrowseRelease(char: u8) !void {
@@ -387,9 +386,7 @@ fn normalBrowseRelease(char: u8) !void {
             if (current.selected_column != .two) return;
             if (current.column_2.displaying.len == 0) return;
 
-            // Get actual position including slice_inc offset
-            const actual_pos = current.column_2.pos + current.column_2.slice_inc;
-            if (actual_pos >= current.column_2.displaying.len) return;
+            // if (current.column_2.absolutePos() >= current.column_2.displaying.len) return;
 
             try column2Release();
         },
