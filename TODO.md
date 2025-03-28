@@ -1,9 +1,15 @@
 # MUZIG
 
+## CURRENT
+- [ ] browser rewrite
+
 ## Bugs/Fixes
 - [x] MAC BLOCK TERMINAL WRITES
 - [x] key release event
 - [x] get the uris for all_songs
+- [ ] handle utf-16 when rendering cursor
+- [ ] display full album content, regardless of artist
+- [ ] sometimes cursor doesn't display after switching horizontally
 - [ ] don't let switch column before correct song item displaying
 - [ ] alphabetical order all_songs
 - [ ] const pointer retrieved at START of handle (should fix the weird cursor rendering issue)
@@ -16,6 +22,7 @@
 
 ## Features 
 - [ ] Browser
+- [ ] filter through "feat." in artist
 - [ ] dd -> clear queue
 - [ ] D -> clear from current pos to end queue
 - [ ] True color

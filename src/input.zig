@@ -13,9 +13,6 @@ const RenderState = @import("render.zig").RenderState;
 const log = @import("util.zig").log;
 const wrkallocator = alloc.wrkallocator;
 
-var app: *state.State = undefined;
-var render_state: *RenderState = undefined;
-var current: state.State = undefined;
 pub var data: state.Data = undefined;
 
 var last_input: i64 = 0;
@@ -28,6 +25,7 @@ pub var max_scroll: u8 = undefined;
 
 var key_down: ?u8 = null;
 
+// This contains shared data that will be refactored into the browser module
 var tracks_from_album: mpd.SongTitleAndUri = undefined;
 var albums_from_artist: []const []const u8 = undefined;
 
@@ -47,6 +45,8 @@ pub const cursorDirection = enum {
     up,
     down,
 };
+
+// ---- Core Input Handling ----
 
 pub fn checkInputEvent(buffer: []u8) !?state.Event {
     assert(buffer.len == 1);
@@ -86,45 +86,23 @@ pub fn checkReleaseEvent(input_event: ?state.Event) !?state.Event {
     }
 }
 
-pub fn handleInput(char: u8, app_state: *state.State, render_state_: *RenderState) void {
-    app = app_state;
-    current = app_state.*;
-    render_state = render_state_;
-    switch (app_state.input_state) {
-        .normal_queue => {
-            normalQueue(char) catch unreachable;
-        },
-        .typing_find => {
-            typingFind(char) catch unreachable;
-        },
-        .normal_browse => {
-            normalBrowse(char) catch unreachable;
-        },
-        else => unreachable,
-    }
+pub fn handleInput(char: u8, app_state: *state.State, render_state: *RenderState) void {
+    const handler = switch (app_state.input_state) {
+        .normal_queue => &normalQueue,
+        .typing_find => &typingFind,
+        .normal_browse => &handleNormalBrowse,
+        .typing_browse => &typingBrowse,
+    };
+    handler(char, app_state, render_state) catch unreachable;
 }
 
-pub fn handleRelease(char: u8, app_state: *state.State, render_state_: *RenderState) void {
-    log("released: {}", .{char});
-    app = app_state;
-    current = app_state.*;
-    render_state = render_state_;
-    switch (app_state.input_state) {
-        .normal_queue => {
-            return;
-            // normalQueue(char) catch unreachable;
-        },
-        .typing_find => {
-            return;
-        },
-        .normal_browse => {
-            normalBrowseRelease(char) catch unreachable;
-        },
-        else => unreachable,
-    }
+pub fn handleRelease(char: u8, app_state: *state.State, render_state: *RenderState) void {
+    if (app_state.input_state == .normal_browse) handleBrowseKeyRelease(char, app_state, render_state) catch unreachable;
 }
 
-fn onTypingExit() void {
+// ---- State Transitions ----
+
+fn onTypingExit(app: *state.State, render_state: *RenderState) void {
     app.typing_display.reset();
     render_state.borders = true;
     render_state.find = true;
@@ -137,30 +115,39 @@ fn onTypingExit() void {
     _ = alloc.algoArena.reset(.free_all);
 }
 
-fn onBrowseExit() void {
+fn onBrowseExit(app: *state.State, render_state: *RenderState) void {
     render_state.queueEffects = true;
     render_state.clear_browse_cursor_one = true;
     render_state.clear_browse_cursor_two = true;
     render_state.clear_browse_cursor_three = true;
+
+    if (app.column_3.type == .Tracks and app.column_1.type == .Artists) revertSwitcheroo(app);
     app.input_state = .normal_queue;
     app.selected_column = .one;
     _ = alloc.typingArena.reset(.retain_capacity);
 }
 
-fn typingFind(char: u8) !void {
+// ---- Input Mode Handlers ----
+
+fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState) !void {
+    log("{}{}{}", .{ char, app, render_state });
+    return;
+}
+
+fn typingFind(char: u8, app: *state.State, render_state: *RenderState) !void {
     switch (char) {
         '\x1B' => {
             var escBuffer: [8]u8 = undefined;
             const escRead = try term.readEscapeCode(&escBuffer);
 
             if (escRead == 0) {
-                onTypingExit();
+                onTypingExit(app, render_state);
                 return;
             }
         },
         'n' & '\x1F' => {
             log("input: Ctrl-n\r\n", .{});
-            scroll(&app.find_cursor_pos, current.viewable_searchable.?.len - 1, .down);
+            scroll(&app.find_cursor_pos, app.viewable_searchable.?.len - 1, .down);
             render_state.find = true;
         },
         'p' & '\x1F' => {
@@ -169,14 +156,14 @@ fn typingFind(char: u8) !void {
             render_state.find = true;
         },
         '\r', '\n' => {
-            const addUri = current.viewable_searchable.?[current.find_cursor_pos].uri;
+            const addUri = app.viewable_searchable.?[app.find_cursor_pos].uri;
             try mpd.addFromUri(wrkallocator, addUri);
             log("added: {s}", .{addUri});
-            onTypingExit();
+            onTypingExit(app, render_state);
             return;
         },
         else => {
-            typeFind(char);
+            typeFind(char, app);
             log("typed: {s}\n", .{app.typing_display.typed});
             const slice = try algo.algorithm(&alloc.algoArena, alloc.typingAllocator, app.typing_display.typed);
             app.viewable_searchable = slice[0..];
@@ -187,14 +174,14 @@ fn typingFind(char: u8) !void {
     }
 }
 
-fn normalQueue(char: u8) !void {
+fn normalQueue(char: u8, app: *state.State, render_state: *RenderState) !void {
     switch (char) {
         'q' => app.quit = true,
-        'j' => scrollQ(false),
-        'k' => scrollQ(true),
+        'j' => scrollQ(false, app, render_state),
+        'k' => scrollQ(true, app, render_state),
         'p' => {
             if (debounce()) return;
-            app.isPlaying = try mpd.togglePlaystate(current.isPlaying);
+            app.isPlaying = try mpd.togglePlaystate(app.isPlaying);
         },
         'l' => {
             if (debounce()) return;
@@ -219,9 +206,9 @@ fn normalQueue(char: u8) !void {
         },
         'x' => {
             if (debounce()) return;
-            try mpd.rmFromPos(wrkallocator, current.cursorPosQ);
-            if (current.cursorPosQ == 0) {
-                if (current.queue.len > 1) return;
+            try mpd.rmFromPos(wrkallocator, app.cursorPosQ);
+            if (app.cursorPosQ == 0) {
+                if (app.queue.len > 1) return;
             }
             moveCursorPos(&app.cursorPosQ, &app.prevCursorPos, .down);
         },
@@ -247,14 +234,16 @@ fn normalQueue(char: u8) !void {
         },
         '\n', '\r' => {
             if (debounce()) return;
-            try mpd.playByPos(wrkallocator, current.cursorPosQ);
-            if (!current.isPlaying) app.isPlaying = true;
+            try mpd.playByPos(wrkallocator, app.cursorPosQ);
+            if (!app.isPlaying) app.isPlaying = true;
         },
         else => log("input: {c}", .{char}),
     }
 }
 
-fn normalBrowse(char: u8) !void {
+// ---- Browser Module ----
+
+fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !void {
     switch (char) {
         'q' => app.quit = true,
         '\x1B' => {
@@ -262,172 +251,122 @@ fn normalBrowse(char: u8) !void {
             const escRead = try term.readEscapeCode(&escBuffer);
 
             if (escRead == 0) {
-                onBrowseExit();
+                onBrowseExit(app, render_state);
             }
         },
-        'j' => verticalScroll(.down),
-        'k' => verticalScroll(.up),
-        'h' => {
-            switch (current.selected_column) {
-                .one => {},
-                .two => {
-                    app.selected_column = .one;
-                    render_state.clear_browse_cursor_two = true;
-                    render_state.browse_cursor_one = true;
-                    render_state.clear_col_three = true;
-                },
-                .three => {
-                    if (current.column_3.type == .Tracks) {
-                        columnRevert();
-                        render_state.browse_one = true;
-                        render_state.browse_two = true;
-                        render_state.browse_three = true;
-                        render_state.browse_cursor_three = true;
-                        return;
-                    }
-                    app.selected_column = .two;
-                    app.column_3.pos = 0;
-
-                    render_state.clear_browse_cursor_three = true;
-                    render_state.browse_cursor_two = true;
-                },
-            }
-        },
-        'l' => selectNextColumn(),
-        '\n', '\r' => {
-            switch (current.selected_column) {
-                .one => selectNextColumn(),
-                .two => {
-                    switch (current.column_2.type) {
-                        .Tracks => {
-                            const uri = data.songs.uris[current.column_2.absolutePos()];
-                            try mpd.addFromUri(alloc.typingAllocator, uri);
-                        },
-                        else => selectNextColumn(),
-                    }
-                },
-                .three => {
-                    switch (current.column_3.type) {
-                        .Tracks => {
-                            const uri = tracks_from_album.uris[current.column_3.absolutePos()];
-                            try mpd.addFromUri(alloc.typingAllocator, uri);
-                        },
-                        else => selectNextColumn(),
-                    }
-                },
-            }
-        },
+        'j' => browserScrollVertical(.down, app, render_state),
+        'k' => browserScrollVertical(.up, app, render_state),
+        'h' => browserNavigateLeft(app, render_state),
+        'l' => browserSelectNextColumn(app, render_state),
+        '\n', '\r' => try browserHandleEnter(app, render_state),
         else => unreachable,
     }
 }
 
-fn verticalScroll(dir: cursorDirection) void {
-    switch (current.selected_column) {
-        .one => {
-            const visible_area = window.panels.browse1.validArea();
-            const max: ?u8 = if (dir == .up) null else @intCast(@min(visible_area.ylen, app.column_1.displaying.len));
-            app.column_1.scroll(dir, max, visible_area.ylen);
-            if (current.column_2.pos != 0) app.column_2.pos = 0;
-            switch (app.column_1.pos) {
-                0 => {
-                    app.column_2.type = .Albums;
-                    app.column_3.type = .Artists;
-                    app.column_2.displaying = data.albums;
-                },
-                1 => {
-                    app.column_2.type = .Artists;
-                    app.column_3.type = .Albums;
-                    app.column_2.displaying = data.artists;
-                },
-                2 => {
-                    app.column_2.type = .Tracks;
-                    app.column_3.type = .None;
-                    app.column_2.displaying = data.songs.titles;
-                },
-                else => unreachable,
-            }
-            render_state.browse_one = true;
-            render_state.browse_cursor_one = true;
-            render_state.browse_two = true;
-        },
-        .two => {
-            // Add safety check before scrolling
-            if (app.column_2.displaying.len > 0) {
-                const visible_area = window.panels.browse2.validArea();
-                const max: ?u8 = if (dir == .up) null else @intCast(@min(visible_area.ylen, app.column_2.displaying.len));
-                app.column_2.scroll(dir, max, visible_area.ylen);
-                render_state.browse_two = true;
-                render_state.browse_cursor_two = true;
-            }
-            // render_state.browse_three = true;
-        },
-        .three => {
-            const visible_area = window.panels.browse3.validArea();
-            const max: ?u8 = if (dir == .up) null else @intCast(@min(visible_area.ylen, app.column_3.displaying.len));
-            app.column_3.scroll(dir, max, visible_area.ylen);
-            render_state.browse_three = true;
-            render_state.browse_cursor_three = true;
-        },
+// Browser vertical scrolling - handles all three columns in one place
+fn browserScrollVertical(dir: cursorDirection, app: *state.State, render_state: *RenderState) void {
+    switch (app.selected_column) {
+        .one => browserScrollColumn1(dir, app, render_state),
+        .two => browserScrollColumn2(dir, app, render_state),
+        .three => browserScrollColumn3(dir, app, render_state),
     }
 }
 
-fn selectNextColumn() void {
-    log("{}", .{current.column_2.type});
-    switch (current.selected_column) {
-        .one => {
-            app.column_3.type = switch (current.column_2.type) {
-                .Albums => .Tracks,
-                .Artists => .Albums,
-                .Tracks => .None,
-                else => unreachable,
-            };
-            app.selected_column = .two;
-            render_state.clear_browse_cursor_one = true;
-            render_state.browse_cursor_two = true;
-        },
-        .two => {
-            app.selected_column = .three;
-            render_state.clear_browse_cursor_two = true;
-            render_state.browse_cursor_three = true;
-        },
-        .three => {
-            switch (current.column_3.type) {
-                .Albums => {
-                    columnSwitcheroo() catch |err|
-                        log("oopsy {}", .{err});
-                    render_state.browse_one = true;
-                    render_state.browse_two = true;
-                    render_state.browse_three = true;
-                    render_state.browse_cursor_three = true;
-                },
-                .Tracks => {},
-                else => unreachable,
-            }
-        },
+fn browserScrollColumn1(dir: cursorDirection, app: *state.State, render_state: *RenderState) void {
+    const visible_area = window.panels.browse1.validArea();
+    const max: ?u8 = if (dir == .up) null else @intCast(@min(visible_area.ylen, app.column_1.displaying.len));
+    app.column_1.scroll(dir, max, visible_area.ylen);
+    if (app.column_2.pos != 0) app.column_2.pos = 0;
+
+    // Update column 2 content based on column 1 selection
+    switch (app.column_1.pos) {
+        0 => browserSetColumn2ToAlbums(app),
+        1 => browserSetColumn2ToArtists(app),
+        2 => browserSetColumn2ToTracks(app),
+        else => unreachable,
+    }
+
+    render_state.browse_one = true;
+    render_state.browse_cursor_one = true;
+    render_state.browse_two = true;
+}
+
+fn browserSetColumn2ToAlbums(app: *state.State) void {
+    app.column_2.type = .Albums;
+    app.column_3.type = .Artists;
+    app.column_2.displaying = data.albums;
+}
+
+fn browserSetColumn2ToArtists(app: *state.State) void {
+    app.column_2.type = .Artists;
+    app.column_3.type = .Albums;
+    app.column_2.displaying = data.artists;
+}
+
+fn browserSetColumn2ToTracks(app: *state.State) void {
+    app.column_2.type = .Tracks;
+    app.column_3.type = .None;
+    app.column_2.displaying = data.songs.titles;
+}
+
+fn browserScrollColumn2(dir: cursorDirection, app: *state.State, render_state: *RenderState) void {
+    // Add safety check before scrolling
+    if (app.column_2.displaying.len > 0) {
+        const visible_area = window.panels.browse2.validArea();
+        const max: ?u8 = if (dir == .up) null else @intCast(@min(visible_area.ylen, app.column_2.displaying.len));
+        app.column_2.scroll(dir, max, visible_area.ylen);
+        render_state.browse_two = true;
+        render_state.browse_cursor_two = true;
     }
 }
 
-fn columnSwitcheroo() !void {
-    app.find_filter.album = current.column_3.displaying[current.column_3.absolutePos()];
-    const artists = current.column_2.displaying;
-    const albums = current.column_3.displaying;
-    log("album one : {s}", .{albums[0]});
+fn browserScrollColumn3(dir: cursorDirection, app: *state.State, render_state: *RenderState) void {
+    const visible_area = window.panels.browse3.validArea();
+    const max: ?u8 = if (dir == .up) null else @intCast(@min(visible_area.ylen, app.column_3.displaying.len));
+    app.column_3.scroll(dir, max, visible_area.ylen);
+    render_state.browse_three = true;
+    render_state.browse_cursor_three = true;
+}
 
-    //technically should do this for col 3
-    temp_col2_inc = app.column_2.slice_inc;
-    app.column_2.slice_inc = 0;
+// Browser left navigation - handles column dependency
+fn browserNavigateLeft(app: *state.State, render_state: *RenderState) void {
+    switch (app.selected_column) {
+        .one => {}, // Nothing to do when already in column 1
+        .two => browserNavigateFromColumn2ToColumn1(app, render_state),
+        .three => browserNavigateFromColumn3(app, render_state),
+    }
+}
+
+fn browserNavigateFromColumn2ToColumn1(app: *state.State, render_state: *RenderState) void {
+    app.selected_column = .one;
+    app.find_filter = mpd.Filter_Songs{
+        .album = undefined,
+        .artist = null,
+    };
+    render_state.clear_browse_cursor_two = true;
+    render_state.browse_cursor_one = true;
+    render_state.clear_col_three = true;
+}
+
+fn browserNavigateFromColumn3(app: *state.State, render_state: *RenderState) void {
+    if (app.column_3.type == .Tracks and app.column_1.type == .Artists) {
+        revertSwitcheroo(app);
+        render_state.browse_one = true;
+        render_state.browse_two = true;
+        render_state.browse_three = true;
+        render_state.browse_cursor_three = true;
+        return;
+    }
+
+    app.selected_column = .two;
     app.column_3.pos = 0;
-    app.column_1.displaying = artists;
-    app.column_2.displaying = albums;
-    log("album one : {s}", .{app.column_2.displaying[0]});
-    app.column_3.type = .Tracks;
-    tracks_from_album = try mpd.findTracksFromAlbum(&app.find_filter, alloc.respAllocator, alloc.persistentAllocator);
-    app.column_3.displaying = tracks_from_album.titles;
+    render_state.clear_browse_cursor_three = true;
+    render_state.browse_cursor_two = true;
 }
 
-fn columnRevert() void {
-    const artists = current.column_1.displaying;
-    const albums = current.column_2.displaying;
+fn revertSwitcheroo(app: *state.State) void {
+    const artists = app.column_1.displaying;
+    const albums = app.column_2.displaying;
     const select = browse_types[0..];
 
     app.column_3.pos = 0;
@@ -435,22 +374,108 @@ fn columnRevert() void {
     app.column_2.displaying = artists;
     app.column_3.displaying = albums;
     app.column_3.type = .Albums;
+    app.column_2.type = .Artists;
+    app.column_1.type = .Select;
 }
 
-fn normalBrowseRelease(char: u8) !void {
-    switch (char) {
-        'j', 'k' => {
-            // Only update column 3 when column 2 is selected and has items
-            if (current.selected_column != .two) return;
-            if (current.column_2.displaying.len == 0) return;
+// Browser column navigation - handles moving to next column
+fn browserSelectNextColumn(app: *state.State, render_state: *RenderState) void {
+    switch (app.selected_column) {
+        .one => browserMoveFromColumn1ToColumn2(app, render_state),
+        .two => browserMoveFromColumn2ToColumn3(app, render_state),
+        .three => browserHandleColumn3Selection(app, render_state),
+    }
+}
 
-            try column2Release();
+fn browserMoveFromColumn1ToColumn2(app: *state.State, render_state: *RenderState) void {
+    app.column_3.type = switch (app.column_2.type) {
+        .Albums => .Tracks,
+        .Artists => .Albums,
+        .Tracks => .None,
+        else => unreachable,
+    };
+    app.selected_column = .two;
+    render_state.clear_browse_cursor_one = true;
+    render_state.browse_cursor_two = true;
+}
+
+fn browserMoveFromColumn2ToColumn3(app: *state.State, render_state: *RenderState) void {
+    app.selected_column = .three;
+    render_state.clear_browse_cursor_two = true;
+    render_state.browse_cursor_three = true;
+}
+
+fn browserHandleColumn3Selection(app: *state.State, render_state: *RenderState) void {
+    switch (app.column_3.type) {
+        .Albums => {
+            switcheroo(app) catch |err|
+                log("column switch error: {}", .{err});
+            render_state.browse_one = true;
+            render_state.browse_two = true;
+            render_state.browse_three = true;
+            render_state.browse_cursor_three = true;
         },
-        'l', '\n', '\r' => {
-            if (current.selected_column != .two) return;
-            if (current.column_2.displaying.len == 0) return;
+        .Tracks => {}, // Nothing to do for tracks in column 3
+        else => unreachable,
+    }
+}
 
-            try column2Release();
+fn switcheroo(app: *state.State) !void {
+    app.find_filter.album = app.column_3.displaying[app.column_3.absolutePos()];
+    const artists = app.column_2.displaying;
+    const albums = app.column_3.displaying;
+
+    // Save column 2 increment for potential later use
+    temp_col2_inc = app.column_2.slice_inc;
+    app.column_2.slice_inc = 0;
+    app.column_3.pos = 0;
+
+    // Rearrange columns
+    app.column_1.displaying = artists;
+    app.column_2.displaying = albums;
+    app.column_3.type = .Tracks;
+    app.column_1.type = .Artists;
+    app.column_2.type = .Albums;
+
+    // Fetch tracks from selected album
+    tracks_from_album = try mpd.findTracksFromAlbum(&app.find_filter, alloc.respAllocator, alloc.persistentAllocator);
+    app.column_3.displaying = tracks_from_album.titles;
+}
+
+// Handle Enter key press in browser mode
+fn browserHandleEnter(app: *state.State, render_state: *RenderState) !void {
+    switch (app.selected_column) {
+        .one => browserSelectNextColumn(app, render_state),
+        .two => {
+            if (app.column_2.type == .Tracks) {
+                const uri = data.songs.uris[app.column_2.absolutePos()];
+                try mpd.addFromUri(alloc.typingAllocator, uri);
+            } else {
+                browserSelectNextColumn(app, render_state);
+            }
+        },
+        .three => {
+            if (app.column_3.type == .Tracks) {
+                const uri = tracks_from_album.uris[app.column_3.absolutePos()];
+                try mpd.addFromUri(alloc.typingAllocator, uri);
+            } else {
+                browserSelectNextColumn(app, render_state);
+            }
+        },
+    }
+}
+
+// Handle key release events specifically for the browser
+fn handleBrowseKeyRelease(char: u8, app: *state.State, render_state: *RenderState) !void {
+    switch (char) {
+        'j', 'k', 'l', '\n', '\r' => {
+            // Only update column 3 when column 2 is selected and has items
+            if (app.selected_column != .two) return;
+            if (app.column_2.displaying.len == 0) return;
+            if (app.column_2.type == .Tracks) return;
+
+            try browserUpdateColumn3FromColumn2(app);
+            render_state.browse_three = true;
         },
         else => {
             log("unrecognized key", .{});
@@ -458,83 +483,85 @@ fn normalBrowseRelease(char: u8) !void {
     }
 }
 
-// runs indifferent of key
-fn column2Release() !void {
+// Update column 3 content based on column 2 selection
+fn browserUpdateColumn3FromColumn2(app: *state.State) !void {
     // Check if there's anything to display
-    if (current.column_2.displaying.len == 0) return;
+    if (app.column_2.displaying.len == 0) return;
 
     // Get the actual index with slice_inc offset
-    const actual_index = current.column_2.absolutePos();
+    const actual_index = app.column_2.absolutePos();
 
     // Make sure the index is valid
-    if (actual_index >= current.column_2.displaying.len) return;
+    if (actual_index >= app.column_2.displaying.len) return;
 
     var next_col_display: [][]const u8 = undefined;
-    log("{}", .{current.column_2.type});
-    switch (current.column_2.type) {
+
+    switch (app.column_2.type) {
         .Albums => {
-            app.find_filter.album = current.column_2.displaying[actual_index];
+            app.find_filter.album = app.column_2.displaying[actual_index];
             log("album: {s}", .{app.find_filter.album});
             tracks_from_album = try mpd.findTracksFromAlbum(&app.find_filter, alloc.respAllocator, alloc.typingAllocator);
             next_col_display = tracks_from_album.titles;
         },
         .Artists => {
-            app.find_filter.artist = current.column_2.displaying[actual_index];
-            next_col_display = try mpd.findAlbumsFromArtists(current.column_2.displaying[actual_index], alloc.respAllocator, alloc.typingAllocator);
+            app.find_filter.artist = app.column_2.displaying[actual_index];
+            next_col_display = try mpd.findAlbumsFromArtists(app.column_2.displaying[actual_index], alloc.respAllocator, alloc.typingAllocator);
         },
         .Tracks => return,
         else => unreachable,
     }
-    _ = alloc.respArena.reset(.free_all);
 
+    _ = alloc.respArena.reset(.free_all);
     app.column_3.displaying = next_col_display;
     app.column_3.slice_inc = 0; // Reset slice increment for the third column
-    render_state.browse_three = true;
 }
+
+// ---- Utility Functions ----
 
 fn debounce() bool {
     //input debounce
-    const current_time = time.milliTimestamp();
-    const diff = current_time - last_input;
+    const app_time = time.milliTimestamp();
+    const diff = app_time - last_input;
     if (diff < 300) {
         return true;
     }
-    last_input = current_time;
+    last_input = app_time;
     return false;
 }
 
-fn typeFind(char: u8) void {
-    app.typing_display.typeBuffer[current.typing_display.typed.len] = char;
-    app.typing_display.typed = app.typing_display.typeBuffer[0 .. current.typing_display.typed.len + 1];
+fn typeFind(char: u8, app: *state.State) void {
+    app.typing_display.typeBuffer[app.typing_display.typed.len] = char;
+    app.typing_display.typed = app.typing_display.typeBuffer[0 .. app.typing_display.typed.len + 1];
 }
 
-pub fn scrollQ(isUp: bool) void {
+pub fn scrollQ(isUp: bool, app: *state.State, render_state: *RenderState) void {
     if (isUp) {
-        if (current.cursorPosQ == 0) return;
+        if (app.cursorPosQ == 0) return;
         moveCursorPos(&app.cursorPosQ, &app.prevCursorPos, .down);
-        if (current.cursorPosQ < current.viewStartQ) {
-            app.viewStartQ = current.cursorPosQ;
+        if (app.cursorPosQ < app.viewStartQ) {
+            app.viewStartQ = app.cursorPosQ;
             app.viewEndQ = app.viewStartQ + window.panels.queue.validArea().ylen + 1;
         }
     } else {
-        if (current.cursorPosQ >= current.queue.len - 1) return;
+        if (app.cursorPosQ >= app.queue.len - 1) return;
         moveCursorPos(&app.cursorPosQ, &app.prevCursorPos, .up);
-        if (current.cursorPosQ >= current.viewEndQ) {
-            app.viewEndQ = current.cursorPosQ + 1;
+        if (app.cursorPosQ >= app.viewEndQ) {
+            app.viewEndQ = app.cursorPosQ + 1;
             app.viewStartQ = app.viewEndQ - window.panels.queue.validArea().ylen - 1;
         }
     }
     render_state.queueEffects = true;
 }
-fn moveCursorPos(current_dir: *u8, previous_dir: *u8, direction: cursorDirection) void {
+
+fn moveCursorPos(app_dir: *u8, previous_dir: *u8, direction: cursorDirection) void {
     switch (direction) {
         .up => {
-            previous_dir.* = current_dir.*;
-            current_dir.* += 1;
+            previous_dir.* = app_dir.*;
+            app_dir.* += 1;
         },
         .down => {
-            previous_dir.* = current_dir.*;
-            current_dir.* -= 1;
+            previous_dir.* = app_dir.*;
+            app_dir.* -= 1;
         },
     }
 }
