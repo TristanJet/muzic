@@ -75,36 +75,36 @@ pub const Data = struct {
         // Create an array of indices
         var indices = try alloc.persistentAllocator.alloc(usize, songs.titles.len);
         defer alloc.persistentAllocator.free(indices);
-        
+
         for (0..songs.titles.len) |i| {
             indices[i] = i;
         }
-        
+
         // Define a custom context for sorting indices based on song titles
         const SortContext = struct {
             titles: []const []const u8,
-            
+
             pub fn lessThan(ctx: @This(), a: usize, b: usize) bool {
                 return std.mem.lessThan(u8, ctx.titles[a], ctx.titles[b]);
             }
         };
-        
+
         // Sort indices using block sort
         std.sort.block(usize, indices, SortContext{ .titles = songs.titles }, SortContext.lessThan);
-        
+
         // Create new arrays with sorted data
         var new_titles = try alloc.persistentAllocator.alloc([]const u8, songs.titles.len);
         var new_uris = try alloc.persistentAllocator.alloc([]const u8, songs.uris.len);
-        
+
         for (indices, 0..) |old_idx, new_idx| {
             new_titles[new_idx] = songs.titles[old_idx];
             new_uris[new_idx] = songs.uris[old_idx];
         }
-        
+
         // Free old arrays and replace with sorted ones
         alloc.persistentAllocator.free(songs.titles);
         alloc.persistentAllocator.free(songs.uris);
-        
+
         songs.titles = new_titles;
         songs.uris = new_uris;
     }

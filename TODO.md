@@ -1,12 +1,16 @@
 # MUZIG
 
 ## CURRENT
+- [ ] algorithm rewrite, take ITEMS as argument
+- [ ] browser typing
 - [ ] rewrite Browser
+    - Describe in terms of prev, current, next
 
 ## Bugs/Fixes
 - [x] MAC BLOCK TERMINAL WRITES
 - [x] key release event
 - [x] get the uris for all_songs
+- [x] handle column state based on type
 - [ ] handle utf-16 when rendering cursor
 - [ ] display full album content, regardless of artist
 - [ ] sometimes cursor doesn't display after switching horizontally
@@ -23,6 +27,7 @@
 ## Features 
 - [ ] search in browser
 - [ ] Browser
+- [ ] get multiple of next strings in browser and cache, maybe like 10 - 20 ? 
 - [ ] m to mark positio in Browser
 - [ ] filter through "feat." in artist
 - [ ] dd -> clear queue

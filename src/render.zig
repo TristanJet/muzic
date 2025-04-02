@@ -323,7 +323,6 @@ fn barRender(panel: window.Panel, song: mpd.CurrentSong, allocator: std.mem.Allo
 }
 
 fn browseColumn(area: window.Area, strings: []const []const u8, inc: usize) !void {
-    util.log("first string: {s} \n", .{strings[0]});
     // Clear the display area
     for (0..area.ylen) |i| {
         try term.moveCursor(area.ymin + i, area.xmin);
