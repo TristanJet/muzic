@@ -80,11 +80,6 @@ fn processResponse(
     }
 }
 
-pub const Searchable = struct {
-    string: ?[]const u8,
-    uri: []const u8,
-};
-
 pub const Time = struct {
     elapsed: u16,
     duration: u16,
@@ -519,9 +514,9 @@ pub const Filter_Songs = struct {
     album: []const u8,
 };
 
-pub const SongTitleAndUri = struct {
-    titles: [][]const u8,
-    uris: [][]const u8,
+pub const SongStringAndUri = struct {
+    string: []const u8,
+    uri: []const u8,
 };
 
 pub fn findAlbumsFromArtists(
@@ -550,7 +545,7 @@ pub fn findTracksFromAlbum(
     filter: *const Filter_Songs,
     temp_alloc: mem.Allocator,
     persist_alloc: mem.Allocator,
-) !SongTitleAndUri {
+) ![]SongStringAndUri {
     var artist: []const u8 = "";
     if (filter.artist) |raw| {
         artist = try fmt.allocPrint(temp_alloc, " AND (Artist == \\\"{s}\\\")", .{try escapeMpdString(temp_alloc, raw)});
@@ -562,25 +557,42 @@ pub fn findTracksFromAlbum(
 
     const data = try readLargeResponse(temp_alloc, command);
     var lines = try processLargeResponse(data);
-    var array_uri = ArrayList([]const u8).init(persist_alloc);
-    var array_title = ArrayList([]const u8).init(persist_alloc);
+    var songs = ArrayList(SongStringAndUri).init(persist_alloc);
+
+    var current_uri: ?[]const u8 = null;
+    var current_title: ?[]const u8 = null;
 
     while (lines.next()) |line| {
         if (mem.indexOf(u8, line, ": ")) |separator_index| {
             const key = line[0..separator_index];
             const value = line[separator_index + 2 ..];
+
             if (mem.eql(u8, key, "file")) {
-                try array_uri.append(try array_uri.allocator.dupe(u8, value));
-            }
-            if (mem.eql(u8, key, "Title")) {
-                try array_title.append(try array_title.allocator.dupe(u8, value));
+                // If we have a previous song with both URI and title, add it
+                if (current_uri != null and current_title != null) {
+                    try songs.append(SongStringAndUri{
+                        .uri = current_uri.?,
+                        .string = current_title.?,
+                    });
+                }
+                // Start a new song
+                current_uri = try persist_alloc.dupe(u8, value);
+                current_title = null;
+            } else if (mem.eql(u8, key, "Title")) {
+                current_title = try persist_alloc.dupe(u8, value);
             }
         }
     }
-    return SongTitleAndUri{
-        .titles = try array_title.toOwnedSlice(),
-        .uris = try array_uri.toOwnedSlice(),
-    };
+
+    // Add the last song if it has both URI and title
+    if (current_uri != null and current_title != null) {
+        try songs.append(SongStringAndUri{
+            .uri = current_uri.?,
+            .string = current_title.?,
+        });
+    }
+
+    return try songs.toOwnedSlice();
 }
 
 pub fn findAdd(song: *const Find_add_Song, allocator: mem.Allocator) !void {
@@ -631,11 +643,9 @@ test "findTracks" {
 
     const songs = try findTracksFromAlbum(&filter, tempAllocator, heapAllocator);
     _ = tempArena.reset(.free_all);
-    for (songs.title) |song| {
-        util.log("Title: {s}", .{song});
-    }
-    for (songs.uri) |uri| {
-        util.log("URI: {s}", .{uri});
+    for (songs) |song| {
+        util.log("Title: {s}", .{song.title});
+        util.log("URI: {s}", .{song.uri});
     }
 }
 
@@ -712,34 +722,50 @@ pub fn listAllData(respAllocator: std.mem.Allocator) ![]u8 {
     return try readLargeResponse(respAllocator, "listallinfo\n");
 }
 
-pub fn getAllSongs(heapAllocator: mem.Allocator, data: []const u8) !SongTitleAndUri {
-    var array_uri = std.ArrayList([]const u8).init(heapAllocator);
-    var array_title = std.ArrayList([]const u8).init(heapAllocator);
+pub fn getAllSongs(heapAllocator: mem.Allocator, data: []const u8) ![]SongStringAndUri {
+    var songs = ArrayList(SongStringAndUri).init(heapAllocator);
     var lines = try processLargeResponse(data);
+
+    var current_uri: ?[]const u8 = null;
+    var current_title: ?[]const u8 = null;
 
     while (lines.next()) |line| {
         if (mem.indexOf(u8, line, ": ")) |separator_index| {
             const key = line[0..separator_index];
             const value = line[separator_index + 2 ..];
+
             if (mem.eql(u8, key, "file")) {
-                try array_uri.append(try array_uri.allocator.dupe(u8, value));
-            }
-            if (mem.eql(u8, key, "Title")) {
-                try array_title.append(try array_title.allocator.dupe(u8, value));
+                // If we have a previous song with both URI and title, add it
+                if (current_uri != null and current_title != null) {
+                    try songs.append(SongStringAndUri{
+                        .uri = current_uri.?,
+                        .string = current_title.?,
+                    });
+                }
+                // Start a new song
+                current_uri = try heapAllocator.dupe(u8, value);
+                current_title = null;
+            } else if (mem.eql(u8, key, "Title")) {
+                current_title = try heapAllocator.dupe(u8, value);
             }
         }
     }
 
-    return SongTitleAndUri{
-        .titles = try array_title.toOwnedSlice(),
-        .uris = try array_uri.toOwnedSlice(),
-    };
+    // Add the last song if it has both URI and title
+    if (current_uri != null and current_title != null) {
+        try songs.append(SongStringAndUri{
+            .uri = current_uri.?,
+            .string = current_title.?,
+        });
+    }
+
+    return try songs.toOwnedSlice();
 }
 
-pub fn getSearchable(heapAllocator: mem.Allocator, data: []const u8) ![]Searchable {
-    var array = std.ArrayList(Searchable).init(heapAllocator);
+pub fn getSongStringAndUri(heapAllocator: mem.Allocator, data: []const u8) ![]SongStringAndUri {
+    var array = std.ArrayList(SongStringAndUri).init(heapAllocator);
     var lines = try processLargeResponse(data);
-    var current = Searchable{ .string = null, .uri = undefined };
+    var current_uri: ?[]const u8 = null;
     var title: ?[]const u8 = null;
     var artist: ?[]const u8 = null;
     var album: ?[]const u8 = null;
@@ -749,14 +775,13 @@ pub fn getSearchable(heapAllocator: mem.Allocator, data: []const u8) ![]Searchab
             const key = line[0..separator_index];
             const value = line[separator_index + 2 ..];
 
-            if (mem.eql(u8, key, "Album")) {
-                album = value;
-
-                title = title orelse "";
-                artist = artist orelse "";
-
-                current.string = try fmt.allocPrint(heapAllocator, "{s} {s} {s}", .{ title.?, artist.?, album.? });
-                try array.append(current);
+            if (mem.eql(u8, key, "file")) {
+                // Append the previous song if it exists
+                if (current_uri != null) {
+                    try appendSongStringAndUri(&array, heapAllocator, current_uri.?, title, artist, album);
+                }
+                // Start a new song
+                current_uri = try heapAllocator.dupe(u8, value);
                 title = null;
                 artist = null;
                 album = null;
@@ -764,13 +789,45 @@ pub fn getSearchable(heapAllocator: mem.Allocator, data: []const u8) ![]Searchab
                 title = value;
             } else if (mem.eql(u8, key, "Artist")) {
                 artist = value;
-            } else if (mem.eql(u8, key, "file")) {
-                current = Searchable{ .string = null, .uri = undefined };
-                current.uri = try heapAllocator.dupe(u8, value);
+            } else if (mem.eql(u8, key, "Album")) {
+                album = value;
             }
+            // Ignore other keys like "directory", "Last-Modified", etc.
         }
     }
+
+    // Append the last song if it exists
+    if (current_uri != null) {
+        try appendSongStringAndUri(&array, heapAllocator, current_uri.?, title, artist, album);
+    }
+
     return array.toOwnedSlice();
+}
+
+// Helper function to append a SongStringAndUri with a properly constructed string
+fn appendSongStringAndUri(
+    array: *std.ArrayList(SongStringAndUri),
+    heapAllocator: mem.Allocator,
+    uri: []const u8,
+    title: ?[]const u8,
+    artist: ?[]const u8,
+    album: ?[]const u8,
+) !void {
+    var parts = std.ArrayList([]const u8).init(heapAllocator);
+    defer parts.deinit();
+
+    // Add non-null tags to the parts list
+    if (title) |t| try parts.append(t);
+    if (artist) |a| try parts.append(a);
+    if (album) |al| try parts.append(al);
+
+    if (parts.items.len == 0) return;
+
+    const str = try std.mem.join(heapAllocator, " ", parts.items);
+    try array.append(SongStringAndUri{
+        .string = str,
+        .uri = uri,
+    });
 }
 
 pub fn addFromUri(allocator: mem.Allocator, uri: []const u8) !void {
@@ -796,7 +853,7 @@ test "do it work" {
     _ = try connect(wrkbuf[0..16], &cmdStream, false);
     std.debug.print("connected\n", .{});
 
-    const items = try getSearchable(heapAllocator, respAllocator);
+    const items = try getSongStringAndUri(heapAllocator, respAllocator);
     var max: []const u8 = "";
     for (items) |item| {
         if (item.string.?.len > max.len) {

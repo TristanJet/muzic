@@ -12,11 +12,11 @@ const mismatch_penalty: i8 = -1;
 const gap_penalty: i8 = -1;
 const exact_word_multiplier: u16 = 100;
 
-pub var pointerToAll: *[]mpd.Searchable = undefined;
-var items: *[]mpd.Searchable = undefined;
+pub var pointerToAll: *[]mpd.SongStringAndUri = undefined;
+var items: *[]mpd.SongStringAndUri = undefined;
 
 const ScoredString = struct {
-    song: mpd.Searchable,
+    song: mpd.SongStringAndUri,
     score: u16,
 };
 
@@ -25,31 +25,29 @@ const AlgoError = error{
     OutOfMemory,
 };
 
-pub fn algorithm(arena: *std.heap.ArenaAllocator, heapAllocator: std.mem.Allocator, input: []const u8) AlgoError![]mpd.Searchable {
+pub fn algorithm(arena: *std.heap.ArenaAllocator, heapAllocator: std.mem.Allocator, input: []const u8) AlgoError![]mpd.SongStringAndUri {
     if (nRanked == 0) return AlgoError.NoWindowLength;
     const arenaAllocator = arena.allocator();
     if (input.len == 1) return try contains(heapAllocator, arena, input[0]);
     var scoredStrings = std.ArrayList(ScoredString).init(heapAllocator);
     defer scoredStrings.deinit();
-    var itemArray = std.ArrayList(mpd.Searchable).init(heapAllocator);
+    var itemArray = std.ArrayList(mpd.SongStringAndUri).init(heapAllocator);
 
     for (items.*) |item| {
-        if (item.string) |string| {
-            defer {
-                _ = arena.reset(.retain_capacity);
-            }
-            const score = calculateScore(input, string, arenaAllocator) catch unreachable;
-            //at least quarter are matches
-            const cutoff_fraction = input.len / cutoff_denominator;
-            if (score >= cutoff_fraction) {
-                try itemArray.append(item);
-                try scoredStrings.append(.{ .song = item, .score = score });
-            }
+        defer {
+            _ = arena.reset(.retain_capacity);
+        }
+        const score = calculateScore(input, item.string, arenaAllocator) catch unreachable;
+        //at least quarter are matches
+        const cutoff_fraction = input.len / cutoff_denominator;
+        if (score >= cutoff_fraction) {
+            try itemArray.append(item);
+            try scoredStrings.append(.{ .song = item, .score = score });
         }
     }
 
-    const new_items = try heapAllocator.dupe(mpd.Searchable, itemArray.items);
-    items = try heapAllocator.create([]mpd.Searchable);
+    const new_items = try heapAllocator.dupe(mpd.SongStringAndUri, itemArray.items);
+    items = try heapAllocator.create([]mpd.SongStringAndUri);
     items.* = new_items;
     // Sort by score (highest first)
     std.sort.pdq(ScoredString, scoredStrings.items, {}, struct {
@@ -58,8 +56,7 @@ pub fn algorithm(arena: *std.heap.ArenaAllocator, heapAllocator: std.mem.Allocat
         }
     }.lessThan);
 
-    // Take top 10 strings
-    var result = std.ArrayList(mpd.Searchable).init(heapAllocator);
+    var result = std.ArrayList(mpd.SongStringAndUri).init(heapAllocator);
     const numResults = @min(scoredStrings.items.len, nRanked);
     for (scoredStrings.items[0..numResults]) |scored| {
         try result.append(scored.song);
@@ -70,28 +67,26 @@ pub fn algorithm(arena: *std.heap.ArenaAllocator, heapAllocator: std.mem.Allocat
     return try result.toOwnedSlice();
 }
 
-fn contains(heapAllocator: std.mem.Allocator, arena: *std.heap.ArenaAllocator, input: u8) ![]mpd.Searchable {
+fn contains(heapAllocator: std.mem.Allocator, arena: *std.heap.ArenaAllocator, input: u8) ![]mpd.SongStringAndUri {
     const arenaAllocator = arena.allocator();
-    var itemArray = std.ArrayList(mpd.Searchable).init(heapAllocator);
-    var rankedStrings = std.ArrayList(mpd.Searchable).init(heapAllocator);
+    var itemArray = std.ArrayList(mpd.SongStringAndUri).init(heapAllocator);
+    var rankedStrings = std.ArrayList(mpd.SongStringAndUri).init(heapAllocator);
 
     const inputLower = std.ascii.toLower(input);
     for (items.*) |item| {
         defer {
             _ = arena.reset(.retain_capacity);
         }
-        if (item.string) |string| {
-            const stringLower: []const u8 = try std.ascii.allocLowerString(arenaAllocator, string);
-            if (std.mem.indexOfScalar(u8, stringLower, inputLower)) |_| {
-                try itemArray.append(item);
-                if (rankedStrings.items.len < nRanked) try rankedStrings.append(item);
-            }
+        const stringLower: []const u8 = try std.ascii.allocLowerString(arenaAllocator, item.string);
+        if (std.mem.indexOfScalar(u8, stringLower, inputLower)) |_| {
+            try itemArray.append(item);
+            if (rankedStrings.items.len < nRanked) try rankedStrings.append(item);
         }
     }
     util.log("items len {}", .{itemArray.items.len});
     util.log("ranked len {}", .{rankedStrings.items.len});
-    const new_items = try heapAllocator.dupe(mpd.Searchable, itemArray.items);
-    items = try heapAllocator.create([]mpd.Searchable);
+    const new_items = try heapAllocator.dupe(mpd.SongStringAndUri, itemArray.items);
+    items = try heapAllocator.create([]mpd.SongStringAndUri);
     items.* = new_items;
     return rankedStrings.toOwnedSlice();
 }
@@ -192,11 +187,11 @@ test "full function" {
     _ = try mpd.connect(wrkbuf[0..16], &mpd.cmdStream, false);
     std.debug.print("connected\n", .{});
 
-    items = try mpd.getSearchable(longallocator, respAllocator);
+    items = try mpd.getSongStringAndUri(longallocator, respAllocator);
     respArena.deinit();
 
     const input = "Beat It";
-    var songs: []mpd.Searchable = undefined;
+    var songs: []mpd.SongStringAndUri = undefined;
 
     std.debug.print("Total set: {}\n", .{items.len});
     for (1..input.len + 1) |i| {

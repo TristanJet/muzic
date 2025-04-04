@@ -467,10 +467,10 @@ fn findRender(panel: window.Panel) !void {
                     try term.writeByteNTimes(' ', area.xlen);
                 }
                 for (viewable, 0..) |song, j| {
-                    const len = if (song.string.?.len > area.xlen) area.xlen else song.string.?.len;
+                    const len = if (song.string.len > area.xlen) area.xlen else song.string.len;
                     if (j == current.find_cursor_pos) try term.highlight();
                     try term.moveCursor(area.ymin + j, area.xmin);
-                    try term.writeAll(song.string.?[0..len]);
+                    try term.writeAll(song.string[0..len]);
                     if (j == current.find_cursor_pos) try term.unhighlight();
                 }
             } else {

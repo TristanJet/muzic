@@ -31,7 +31,7 @@ pub const State = struct {
 
     typing_display: TypingDisplay,
     find_cursor_pos: u8,
-    viewable_searchable: ?[]mpd.Searchable,
+    viewable_searchable: ?[]mpd.SongStringAndUri,
 
     selected_column: Columns,
     column_1: BrowseColumn,
@@ -44,19 +44,19 @@ pub const State = struct {
 };
 
 pub const Data = struct {
-    searchable: []mpd.Searchable,
+    searchable: []mpd.SongStringAndUri,
     albums: []const []const u8,
     artists: []const []const u8,
-    songs: mpd.SongTitleAndUri,
+    songs: []mpd.SongStringAndUri,
 
     pub fn init() !Data {
         const data = try mpd.listAllData(alloc.respAllocator);
-        const searchable = try mpd.getSearchable(alloc.persistentAllocator, data);
-        var songs = try mpd.getAllSongs(alloc.persistentAllocator, data);
+        const searchable = try mpd.getSongStringAndUri(alloc.persistentAllocator, data);
+        const songs_unsorted = try mpd.getAllSongs(alloc.persistentAllocator, data);
         _ = alloc.respArena.reset(.retain_capacity);
 
-        // Sort songs alphabetically while keeping uri and title indices synchronized
-        try sortSongTitlesAndUris(&songs);
+        // Sort songs alphabetically
+        const songs = try sortSongStringsAndUris(songs_unsorted);
 
         const albums = try mpd.getAllAlbums(alloc.persistentAllocator, alloc.respAllocator);
         _ = alloc.respArena.reset(.retain_capacity);
@@ -70,43 +70,27 @@ pub const Data = struct {
         };
     }
 
-    // Helper function to sort songs alphabetically while keeping uri and title indices synchronized
-    fn sortSongTitlesAndUris(songs: *mpd.SongTitleAndUri) !void {
-        // Create an array of indices
-        var indices = try alloc.persistentAllocator.alloc(usize, songs.titles.len);
-        defer alloc.persistentAllocator.free(indices);
+    // Helper function to sort songs alphabetically
+    fn sortSongStringsAndUris(songs_param: []mpd.SongStringAndUri) ![]mpd.SongStringAndUri {
+        // Create a sorted copy
+        var sorted = try alloc.persistentAllocator.alloc(mpd.SongStringAndUri, songs_param.len);
 
-        for (0..songs.titles.len) |i| {
-            indices[i] = i;
+        // Copy the songs
+        for (songs_param, 0..) |song, i| {
+            sorted[i] = song;
         }
 
-        // Define a custom context for sorting indices based on song titles
+        // Define a custom context for sorting based on song titles
         const SortContext = struct {
-            titles: []const []const u8,
-
-            pub fn lessThan(ctx: @This(), a: usize, b: usize) bool {
-                return std.mem.lessThan(u8, ctx.titles[a], ctx.titles[b]);
+            pub fn lessThan(_: @This(), a: mpd.SongStringAndUri, b: mpd.SongStringAndUri) bool {
+                return std.mem.lessThan(u8, a.string, b.string);
             }
         };
 
-        // Sort indices using block sort
-        std.sort.block(usize, indices, SortContext{ .titles = songs.titles }, SortContext.lessThan);
+        // Sort songs using block sort
+        std.sort.block(mpd.SongStringAndUri, sorted, SortContext{}, SortContext.lessThan);
 
-        // Create new arrays with sorted data
-        var new_titles = try alloc.persistentAllocator.alloc([]const u8, songs.titles.len);
-        var new_uris = try alloc.persistentAllocator.alloc([]const u8, songs.uris.len);
-
-        for (indices, 0..) |old_idx, new_idx| {
-            new_titles[new_idx] = songs.titles[old_idx];
-            new_uris[new_idx] = songs.uris[old_idx];
-        }
-
-        // Free old arrays and replace with sorted ones
-        alloc.persistentAllocator.free(songs.titles);
-        alloc.persistentAllocator.free(songs.uris);
-
-        songs.titles = new_titles;
-        songs.uris = new_uris;
+        return sorted;
     }
 };
 

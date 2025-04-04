@@ -24,7 +24,7 @@ pub var y_len: usize = undefined;
 var key_down: ?u8 = null;
 
 // This contains shared data that will be refactored into the browser module
-var tracks_from_album: mpd.SongTitleAndUri = undefined;
+var tracks_from_album: []mpd.SongStringAndUri = undefined;
 var albums_from_artist: []const []const u8 = undefined;
 
 var all_albums_pos: u8 = undefined;
@@ -107,28 +107,48 @@ pub fn handleRelease(char: u8, app_state: *state.State, render_state: *RenderSta
 // ---- State Transitions ----
 
 fn onTypingExit(app: *state.State, render_state: *RenderState) void {
+    // Reset application state
     app.typing_display.reset();
-    render_state.borders = true;
-    render_state.find = true;
-    render_state.queueEffects = true;
     app.viewable_searchable = null;
     app.input_state = .normal_queue;
     app.find_cursor_pos = 0;
     algo.resetItems();
+
+    // Update rendering state
+    render_state.borders = true;
+    render_state.find = true;
+    render_state.queueEffects = true;
+
+    // Reset memory arenas
     _ = alloc.typingArena.reset(.retain_capacity);
     _ = alloc.algoArena.reset(.free_all);
 }
 
 fn onBrowseExit(app: *state.State, render_state: *RenderState) void {
+    // Update rendering state
     render_state.queueEffects = true;
     render_state.clear_browse_cursor_one = true;
     render_state.clear_browse_cursor_two = true;
     render_state.clear_browse_cursor_three = true;
 
-    if (app.column_3.type == .Tracks and app.column_1.type == .Artists) revertSwitcheroo(app);
+    // Make sure we safely restore the column state
+    if (app.column_3.type == .Tracks and app.column_1.type == .Artists) {
+        revertSwitcheroo(app);
+    } else {
+        // Ensure safe default display state anyway
+        app.column_1.type = .Select;
+        app.column_1.displaying = browse_types[0..];
+        app.column_1.pos = 0;
+        app.column_1.slice_inc = 0;
+    }
+
+    // Reset application state
     app.input_state = .normal_queue;
     app.selected_column = .one;
+
+    // Reset memory arenas - keep these together
     _ = alloc.typingArena.reset(.retain_capacity);
+    _ = alloc.respArena.reset(.free_all);
 }
 
 // ---- Input Mode Handlers ----
@@ -171,7 +191,7 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState) !void {
             log("typed: {s}\n", .{app.typing_display.typed});
             const slice = try algo.algorithm(&alloc.algoArena, alloc.typingAllocator, app.typing_display.typed);
             app.viewable_searchable = slice[0..];
-            log("viewable string: {s}\n", .{slice[0].string.?});
+            log("viewable string: {s}\n", .{slice[0].string});
             render_state.find = true;
             return;
         },
@@ -420,7 +440,20 @@ fn browserSetColumn2ToTracks(app: *state.State) void {
     app.column_3.type = .None;
     app.column_2.slice_inc = all_songs_inc;
     app.column_2.pos = all_songs_pos;
-    app.column_2.displaying = data.songs.titles;
+
+    // Use a safer, persistent allocator for this long-lived data
+    var titles = alloc.persistentAllocator.alloc([]const u8, data.songs.len) catch {
+        log("Failed to allocate memory for song titles", .{});
+        // Fallback to safer empty slice if allocation fails
+        app.column_2.displaying = &[_][]const u8{};
+        return;
+    };
+
+    for (data.songs, 0..) |song, i| {
+        titles[i] = song.string;
+    }
+
+    app.column_2.displaying = titles;
 }
 
 // Browser left navigation - handles column dependency
@@ -458,11 +491,36 @@ fn browserNavigateLeft(app: *state.State, render_state: *RenderState) void {
 }
 
 fn revertSwitcheroo(app: *state.State) void {
+    // First ensure we have valid data in the columns
+    const col1Empty = app.column_1.displaying.len == 0;
+    const col2Empty = app.column_2.displaying.len == 0;
+
+    if (col1Empty or col2Empty) {
+        // Just reset to safe defaults if data is missing
+        app.column_1.type = .Select;
+        app.column_1.displaying = browse_types[0..];
+        app.column_2.type = .Artists;
+        app.column_2.displaying = data.artists;
+        app.column_3.type = .None;
+        app.column_3.displaying = &[_][]const u8{};
+        app.column_3.pos = 0;
+        return;
+    }
+
+    // Store references to current column data
     const artists = app.column_1.displaying;
     const albums = app.column_2.displaying;
     const select = browse_types[0..];
 
+    // Reset positions
+    app.column_1.slice_inc = 0;
+    app.column_2.slice_inc = 0;
+    app.column_3.slice_inc = 0;
     app.column_3.pos = 0;
+    app.column_2.pos = 0;
+    app.column_1.pos = 0;
+
+    // Rearrange columns safely
     app.column_1.displaying = select;
     app.column_2.displaying = artists;
     app.column_3.displaying = albums;
@@ -514,14 +572,36 @@ fn browserHandleColumn3Selection(app: *state.State, render_state: *RenderState) 
 }
 
 fn switcheroo(app: *state.State) !void {
+    // Check for valid indices before accessing
+    if (app.column_3.displaying.len == 0) {
+        log("Empty column 3", .{});
+        return;
+    }
+
+    const absPos = app.column_3.absolutePos();
+    if (absPos >= app.column_3.displaying.len) {
+        log("Invalid column 3 index", .{});
+        return;
+    }
+
+    // First, clear any temporary allocations
+    _ = alloc.respArena.reset(.free_all);
+
+    // Get the album for filtering
     app.find_filter.album = app.column_3.displaying[app.column_3.absolutePos()];
     const artists = app.column_2.displaying;
     const albums = app.column_3.displaying;
 
     // Save column 2 increment for potential later use
     temp_col2_inc = app.column_2.slice_inc;
+
+    // Reset positions to known good states
+    app.column_1.slice_inc = 0;
     app.column_2.slice_inc = 0;
+    app.column_3.slice_inc = 0;
     app.column_3.pos = 0;
+    app.column_2.pos = 0;
+    app.column_1.pos = 0;
 
     // Rearrange columns
     app.column_1.displaying = artists;
@@ -532,7 +612,18 @@ fn switcheroo(app: *state.State) !void {
 
     // Fetch tracks from selected album
     tracks_from_album = try mpd.findTracksFromAlbum(&app.find_filter, alloc.respAllocator, alloc.persistentAllocator);
-    app.column_3.displaying = tracks_from_album.titles;
+
+    // Create a new slice of just the titles from SongStringAndUri objects
+    var titles = try alloc.persistentAllocator.alloc([]const u8, tracks_from_album.len);
+
+    for (tracks_from_album, 0..) |song, i| {
+        titles[i] = song.string;
+    }
+
+    app.column_3.displaying = titles;
+
+    // Clear any temporary allocations again
+    _ = alloc.respArena.reset(.free_all);
 }
 
 // Handle Enter key press in browser mode
@@ -541,16 +632,22 @@ fn browserHandleEnter(app: *state.State, render_state: *RenderState) !void {
         .one => browserSelectNextColumn(app, render_state),
         .two => {
             if (app.column_2.type == .Tracks) {
-                const uri = data.songs.uris[app.column_2.absolutePos()];
-                try mpd.addFromUri(alloc.typingAllocator, uri);
+                const pos = app.column_2.absolutePos();
+                if (pos < data.songs.len) {
+                    const uri = data.songs[pos].uri;
+                    try mpd.addFromUri(alloc.typingAllocator, uri);
+                }
             } else {
                 browserSelectNextColumn(app, render_state);
             }
         },
         .three => {
             if (app.column_3.type == .Tracks) {
-                const uri = tracks_from_album.uris[app.column_3.absolutePos()];
-                try mpd.addFromUri(alloc.typingAllocator, uri);
+                const pos = app.column_3.absolutePos();
+                if (pos < tracks_from_album.len) {
+                    const uri = tracks_from_album[pos].uri;
+                    try mpd.addFromUri(alloc.typingAllocator, uri);
+                }
             } else {
                 browserSelectNextColumn(app, render_state);
             }
@@ -587,24 +684,39 @@ fn browserUpdateColumn3FromColumn2(app: *state.State) !void {
     // Make sure the index is valid
     if (actual_index >= app.column_2.displaying.len) return;
 
+    // First, reset any previous allocations to avoid memory leaks
+    _ = alloc.respArena.reset(.free_all);
+
     var next_col_display: [][]const u8 = undefined;
 
     switch (app.column_2.type) {
         .Albums => {
             app.find_filter.album = app.column_2.displaying[actual_index];
             log("album: {s}", .{app.find_filter.album});
-            tracks_from_album = try mpd.findTracksFromAlbum(&app.find_filter, alloc.respAllocator, alloc.typingAllocator);
-            next_col_display = tracks_from_album.titles;
+
+            // Use respAllocator for temporary allocations
+            tracks_from_album = try mpd.findTracksFromAlbum(&app.find_filter, alloc.respAllocator, alloc.persistentAllocator);
+
+            // Create a new slice of just the titles
+            // Use persistentAllocator for longer-lived data
+            var titles = try alloc.persistentAllocator.alloc([]const u8, tracks_from_album.len);
+            for (tracks_from_album, 0..) |song, i| {
+                titles[i] = song.string;
+            }
+            next_col_display = titles;
         },
         .Artists => {
             app.find_filter.artist = app.column_2.displaying[actual_index];
-            next_col_display = try mpd.findAlbumsFromArtists(app.column_2.displaying[actual_index], alloc.respAllocator, alloc.typingAllocator);
+            // Use persistentAllocator for the results since they need to live longer
+            next_col_display = try mpd.findAlbumsFromArtists(app.column_2.displaying[actual_index], alloc.respAllocator, alloc.persistentAllocator);
         },
         .Tracks => return,
         else => unreachable,
     }
 
+    // Any intermediate temp data that was allocated in respAllocator can now be freed
     _ = alloc.respArena.reset(.free_all);
+
     app.column_3.displaying = next_col_display;
     app.column_3.slice_inc = 0; // Reset slice increment for the third column
 }
