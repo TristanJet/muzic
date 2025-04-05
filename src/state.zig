@@ -29,7 +29,7 @@ pub const State = struct {
     cursorPosQ: u8,
     prevCursorPos: u8,
 
-    typing_display: TypingDisplay,
+    typing_buffer: TypingBuffer,
     find_cursor_pos: u8,
     viewable_searchable: ?[]mpd.SongStringAndUri,
 
@@ -45,8 +45,8 @@ pub const State = struct {
 
 pub const Data = struct {
     searchable: []mpd.SongStringAndUri,
-    albums: []const []const u8,
-    artists: []const []const u8,
+    albums: [][]const u8,
+    artists: [][]const u8,
     songs: []mpd.SongStringAndUri,
 
     pub fn init() !Data {
@@ -230,17 +230,22 @@ pub const Idle = enum {
     queue,
 };
 
-pub const TypingDisplay = struct {
-    typeBuffer: [256]u8,
+pub const TypingBuffer = struct {
+    buf: [256]u8,
     typed: []const u8,
 
-    pub fn init(self: *TypingDisplay) void {
+    pub fn init(self: *TypingBuffer) void {
         self.typeBuffer = undefined;
         self.typed = self.typeBuffer[0..0];
     }
 
-    pub fn reset(self: *TypingDisplay) void {
+    pub fn reset(self: *TypingBuffer) void {
         self.typed = self.typeBuffer[0..0];
+    }
+
+    pub fn append(self: *TypingBuffer, char: u8) void {
+        self.buf[self.typed.len] = char;
+        self.typed = self.buf[0 .. self.typed.len + 1];
     }
 };
 

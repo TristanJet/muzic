@@ -492,11 +492,11 @@ fn getAllType(data_type: []const u8, heapAllocator: mem.Allocator, respAllocator
 ////
 /// list album “(Artist == \”{}\”)” .{Artist}
 ///
-pub fn getAllAlbums(heapAllocator: mem.Allocator, respAllocator: std.mem.Allocator) ![]const []const u8 {
+pub fn getAllAlbums(heapAllocator: mem.Allocator, respAllocator: std.mem.Allocator) ![][]const u8 {
     return getAllType("album", heapAllocator, respAllocator);
 }
 
-pub fn getAllArtists(heapAllocator: mem.Allocator, respAllocator: std.mem.Allocator) ![]const []const u8 {
+pub fn getAllArtists(heapAllocator: mem.Allocator, respAllocator: std.mem.Allocator) ![][]const u8 {
     return getAllType("artist", heapAllocator, respAllocator);
 }
 

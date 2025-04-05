@@ -56,9 +56,6 @@ pub fn main() !void {
     var data = try state.Data.init();
     input.data = data;
 
-    algo.pointerToAll = &data.searchable;
-    algo.resetItems();
-
     const initial_state = state.State{
         .quit = false,
         .first_render = true,

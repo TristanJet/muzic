@@ -20,6 +20,7 @@
 - [ ] Batch HOLD events on release
 - [ ] More robust input debounce; I suspect, library size has an effect on mpd response speed.
 - [ ] hold x from the top breaks
+- [ ] get rid of ALL UNNECESSARY public variables
 
 - [ ] pause flickers the bar and timestamp
 - [ ] Don't render if cursor doesn't move

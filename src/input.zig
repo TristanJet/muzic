@@ -34,8 +34,10 @@ var all_albums_inc: usize = undefined;
 var all_artists_inc: usize = undefined;
 var all_songs_inc: usize = undefined;
 
-// to save before switching back
-var temp_col2_inc: usize = 0;
+var searchable_items: []mpd.SongStringAndUri = undefined;
+var search_string: [][]const u8 = undefined;
+
+var modeSwitch: bool = false;
 
 pub const browse_types: [3][]const u8 = .{ "Albums", "Artists", "Songs" };
 
@@ -92,12 +94,19 @@ pub fn checkReleaseEvent(input_event: ?state.Event) !?state.Event {
 }
 
 pub fn handleInput(char: u8, app_state: *state.State, render_state: *RenderState) void {
-    switch (app_state.input_state) {
+    const initial_state = app_state.input_state;
+    switch (initial_state) {
         .normal_queue => normalQueue(char, app_state, render_state) catch unreachable,
         .typing_find => typingFind(char, app_state, render_state) catch unreachable,
         .normal_browse => handleNormalBrowse(char, app_state, render_state) catch unreachable,
         .typing_browse => typingBrowse(char, app_state, render_state) catch unreachable,
     }
+    if (app_state.input_state != initial_state) {
+        modeSwitch = true;
+        return;
+    }
+    if (modeSwitch)
+        modeSwitch = false;
 }
 
 pub fn handleRelease(char: u8, app_state: *state.State, render_state: *RenderState) void {
@@ -112,13 +121,20 @@ fn onTypingExit(app: *state.State, render_state: *RenderState) void {
     app.viewable_searchable = null;
     app.input_state = .normal_queue;
     app.find_cursor_pos = 0;
-    algo.resetItems();
 
     // Update rendering state
     render_state.borders = true;
     render_state.find = true;
     render_state.queueEffects = true;
 
+    // Reset memory arenas
+    _ = alloc.typingArena.reset(.retain_capacity);
+    _ = alloc.algoArena.reset(.free_all);
+}
+
+fn onBrowseTypingExit(current: ColumnWithRender) void {
+    current.render_col.* = true;
+    current.render_cursor.* = true;
     // Reset memory arenas
     _ = alloc.typingArena.reset(.retain_capacity);
     _ = alloc.algoArena.reset(.free_all);
@@ -153,12 +169,9 @@ fn onBrowseExit(app: *state.State, render_state: *RenderState) void {
 
 // ---- Input Mode Handlers ----
 
-fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState) !void {
-    log("{}{}{}", .{ char, app, render_state });
-    return;
-}
-
 fn typingFind(char: u8, app: *state.State, render_state: *RenderState) !void {
+    log("modeswitch: {}", .{modeSwitch});
+    if (modeSwitch) searchable_items = data.searchable;
     switch (char) {
         '\x1B' => {
             var escBuffer: [8]u8 = undefined;
@@ -187,9 +200,14 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState) !void {
             return;
         },
         else => {
-            typeFind(char, app);
+            app.typing_buffer.append(char);
             log("typed: {s}\n", .{app.typing_display.typed});
-            const slice = try algo.algorithm(&alloc.algoArena, alloc.typingAllocator, app.typing_display.typed);
+            const slice = try algo.algorithmSU(
+                &alloc.algoArena,
+                alloc.typingAllocator,
+                app.typing_display.typed,
+                &searchable_items,
+            );
             app.viewable_searchable = slice[0..];
             log("viewable string: {s}\n", .{slice[0].string});
             render_state.find = true;
@@ -307,6 +325,45 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
         },
         '\n', '\r' => try browserHandleEnter(app, render_state),
         else => unreachable,
+    }
+}
+
+fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState) !void {
+    log("{}{}{}", .{ char, app, render_state });
+    const current: ColumnWithRender = getCurrent(app, render_state);
+    if (modeSwitch) {
+        current.col.pos = 0;
+        current.col.prev_pos = 0;
+        current.col.slice_inc = 0;
+
+        search_string = switch (current.col.type) {
+            .Album => data.albums,
+            .Artists => data.artists,
+            .Tracks => data.songs,
+            else => return error.BadSearch,
+        };
+    }
+    switch (char) {
+        '\x1B' => {
+            var escBuffer: [8]u8 = undefined;
+            const escRead = try term.readEscapeCode(&escBuffer);
+
+            if (escRead == 0) onBrowseTypingExit();
+        },
+        '\r', '\n' => onBrowseTypingExit(),
+        else => {
+            app.typing_buffer.append(char);
+            log("typed: {s}\n", .{app.typing_display.typed});
+            const slice = try algo.algorithmString(
+                &alloc.algoArena,
+                alloc.typingAllocator,
+                app.typing_display.typed,
+                &search_string,
+            );
+            current.col.displaying = slice[0..];
+            current.render_col.* = true;
+            log("viewable string: {s}\n", .{slice[0].string});
+        },
     }
 }
 
@@ -592,9 +649,6 @@ fn switcheroo(app: *state.State) !void {
     const artists = app.column_2.displaying;
     const albums = app.column_3.displaying;
 
-    // Save column 2 increment for potential later use
-    temp_col2_inc = app.column_2.slice_inc;
-
     // Reset positions to known good states
     app.column_1.slice_inc = 0;
     app.column_2.slice_inc = 0;
@@ -732,11 +786,6 @@ fn debounce() bool {
     }
     last_input = app_time;
     return false;
-}
-
-fn typeFind(char: u8, app: *state.State) void {
-    app.typing_display.typeBuffer[app.typing_display.typed.len] = char;
-    app.typing_display.typed = app.typing_display.typeBuffer[0 .. app.typing_display.typed.len + 1];
 }
 
 pub fn scrollQ(isUp: bool, app: *state.State, render_state: *RenderState) void {
