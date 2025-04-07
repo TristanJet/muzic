@@ -235,12 +235,12 @@ pub const TypingBuffer = struct {
     typed: []const u8,
 
     pub fn init(self: *TypingBuffer) void {
-        self.typeBuffer = undefined;
-        self.typed = self.typeBuffer[0..0];
+        self.buf = undefined;
+        self.typed = self.buf[0..0];
     }
 
     pub fn reset(self: *TypingBuffer) void {
-        self.typed = self.typeBuffer[0..0];
+        self.typed = self.buf[0..0];
     }
 
     pub fn append(self: *TypingBuffer, char: u8) void {

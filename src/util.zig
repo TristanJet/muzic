@@ -1,4 +1,6 @@
-const fs = @import("std").fs;
+const std = @import("std");
+const fs = std.fs;
+const math = std.math;
 var logtty: fs.File = undefined;
 var logger: fs.File.Writer = undefined;
 
@@ -17,4 +19,25 @@ pub fn deinit() !void {
 
 pub fn log(comptime format: []const u8, args: anytype) void {
     logger.print(format ++ "\n", args) catch {};
+}
+
+const S = struct {
+    fn compareStrings(context: void, key: []const u8, mid_item: []const u8) math.Order {
+        _ = context;
+        return std.mem.order(u8, key, mid_item);
+    }
+};
+
+// Binary search for a string in a sorted slice of strings
+pub fn findStringIndex(
+    key: []const u8,
+    items: []const []const u8,
+) ?usize {
+    return std.sort.binarySearch(
+        []const u8, // Type T
+        key, // The string to find
+        items, // The sorted slice of strings
+        {}, // Context (empty since we don't need it)
+        S.compareStrings, // Comparison function
+    );
 }

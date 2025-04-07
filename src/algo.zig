@@ -71,7 +71,7 @@ pub fn suTopNranked(
     return try result.toOwnedSlice();
 }
 
-fn suBestMatch(
+pub fn suBestMatch(
     arena: *std.heap.ArenaAllocator,
     heapAllocator: std.mem.Allocator,
     input: []const u8,
@@ -176,7 +176,7 @@ pub fn stringTopNranked(
     return try result.toOwnedSlice();
 }
 
-fn stringBestMatch(
+pub fn stringBestMatch(
     arena: *std.heap.ArenaAllocator,
     heapAllocator: std.mem.Allocator,
     input: []const u8,

@@ -20,7 +20,7 @@ const target_frame_time_ms = 1000 / target_fps;
 
 var initial_song: mpd.CurrentSong = undefined;
 var initial_queue: mpd.Queue = mpd.Queue{};
-var initial_typing: state.TypingDisplay = undefined;
+var initial_typing: state.TypingBuffer = undefined;
 
 const wrkallocator = alloc.wrkallocator;
 const wrkfba = &alloc.wrkfba;
@@ -75,7 +75,7 @@ pub fn main() !void {
         .cursorPosQ = 0,
         .prevCursorPos = 0,
 
-        .typing_display = initial_typing,
+        .typing_buffer = initial_typing,
         .find_cursor_pos = 0,
         .viewable_searchable = null,
 

@@ -493,8 +493,8 @@ fn findRender(panel: window.Panel) !void {
 fn getFindText() ![]const u8 {
     return switch (current.input_state) {
         .normal_queue => try std.fmt.allocPrint(wrkallocator, "b{s}{s}find", .{ sym.left_up, sym.right_up }),
-        .typing_find => try std.fmt.allocPrint(wrkallocator, "b{s}{s}find: {s}_", .{ sym.left_up, sym.right_up, current.typing_display.typed }),
+        .typing_find => try std.fmt.allocPrint(wrkallocator, "b{s}{s}find: {s}_", .{ sym.left_up, sym.right_up, current.typing_buffer.typed }),
         .normal_browse => try std.fmt.allocPrint(wrkallocator, "f{s}{s}browse", .{ sym.left_up, sym.right_up }),
-        .typing_browse => try std.fmt.allocPrint(wrkallocator, "f{s}{s}browse: {s}_", .{ sym.left_up, sym.right_up, current.typing_display.typed }),
+        .typing_browse => try std.fmt.allocPrint(wrkallocator, "f{s}{s}browse: {s}_", .{ sym.left_up, sym.right_up, current.typing_buffer.typed }),
     };
 }

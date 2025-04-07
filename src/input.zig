@@ -10,7 +10,9 @@ const time = std.time;
 const assert = std.debug.assert;
 const RenderState = @import("render.zig").RenderState;
 
-const log = @import("util.zig").log;
+const util = @import("util.zig");
+const log = util.log;
+const findStringIndex = util.findStringIndex;
 const wrkallocator = alloc.wrkallocator;
 
 pub var data: state.Data = undefined;
@@ -35,7 +37,7 @@ var all_artists_inc: usize = undefined;
 var all_songs_inc: usize = undefined;
 
 var searchable_items: []mpd.SongStringAndUri = undefined;
-var search_string: [][]const u8 = undefined;
+var search_strings: [][]const u8 = undefined;
 
 var modeSwitch: bool = false;
 
@@ -117,7 +119,7 @@ pub fn handleRelease(char: u8, app_state: *state.State, render_state: *RenderSta
 
 fn onTypingExit(app: *state.State, render_state: *RenderState) void {
     // Reset application state
-    app.typing_display.reset();
+    app.typing_buffer.reset();
     app.viewable_searchable = null;
     app.input_state = .normal_queue;
     app.find_cursor_pos = 0;
@@ -132,11 +134,14 @@ fn onTypingExit(app: *state.State, render_state: *RenderState) void {
     _ = alloc.algoArena.reset(.free_all);
 }
 
-fn onBrowseTypingExit(current: ColumnWithRender) void {
+fn onBrowseTypingExit(app: *state.State, current: ColumnWithRender) !void {
+    app.typing_buffer.reset();
+    app.input_state = .normal_browse;
+
     current.render_col.* = true;
     current.render_cursor.* = true;
+
     // Reset memory arenas
-    _ = alloc.typingArena.reset(.retain_capacity);
     _ = alloc.algoArena.reset(.free_all);
 }
 
@@ -170,7 +175,6 @@ fn onBrowseExit(app: *state.State, render_state: *RenderState) void {
 // ---- Input Mode Handlers ----
 
 fn typingFind(char: u8, app: *state.State, render_state: *RenderState) !void {
-    log("modeswitch: {}", .{modeSwitch});
     if (modeSwitch) searchable_items = data.searchable;
     switch (char) {
         '\x1B' => {
@@ -201,11 +205,11 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState) !void {
         },
         else => {
             app.typing_buffer.append(char);
-            log("typed: {s}\n", .{app.typing_display.typed});
-            const slice = try algo.algorithmSU(
+            log("typed: {s}\n", .{app.typing_buffer.typed});
+            const slice = try algo.suTopNranked(
                 &alloc.algoArena,
                 alloc.typingAllocator,
-                app.typing_display.typed,
+                app.typing_buffer.typed,
                 &searchable_items,
             );
             app.viewable_searchable = slice[0..];
@@ -300,6 +304,13 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
             const escRead = try term.readEscapeCode(&escBuffer);
 
             if (escRead == 0) {
+                //this is wrong
+                const current: ColumnWithRender = getCurrent(app, render_state);
+                current.col.displaying = switch (current.col.type) {
+                    .Albums => data.albums,
+                    .Artists => data.artists,
+                    else => return error.BadSearch,
+                };
                 onBrowseExit(app, render_state);
             }
         },
@@ -329,17 +340,15 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
 }
 
 fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState) !void {
-    log("{}{}{}", .{ char, app, render_state });
     const current: ColumnWithRender = getCurrent(app, render_state);
     if (modeSwitch) {
         current.col.pos = 0;
         current.col.prev_pos = 0;
         current.col.slice_inc = 0;
 
-        search_string = switch (current.col.type) {
-            .Album => data.albums,
+        search_strings = switch (current.col.type) {
+            .Albums => data.albums,
             .Artists => data.artists,
-            .Tracks => data.songs,
             else => return error.BadSearch,
         };
     }
@@ -348,21 +357,31 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState) !void {
             var escBuffer: [8]u8 = undefined;
             const escRead = try term.readEscapeCode(&escBuffer);
 
-            if (escRead == 0) onBrowseTypingExit();
+            if (escRead == 0) {
+                current.col.displaying = switch (current.col.type) {
+                    .Albums => data.albums,
+                    .Artists => data.artists,
+                    else => return error.BadSearch,
+                };
+                try onBrowseTypingExit(app, current);
+            }
         },
-        '\r', '\n' => onBrowseTypingExit(),
+        '\r', '\n' => try onBrowseTypingExit(app, current),
         else => {
             app.typing_buffer.append(char);
-            log("typed: {s}\n", .{app.typing_display.typed});
-            const slice = try algo.algorithmString(
+            log("typed: {s}\n", .{app.typing_buffer.typed});
+            const best_match: []const u8 = try algo.stringBestMatch(
                 &alloc.algoArena,
                 alloc.typingAllocator,
-                app.typing_display.typed,
-                &search_string,
+                app.typing_buffer.typed,
+                &search_strings,
             );
-            current.col.displaying = slice[0..];
+
+            log("best match: {s}", .{best_match});
+            const index = findStringIndex(best_match, current.col.displaying);
+            if (index) |unwrap| log("index: {}\n", .{unwrap});
+
             current.render_col.* = true;
-            log("viewable string: {s}\n", .{slice[0].string});
         },
     }
 }
