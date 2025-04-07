@@ -2,8 +2,6 @@
 
 ## CURRENT
 - [ ] browser typing
-- [ ] rewrite Browser
-    - Describe in terms of prev, current, next
 
 ## Bugs/Fixes
 - [x] MAC BLOCK TERMINAL WRITES
@@ -12,6 +10,8 @@
 - [x] handle column state based on type
 - [x] alphabetical order all_songs
 - [x] algorithm rewrite, take ITEMS as argument
+- [ ] algorithm tweak, prioritize matches at the start of the string, for best match functions e.g. Tyler, The Creator
+- [ ] algoirthm fix, EXETER failing best match
 - [ ] display full album content, regardless of artist
 - [ ] sometimes cursor doesn't display after switching horizontally
 - [ ] don't let switch column before correct song item displaying
@@ -20,6 +20,7 @@
 - [ ] More robust input debounce; I suspect, library size has an effect on mpd response speed.
 - [ ] hold x from the top breaks
 - [ ] get rid of ALL UNNECESSARY public variables
+- [ ] rewrite Browser - Describe in terms of prev, current, next
 
 - [ ] handle utf-16 when rendering highlight
 - [ ] pause flickers the bar and timestamp

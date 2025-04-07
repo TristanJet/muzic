@@ -40,6 +40,7 @@ var searchable_items: []mpd.SongStringAndUri = undefined;
 var search_strings: [][]const u8 = undefined;
 
 var modeSwitch: bool = false;
+var browse_typed: bool = false;
 
 pub const browse_types: [3][]const u8 = .{ "Albums", "Artists", "Songs" };
 
@@ -134,10 +135,11 @@ fn onTypingExit(app: *state.State, render_state: *RenderState) void {
     _ = alloc.algoArena.reset(.free_all);
 }
 
-fn onBrowseTypingExit(app: *state.State, current: ColumnWithRender) !void {
+fn onBrowseTypingExit(app: *state.State, current: ColumnWithRender, render_state: *RenderState) !void {
     app.typing_buffer.reset();
     app.input_state = .normal_browse;
 
+    if (browse_typed) render_state.borders = true;
     current.render_col.* = true;
     current.render_cursor.* = true;
 
@@ -357,11 +359,12 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState) !void {
                     .Artists => data.artists,
                     else => return error.BadSearch,
                 };
-                try onBrowseTypingExit(app, current);
+                try onBrowseTypingExit(app, current, render_state);
             }
         },
-        '\r', '\n' => try onBrowseTypingExit(app, current),
+        '\r', '\n' => try onBrowseTypingExit(app, current, render_state),
         else => {
+            browse_typed = true;
             app.typing_buffer.append(char);
             log("typed: {s}\n", .{app.typing_buffer.typed});
             const best_match: []const u8 = try algo.stringBestMatch(
@@ -381,6 +384,8 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState) !void {
 
             current.render_cursor.* = true;
             current.render_col.* = true;
+
+            render_state.find = true;
         },
     }
 }
