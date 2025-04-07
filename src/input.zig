@@ -32,6 +32,7 @@ var albums_from_artist: []const []const u8 = undefined;
 var all_albums_pos: u8 = undefined;
 var all_artists_pos: u8 = undefined;
 var all_songs_pos: u8 = undefined;
+var select_pos: u8 = 0;
 var all_albums_inc: usize = undefined;
 var all_artists_inc: usize = undefined;
 var all_songs_inc: usize = undefined;
@@ -41,6 +42,7 @@ var search_strings: [][]const u8 = undefined;
 
 var modeSwitch: bool = false;
 var browse_typed: bool = false;
+var next_col_ready: bool = false;
 
 pub const browse_types: [3][]const u8 = .{ "Albums", "Artists", "Songs" };
 
@@ -114,6 +116,7 @@ pub fn handleInput(char: u8, app_state: *state.State, render_state: *RenderState
 
 pub fn handleRelease(char: u8, app_state: *state.State, render_state: *RenderState) void {
     if (app_state.input_state == .normal_browse) handleBrowseKeyRelease(char, app_state, render_state) catch unreachable;
+    next_col_ready = true;
 }
 
 // ---- State Transitions ----
@@ -168,7 +171,10 @@ fn onBrowseExit(app: *state.State, render_state: *RenderState) void {
     // Reset application state
     app.input_state = .normal_queue;
     app.selected_column = .one;
-
+    app.find_filter = mpd.Filter_Songs{
+        .album = undefined,
+        .artist = null,
+    };
     // Reset memory arenas - keep these together
     _ = alloc.typingArena.reset(.retain_capacity);
     _ = alloc.respArena.reset(.free_all);
@@ -456,11 +462,13 @@ fn browserScrollVertical(
     prev: ?ColumnWithRender,
     app: *state.State,
 ) !void {
+    next_col_ready = false;
     const max: ?u8 = if (dir == .up) null else @intCast(@min(y_len, current.col.displaying.len));
     current.col.scroll(dir, max, y_len);
 
     if (current.col.type == .Select) {
         // Update column 2 content based on column 1 selection
+        select_pos = current.col.pos;
         switch (current.col.pos) {
             0 => browserSetColumn2ToAlbums(app),
             1 => browserSetColumn2ToArtists(app),
@@ -533,6 +541,7 @@ fn browserNavigateLeft(app: *state.State, render_state: *RenderState) void {
                 .album = undefined,
                 .artist = null,
             };
+            app.column_1.pos = select_pos;
             render_state.clear_browse_cursor_two = true;
             render_state.browse_cursor_one = true;
             render_state.clear_col_three = true;
@@ -600,8 +609,8 @@ fn revertSwitcheroo(app: *state.State) void {
 fn browserSelectNextColumn(app: *state.State, render_state: *RenderState) void {
     switch (app.selected_column) {
         .one => browserMoveFromColumn1ToColumn2(app, render_state),
-        .two => browserMoveFromColumn2ToColumn3(app, render_state),
-        .three => browserHandleColumn3Selection(app, render_state),
+        .two => if (next_col_ready) browserMoveFromColumn2ToColumn3(app, render_state),
+        .three => if (next_col_ready) browserHandleColumn3Selection(app, render_state),
     }
 }
 
@@ -618,6 +627,8 @@ fn browserMoveFromColumn1ToColumn2(app: *state.State, render_state: *RenderState
 }
 
 fn browserMoveFromColumn2ToColumn3(app: *state.State, render_state: *RenderState) void {
+    const current = getCurrent(app, render_state);
+    if (current.col.type == .Tracks) return;
     app.selected_column = .three;
     render_state.clear_browse_cursor_two = true;
     render_state.browse_cursor_three = true;
