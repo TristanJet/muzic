@@ -551,9 +551,7 @@ pub fn findTracksFromAlbum(
         artist = try fmt.allocPrint(temp_alloc, " AND (Artist == \\\"{s}\\\")", .{try escapeMpdString(temp_alloc, raw)});
     }
     const escaped_album = try escapeMpdString(temp_alloc, filter.album);
-    util.log("escaped: {s}", .{escaped_album});
     const command = try fmt.allocPrint(temp_alloc, "find \"((Album == \\\"{s}\\\"){s})\"\n", .{ escaped_album, artist });
-    util.log("MPD command: {s}", .{command});
 
     const data = try readLargeResponse(temp_alloc, command);
     var lines = try processLargeResponse(data);

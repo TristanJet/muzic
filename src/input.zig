@@ -379,8 +379,13 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState) !void {
 
             log("best match: {s}", .{best_match});
             const index = findStringIndex(best_match, current.col.displaying);
-            if (index) |unwrap| log("index: {}\n", .{unwrap});
+            if (index) |unwrap| {
+                log("index: {}\n", .{unwrap});
+                // move cursor to index
+                current.col.slice_inc = unwrap;
+            }
 
+            current.render_cursor.* = true;
             current.render_col.* = true;
         },
     }
