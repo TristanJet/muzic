@@ -1,7 +1,6 @@
 # MUZIG
 
 ## CURRENT
-- [ ] algorithm rewrite, take ITEMS as argument
 - [ ] browser typing
 - [ ] rewrite Browser
     - Describe in terms of prev, current, next
@@ -12,7 +11,7 @@
 - [x] get the uris for all_songs
 - [x] handle column state based on type
 - [x] alphabetical order all_songs
-- [ ] handle utf-16 when rendering highlight
+- [x] algorithm rewrite, take ITEMS as argument
 - [ ] display full album content, regardless of artist
 - [ ] sometimes cursor doesn't display after switching horizontally
 - [ ] don't let switch column before correct song item displaying
@@ -22,6 +21,7 @@
 - [ ] hold x from the top breaks
 - [ ] get rid of ALL UNNECESSARY public variables
 
+- [ ] handle utf-16 when rendering highlight
 - [ ] pause flickers the bar and timestamp
 - [ ] Don't render if cursor doesn't move
 - [ ] don't render queue on seek?

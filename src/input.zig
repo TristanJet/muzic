@@ -304,13 +304,6 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
             const escRead = try term.readEscapeCode(&escBuffer);
 
             if (escRead == 0) {
-                //this is wrong
-                const current: ColumnWithRender = getCurrent(app, render_state);
-                current.col.displaying = switch (current.col.type) {
-                    .Albums => data.albums,
-                    .Artists => data.artists,
-                    else => return error.BadSearch,
-                };
                 onBrowseExit(app, render_state);
             }
         },
@@ -349,6 +342,7 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState) !void {
         search_strings = switch (current.col.type) {
             .Albums => data.albums,
             .Artists => data.artists,
+            .Tracks => data.song_titles,
             else => return error.BadSearch,
         };
     }
@@ -521,20 +515,7 @@ fn browserSetColumn2ToTracks(app: *state.State) void {
     app.column_3.type = .None;
     app.column_2.slice_inc = all_songs_inc;
     app.column_2.pos = all_songs_pos;
-
-    // Use a safer, persistent allocator for this long-lived data
-    var titles = alloc.persistentAllocator.alloc([]const u8, data.songs.len) catch {
-        log("Failed to allocate memory for song titles", .{});
-        // Fallback to safer empty slice if allocation fails
-        app.column_2.displaying = &[_][]const u8{};
-        return;
-    };
-
-    for (data.songs, 0..) |song, i| {
-        titles[i] = song.string;
-    }
-
-    app.column_2.displaying = titles;
+    app.column_2.displaying = data.song_titles;
 }
 
 // Browser left navigation - handles column dependency

@@ -47,6 +47,7 @@ pub const Data = struct {
     searchable: []mpd.SongStringAndUri,
     albums: [][]const u8,
     artists: [][]const u8,
+    song_titles: [][]const u8,
     songs: []mpd.SongStringAndUri,
 
     pub fn init() !Data {
@@ -58,6 +59,11 @@ pub const Data = struct {
         // Sort songs alphabetically
         const songs = try sortSongStringsAndUris(songs_unsorted);
 
+        var titles = try alloc.persistentAllocator.alloc([]const u8, songs.len);
+        for (songs, 0..) |song, i| {
+            titles[i] = song.string;
+        }
+
         const albums = try mpd.getAllAlbums(alloc.persistentAllocator, alloc.respAllocator);
         _ = alloc.respArena.reset(.retain_capacity);
         const artists = try mpd.getAllArtists(alloc.persistentAllocator, alloc.respAllocator);
@@ -66,6 +72,7 @@ pub const Data = struct {
             .searchable = searchable,
             .albums = albums,
             .artists = artists,
+            .song_titles = titles,
             .songs = songs,
         };
     }
