@@ -10,17 +10,23 @@ const util = @import("util.zig");
 const render = @import("render.zig");
 const alloc = @import("allocators.zig");
 const algo = @import("algo.zig");
+
 const RenderState = render.RenderState;
 const log = util.log;
 const Event = state.Event;
 const App = state.App;
+const ArrayList = std.ArrayList;
 
 const target_fps = 60;
 const target_frame_time_ms = 1000 / target_fps;
 
 var initial_song: mpd.CurrentSong = undefined;
-var initial_queue: mpd.Queue = mpd.Queue{};
 var initial_typing: state.TypingBuffer = undefined;
+var initial_queue: mpd.Queue = .{
+    .allocator = alloc.persistentAllocator,
+    .array = ArrayList(mpd.QSong).init(alloc.persistentAllocator),
+    .items = undefined,
+};
 
 const wrkallocator = alloc.wrkallocator;
 const wrkfba = &alloc.wrkfba;
@@ -46,9 +52,12 @@ pub fn main() !void {
     algo.nRanked = window.panels.find.validArea().ylen;
 
     initial_song.init();
-    _ = try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &initial_song);
-    _ = try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &initial_song);
-    _ = try mpd.getQueue(wrkallocator, &wrkfba.end_index, &initial_queue);
+    try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &initial_song);
+    try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &initial_song);
+    log("initial queue", .{});
+    try mpd.getQueue(alloc.respAllocator, &initial_queue);
+    initial_queue.items = initial_queue.getItems();
+    _ = alloc.respArena.reset(.free_all);
 
     initial_typing.init();
 
@@ -70,31 +79,35 @@ pub fn main() !void {
         .last_ping = time.milliTimestamp(),
 
         .queue = initial_queue,
-        .viewStartQ = 0,
-        .viewEndQ = window.panels.queue.validArea().ylen + 1,
-        .cursorPosQ = 0,
-        .prevCursorPos = 0,
+        .scroll_q = state.QueueScroll{
+            .pos = 0,
+            .prev_pos = 0,
+            .slice_inc = 0,
+
+            .threshold_pos = state.getThresholdPos(window.panels.queue.validArea().ylen, 0.8),
+            .area_height = window.panels.queue.validArea().ylen,
+        },
 
         .typing_buffer = initial_typing,
         .find_cursor_pos = 0,
         .viewable_searchable = null,
 
         .selected_column = .one,
-        .column_1 = .{
+        .column_1 = state.BrowseColumn{
             .displaying = input.browse_types[0..],
             .pos = 0,
             .prev_pos = 0,
             .slice_inc = 0,
             .type = .Select,
         },
-        .column_2 = .{
+        .column_2 = state.BrowseColumn{
             .displaying = data.albums,
             .pos = 0,
             .prev_pos = 0,
             .slice_inc = 0,
             .type = .Albums,
         },
-        .column_3 = .{
+        .column_3 = state.BrowseColumn{
             .displaying = undefined,
             .pos = 0,
             .prev_pos = 0,

@@ -9,6 +9,7 @@ const time = std.time;
 
 const alloc = @import("allocators.zig");
 const wrkallocator = alloc.wrkallocator;
+const ArrayList = std.ArrayList;
 
 pub const State = struct {
     quit: bool,
@@ -24,10 +25,7 @@ pub const State = struct {
     last_ping: i64,
 
     queue: mpd.Queue,
-    viewStartQ: usize,
-    viewEndQ: usize,
-    cursorPosQ: u8,
-    prevCursorPos: u8,
+    scroll_q: QueueScroll,
 
     typing_buffer: TypingBuffer,
     find_cursor_pos: u8,
@@ -155,6 +153,64 @@ pub const BrowseColumn = struct {
         }
     }
 };
+
+pub const QueueScroll = struct {
+    pos: u8,
+    prev_pos: u8,
+    slice_inc: usize,
+
+    threshold_pos: u8,
+    area_height: usize,
+
+    pub fn absolutePos(self: *const QueueScroll) usize {
+        return self.pos + self.slice_inc;
+    }
+
+    pub fn absolutePrevPos(self: *const QueueScroll) usize {
+        return self.prev_pos + self.slice_inc;
+    }
+
+    pub fn scroll(self: *QueueScroll, direction: input.cursorDirection, queue_len: usize) bool {
+        const max = self.getMax(queue_len);
+        var inc_changed: bool = false;
+        self.prev_pos = self.pos;
+
+        switch (direction) {
+            .up => {
+                if (self.pos > 0) {
+                    self.pos -= 1;
+                } else if (self.slice_inc > 0) {
+                    self.slice_inc -= 1;
+                    inc_changed = true;
+                }
+            },
+            .down => {
+                if (self.pos < max - 1 and max > 0) {
+                    self.pos += 1;
+                    // If cursor position exceeds threshold (80% of visible area)
+                    if (self.pos >= self.threshold_pos and self.slice_inc + self.area_height < queue_len) {
+                        self.slice_inc += 1;
+                        self.pos -= 1;
+                        inc_changed = true;
+                    }
+                } else if (self.slice_inc + self.area_height < queue_len) {
+                    self.slice_inc += 1;
+                    inc_changed = true;
+                }
+            },
+        }
+        return inc_changed;
+    }
+
+    fn getMax(self: *const QueueScroll, queue_len: usize) usize {
+        return @min(queue_len, self.area_height);
+    }
+};
+
+pub fn getThresholdPos(area_height: usize, threshold_frac: f16) u8 {
+    return @as(u8, @intFromFloat(@as(f16, @floatFromInt(area_height)) * threshold_frac));
+}
+
 // Core application state
 pub const App = struct {
     event_buffer: EventBuffer,
@@ -270,9 +326,9 @@ fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState) !void {
     switch (idle_event) {
         .player => {
             _ = app.song.init();
-            _ = try mpd.getCurrentSong(wrkallocator, &alloc.wrkfba.end_index, &app.song);
-            _ = try mpd.getCurrentTrackTime(wrkallocator, &alloc.wrkfba.end_index, &app.song);
-            _ = try mpd.initIdle();
+            try mpd.getCurrentSong(wrkallocator, &alloc.wrkfba.end_index, &app.song);
+            try mpd.getCurrentTrackTime(wrkallocator, &alloc.wrkfba.end_index, &app.song);
+            try mpd.initIdle();
             app.last_elapsed = app.song.time.elapsed;
             //lazy
             app.last_second = @divTrunc(time.milliTimestamp(), 1000);
@@ -283,9 +339,12 @@ fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState) !void {
             render_state.currentTrack = true;
         },
         .queue => {
-            app.queue = mpd.Queue{};
-            _ = try mpd.getQueue(wrkallocator, &alloc.wrkfba.end_index, &app.queue);
-            _ = try mpd.initIdle();
+            // Clear and rebuild the queue
+            app.queue.array.clearRetainingCapacity();
+            try mpd.getQueue(alloc.respAllocator, &app.queue);
+            app.queue.items = app.queue.getItems();
+            _ = alloc.respArena.reset(.free_all);
+            try mpd.initIdle();
             render_state.queue = true;
             render_state.queueEffects = true;
         },

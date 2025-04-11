@@ -160,93 +160,6 @@ pub const CurrentSong = struct {
     }
 };
 
-pub const QSong = struct {
-    const MAX_LEN = 64;
-
-    bufTitle: [MAX_LEN]u8 = [_]u8{0} ** MAX_LEN,
-    title: []const u8,
-    bufArtist: [MAX_LEN]u8 = [_]u8{0} ** MAX_LEN,
-    artist: []const u8,
-    time: u16,
-    pos: u8,
-    id: u8,
-
-    pub fn init() QSong {
-        var song = QSong{
-            .title = &[_]u8{}, // temporary empty slice
-            .artist = &[_]u8{},
-            .time = undefined,
-            .pos = undefined,
-            .id = undefined,
-        };
-        // Point title to the correct part of bufTitle
-        song.title = song.bufTitle[0..0];
-        song.artist = song.bufArtist[0..0];
-        return song;
-    }
-
-    pub fn setTitle(self: *QSong, title: []const u8) !void {
-        self.title = try setStringValue(&self.bufTitle, title, MAX_LEN);
-    }
-
-    pub fn setArtist(self: *QSong, artist: []const u8) !void {
-        self.artist = try setStringValue(&self.bufArtist, artist, MAX_LEN);
-    }
-
-    pub fn setPos(self: *QSong, pos: []const u8) !void {
-        self.pos = try parseU8(pos);
-    }
-
-    pub fn setId(self: *QSong, id: []const u8) !void {
-        self.id = try parseU8(id);
-    }
-
-    pub fn setTime(self: *QSong, duration: []const u8) !void {
-        if (duration.len > 3) return error.TooLong;
-        self.time = try fmt.parseInt(u16, duration, 10);
-    }
-
-    fn handleField(self: *QSong, key: []const u8, value: []const u8) !void {
-        if (mem.eql(u8, key, "Id")) {
-            try self.setId(value);
-        } else if (mem.eql(u8, key, "Pos")) {
-            try self.setPos(value);
-        } else if (mem.eql(u8, key, "Time")) {
-            try self.setTime(value);
-        } else if (mem.eql(u8, key, "Title")) {
-            try self.setTitle(value);
-        } else if (mem.eql(u8, key, "Artist")) {
-            try self.setArtist(value);
-        }
-    }
-};
-
-pub const Queue = struct {
-    const MAX_SONGS = 20;
-    pub const Error = error{BufferFull};
-
-    items: [MAX_SONGS]QSong = undefined,
-    len: usize = 0,
-
-    pub fn append(self: *Queue, song: QSong) !void {
-        if (self.len >= MAX_SONGS) return Error.BufferFull;
-
-        // Create a completely new QSong and copy the data
-        self.items[self.len] = QSong.init();
-        try self.items[self.len].setTitle(song.title);
-        try self.items[self.len].setArtist(song.artist);
-        self.items[self.len].id = song.id;
-        self.items[self.len].pos = song.pos;
-        self.items[self.len].time = song.time;
-
-        self.len += 1;
-    }
-
-    pub fn clear(self: *Queue) void {
-        self.len = 0;
-    }
-};
-
 pub fn connect(buffer: []u8, stream_type: StreamType, nonblock: bool) !void {
     const peer = try net.Address.parseIp4(host, port);
     // Connect to peer
@@ -350,7 +263,7 @@ pub fn prevSong() !void {
     try sendCommand("previous\n");
 }
 
-pub fn playByPos(allocator: mem.Allocator, pos: u8) !void {
+pub fn playByPos(allocator: mem.Allocator, pos: usize) !void {
     const command = try fmt.allocPrint(allocator, "play {}\n", .{pos});
     try sendCommand(command);
 }
@@ -368,62 +281,92 @@ pub fn getCurrentSong(
     try processResponse(CurrentSong, allocator, end_index, handleCurrentSongField, song);
 }
 
-const QueueContext = struct {
-    bufQueue: *Queue,
-    current_song: ?QSong = null,
+pub const Queue = struct {
+    const MAX_LEN = 64;
+
+    allocator: mem.Allocator,
+    array: ArrayList(QSong),
+    items: []QSong,
+
+    pub fn append(self: *Queue, song: QSong) !void {
+        var duped_title: ?[]const u8 = null;
+        var duped_artist: ?[]const u8 = null;
+
+        if (song.title) |title| {
+            const slice = if (title.len > MAX_LEN) title[0..MAX_LEN] else title;
+            duped_title = try self.allocator.dupe(u8, slice);
+        }
+        if (song.artist) |artist| {
+            const slice = if (artist.len > MAX_LEN) artist[0..MAX_LEN] else artist;
+            duped_artist = try self.allocator.dupe(u8, slice);
+        }
+
+        try self.array.append(.{
+            .title = duped_title,
+            .artist = duped_artist,
+            .time = song.time,
+            .pos = song.pos,
+            .id = song.id,
+        });
+    }
+
+    pub fn getItems(self: *const Queue) []QSong {
+        return self.array.items;
+    }
 };
 
-fn handleQueueField(key: []const u8, value: []const u8, context: *QueueContext) !void {
-    if (mem.eql(u8, "file", key)) {
-        // If we have a current song, append it before starting a new one
-        if (context.current_song) |song| {
-            try context.bufQueue.append(song);
-        }
-        // Start a new song
-        context.current_song = QSong.init();
-    } else if (context.current_song) |*song| {
-        // Only process other fields if we have a current song
-        try song.handleField(key, value);
-    }
-}
+pub const QSong = struct {
+    title: ?[]const u8,
+    artist: ?[]const u8,
+    time: u16,
+    // Technically queue max len is 256
+    pos: u8,
+    id: u8,
+};
 
-pub fn getQueue(allocator: mem.Allocator, end_index: *usize, bufQueue: *Queue) !void {
-    try connSend("playlistinfo\n", &cmdStream);
-
-    var context = QueueContext{
-        .bufQueue = bufQueue,
-        .current_song = null,
+pub fn getQueue(respAllocator: mem.Allocator, queue: *Queue) !void {
+    const command = "playlistinfo\n";
+    const data = try readLargeResponse(respAllocator, command);
+    var lines = processLargeResponse(data) catch |err| switch (err) {
+        error.NoSongs => return,
+        else => return err,
     };
 
-    try processResponse(QueueContext, allocator, end_index, handleQueueField, &context);
-
-    // Append the last song if there is one
-    if (context.current_song) |song| {
-        try bufQueue.append(song);
+    var current: ?QSong = null;
+    while (lines.next()) |line| {
+        if (line.len == 0) continue;
+        if (std.mem.startsWith(u8, line, "file:")) {
+            // If there's a current song, add it to the list
+            if (current) |song| {
+                try queue.append(song);
+            }
+            current = QSong{
+                .title = null,
+                .artist = null,
+                .time = undefined,
+                .pos = undefined,
+                .id = undefined,
+            };
+        } else if (current != null) {
+            // Parse key-value pairs for the current song
+            if (std.mem.startsWith(u8, line, "Title:")) {
+                current.?.title = std.mem.trimLeft(u8, line[6..], " ");
+            } else if (std.mem.startsWith(u8, line, "Artist:")) {
+                current.?.artist = std.mem.trimLeft(u8, line[7..], " ");
+            } else if (std.mem.startsWith(u8, line, "Time:")) {
+                const time_str = std.mem.trimLeft(u8, line[5..], " ");
+                current.?.time = try std.fmt.parseInt(u16, time_str, 10);
+            } else if (std.mem.startsWith(u8, line, "Pos:")) {
+                const pos_str = std.mem.trimLeft(u8, line[4..], " ");
+                current.?.pos = try std.fmt.parseInt(u8, pos_str, 10);
+            } else if (std.mem.startsWith(u8, line, "Id:")) {
+                const id_str = std.mem.trimLeft(u8, line[3..], " ");
+                current.?.id = try std.fmt.parseInt(u8, id_str, 10);
+            }
+        }
     }
-}
-
-test "getQueue" {
-    var wrkbuf: [1024]u8 = undefined;
-    var wrkfba = std.heap.FixedBufferAllocator.init(&wrkbuf);
-    const wrkallocator = wrkfba.allocator();
-    _ = try connect(wrkbuf[0..16]);
-    var queue: Queue = Queue{};
-    _ = try getQueue(wrkallocator, &wrkfba.end_index, &queue);
-    std.debug.print("\nQueue length: {}\n", .{queue.len});
-    if (queue.len > 0) {
-        std.debug.print("First song - Artist: '{s}', Title: '{s}'\n", .{ queue.items[0].artist, queue.items[0].title });
-    }
-
-    for (queue.items) |item| {
-        std.debug.print("ARTISTS: {s}\n", .{item.artist});
-    }
-
-    std.debug.print("Pos: {}\n", .{queue.items[2].pos});
-    std.debug.print("Id test: {}\n", .{queue.items[2].id});
-    // try std.testing.expect(queue.items[0].id == 1);
-    try std.testing.expect(queue.len == 4);
-    try std.testing.expectEqualStrings("Charli xcx", queue.items[0].artist);
+    // Add the last song if it exists
+    if (current) |song| try queue.append(song);
 }
 
 fn handleTrackTimeField(key: []const u8, value: []const u8, song: *CurrentSong) !void {
@@ -466,10 +409,10 @@ pub fn readLargeResponse(tempAllocator: mem.Allocator, command: []const u8) ![]u
     return list.toOwnedSlice();
 }
 
-fn processLargeResponse(data: []const u8) !mem.SplitIterator(u8, .sequence) {
+fn processLargeResponse(data: []const u8) !mem.SplitIterator(u8, .scalar) {
     if (mem.startsWith(u8, data, "ACK")) return error.MpdError;
     if (mem.startsWith(u8, data, "OK")) return error.NoSongs;
-    return mem.splitSequence(u8, data, "\n");
+    return mem.splitScalar(u8, data, '\n');
 }
 
 fn getAllType(data_type: []const u8, heapAllocator: mem.Allocator, respAllocator: std.mem.Allocator) ![][]const u8 {
@@ -697,9 +640,9 @@ test "getAllAlbums" {
     std.debug.print("n songs: {}\n", .{songs.len});
     std.debug.print("resp end index: {}\n", .{respArena.state.end_index});
 }
-fn escapeMpdString(alloc: mem.Allocator, str: []const u8) ![]u8 {
+fn escapeMpdString(allocator: mem.Allocator, str: []const u8) ![]u8 {
     // Initialize a dynamic array to build the escaped string
-    var result = ArrayList(u8).init(alloc);
+    var result = ArrayList(u8).init(allocator);
     defer result.deinit(); // Ensure cleanup if toOwnedSlice fails
 
     // Iterate over each character in the input string
@@ -833,7 +776,7 @@ pub fn addFromUri(allocator: mem.Allocator, uri: []const u8) !void {
     try sendCommand(command);
 }
 
-pub fn rmFromPos(allocator: mem.Allocator, pos: u8) !void {
+pub fn rmFromPos(allocator: mem.Allocator, pos: usize) !void {
     const command = try fmt.allocPrint(allocator, "delete {}\n", .{pos});
     try sendCommand(command);
 }

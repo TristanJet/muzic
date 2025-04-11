@@ -6,6 +6,7 @@ const state = @import("state.zig");
 const alloc = @import("allocators.zig");
 const sym = @import("symbols.zig");
 const mpd = @import("mpdclient.zig");
+const Input_State = @import("input.zig").Input_State;
 const io = std.io;
 const fs = std.fs;
 const mem = std.mem;
@@ -67,8 +68,8 @@ pub fn render(app_state: *state.State, render_state_: *RenderState, panels: wind
     if (render_state.borders or render_state.find) try drawHeader(panels.find.area, try getFindText());
     if (render_state.currentTrack) try currTrackRender(wrkallocator, panels.curr_song, app.song, end_index);
     if (render_state.bar) try barRender(panels.curr_song, app.song, wrkallocator);
-    if (render_state.queue) try queueRender(wrkallocator, &alloc.wrkfba.end_index, panels.queue.validArea());
-    if (render_state.queueEffects) try queueEffectsRender(wrkallocator, panels.queue.validArea());
+    if (render_state.queue) try queueRender(wrkallocator, panels.queue.validArea(), app.queue.items, app.scroll_q.slice_inc);
+    if (render_state.queueEffects) try queueEffectsRender(wrkallocator, panels.queue.validArea(), app.queue.items, app.scroll_q.absolutePos(), app.scroll_q.absolutePrevPos(), app.scroll_q.slice_inc, app.input_state, app.song.id);
     if (render_state.find) try findRender(panels.find);
     if (render_state.browse_one) try browseColumn(panels.browse1.validArea(), current.column_1.displaying, current.column_1.slice_inc);
     if (render_state.browse_two) try browseColumn(panels.browse2.validArea(), current.column_2.displaying, current.column_2.slice_inc);
@@ -149,42 +150,60 @@ fn formatSeconds(allocator: std.mem.Allocator, seconds: u64) ![]const u8 {
     );
 }
 
-fn queueRender(allocator: std.mem.Allocator, end_index: *usize, area: window.Area) !void {
-    const start = end_index.*;
-    defer end_index.* = start;
+fn queueRender(
+    allocator: std.mem.Allocator,
+    area: window.Area,
+    items: []mpd.QSong,
+    inc: usize,
+) !void {
+    util.log("rendering queue", .{});
 
     for (0..area.ylen) |i| {
         try term.moveCursor(area.ymin + i, area.xmin);
         try term.writeByteNTimes(' ', area.xlen);
     }
 
-    for (current.viewStartQ..current.viewEndQ, 0..) |i, j| {
-        if (i >= current.queue.len) break;
-        const itemTime = try formatSeconds(allocator, current.queue.items[i].time);
-        try writeQueueLine(area, area.ymin + j, current.queue.items[i], itemTime);
+    for (0..area.ylen) |i| {
+        const queue_index = i + inc;
+        if (queue_index >= items.len) break;
+
+        const item = items[queue_index];
+        const itemTime: []const u8 = formatSeconds(allocator, item.time) catch "";
+        try writeQueueLine(area, area.ymin + i, item, itemTime);
     }
 }
 
-fn queueEffectsRender(allocator: std.mem.Allocator, area: window.Area) !void {
+fn queueEffectsRender(
+    allocator: std.mem.Allocator,
+    area: window.Area,
+    items: []mpd.QSong,
+    abs_pos: usize,
+    abs_prev_pos: usize,
+    inc: usize,
+    input_state: Input_State,
+    current_song_id: u8,
+) !void {
     var highlighted = false;
 
-    for (current.viewStartQ..current.viewEndQ, 0..) |i, j| {
-        if (i >= current.queue.len) break;
-        if (current.queue.items[i].pos == current.prevCursorPos and current.input_state == .normal_queue) {
-            const itemTime = try formatSeconds(allocator, current.queue.items[i].time);
-            try writeQueueLine(area, area.ymin + j, current.queue.items[i], itemTime);
+    for (0..area.ylen) |i| {
+        const queue_index = i + inc;
+        if (queue_index >= items.len) break;
+        const item = items[queue_index];
+        if (item.pos == abs_prev_pos and input_state == .normal_queue) {
+            const itemTime: []const u8 = formatSeconds(allocator, item.time) catch "";
+            try writeQueueLine(area, area.ymin + i, item, itemTime);
         }
-        if (current.queue.items[i].pos == current.cursorPosQ and current.input_state == .normal_queue) {
-            const itemTime = try formatSeconds(allocator, current.queue.items[i].time);
+        if (item.pos == abs_pos and input_state == .normal_queue) {
+            const itemTime: []const u8 = formatSeconds(allocator, item.time) catch "";
             try term.highlight();
-            try writeQueueLine(area, area.ymin + j, current.queue.items[i], itemTime);
+            try writeQueueLine(area, area.ymin + i, item, itemTime);
             try term.unhighlight();
             highlighted = true;
         }
-        if ((current.song.id == current.queue.items[i].id) and !highlighted) {
-            const itemTime = try formatSeconds(allocator, current.queue.items[i].time);
+        if ((current_song_id == item.id) and !highlighted) {
+            const itemTime: []const u8 = formatSeconds(allocator, item.time) catch "";
             try term.setColor("\x1B[33m");
-            try writeQueueLine(area, area.ymin + j, current.queue.items[i], itemTime);
+            try writeQueueLine(area, area.ymin + i, item, itemTime);
             try term.attributeReset();
         }
         highlighted = false;
@@ -194,20 +213,26 @@ fn queueEffectsRender(allocator: std.mem.Allocator, area: window.Area) !void {
 fn writeQueueLine(area: window.Area, row: usize, song: mpd.QSong, itemTime: []const u8) !void {
     const n = area.xlen / 4;
     const gapcol = area.xlen / 8;
+    const no_title = "NO TITLE";
     try term.moveCursor(row, area.xmin);
-    if (n > song.title.len) {
-        try term.writeAll(song.title);
-        try term.writeByteNTimes(' ', n - song.title.len);
+    if (song.title) |title| {
+        if (n > title.len) {
+            try term.writeAll(title);
+            try term.writeByteNTimes(' ', n - title.len);
+        } else try term.writeAll(title[0..n]);
     } else {
-        try term.writeAll(song.title[0..n]);
+        if (n > no_title.len) {
+            try term.writeAll(no_title);
+            try term.writeByteNTimes(' ', n - no_title.len);
+        } else try term.writeAll(no_title[0..n]);
     }
     try term.writeByteNTimes(' ', gapcol);
-    if (n > song.artist.len) {
-        try term.writeAll(song.artist);
-        try term.writeByteNTimes(' ', n - song.artist.len);
-    } else {
-        try term.writeAll(song.artist[0..n]);
-    }
+    if (song.artist) |artist| {
+        if (n > artist.len) {
+            try term.writeAll(artist);
+            try term.writeByteNTimes(' ', n - artist.len);
+        } else try term.writeAll(artist[0..n]);
+    } else try term.writeByteNTimes(' ', n);
     try term.writeByteNTimes(' ', area.xlen - 4 - gapcol - 2 * n);
     try term.moveCursor(row, area.xmax - 4);
     try term.writeAll(itemTime);

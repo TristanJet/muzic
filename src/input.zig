@@ -231,8 +231,16 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState) !void {
 fn normalQueue(char: u8, app: *state.State, render_state: *RenderState) !void {
     switch (char) {
         'q' => app.quit = true,
-        'j' => scrollQ(false, app, render_state),
-        'k' => scrollQ(true, app, render_state),
+        'j' => {
+            const inc_changed = app.scroll_q.scroll(.down, app.queue.items.len);
+            if (inc_changed) render_state.queue = true;
+            render_state.queueEffects = true;
+        },
+        'k' => {
+            const inc_changed = app.scroll_q.scroll(.up, app.queue.items.len);
+            if (inc_changed) render_state.queue = true;
+            render_state.queueEffects = true;
+        },
         'p' => {
             if (debounce()) return;
             app.isPlaying = try mpd.togglePlaystate(app.isPlaying);
@@ -260,11 +268,10 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState) !void {
         },
         'x' => {
             if (debounce()) return;
-            try mpd.rmFromPos(wrkallocator, app.cursorPosQ);
-            if (app.cursorPosQ == 0) {
-                if (app.queue.len > 1) return;
-            }
-            moveCursorPos(&app.cursorPosQ, &app.prevCursorPos, .down);
+            try mpd.rmFromPos(wrkallocator, app.scroll_q.absolutePos());
+            // if (app.scroll_q.pos == 0) {
+            //     if (app.queue.items.len > 1) return;
+            // }
         },
         '\x1B' => {
             var escBuffer: [8]u8 = undefined;
@@ -288,7 +295,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState) !void {
         },
         '\n', '\r' => {
             if (debounce()) return;
-            try mpd.playByPos(wrkallocator, app.cursorPosQ);
+            try mpd.playByPos(wrkallocator, app.scroll_q.absolutePos());
             if (!app.isPlaying) app.isPlaying = true;
         },
         else => log("input: {c}", .{char}),
@@ -807,38 +814,6 @@ fn debounce() bool {
     }
     last_input = app_time;
     return false;
-}
-
-pub fn scrollQ(isUp: bool, app: *state.State, render_state: *RenderState) void {
-    if (isUp) {
-        if (app.cursorPosQ == 0) return;
-        moveCursorPos(&app.cursorPosQ, &app.prevCursorPos, .down);
-        if (app.cursorPosQ < app.viewStartQ) {
-            app.viewStartQ = app.cursorPosQ;
-            app.viewEndQ = app.viewStartQ + window.panels.queue.validArea().ylen + 1;
-        }
-    } else {
-        if (app.cursorPosQ >= app.queue.len - 1) return;
-        moveCursorPos(&app.cursorPosQ, &app.prevCursorPos, .up);
-        if (app.cursorPosQ >= app.viewEndQ) {
-            app.viewEndQ = app.cursorPosQ + 1;
-            app.viewStartQ = app.viewEndQ - window.panels.queue.validArea().ylen - 1;
-        }
-    }
-    render_state.queueEffects = true;
-}
-
-fn moveCursorPos(app_dir: *u8, previous_dir: *u8, direction: cursorDirection) void {
-    switch (direction) {
-        .up => {
-            previous_dir.* = app_dir.*;
-            app_dir.* += 1;
-        },
-        .down => {
-            previous_dir.* = app_dir.*;
-            app_dir.* -= 1;
-        },
-    }
 }
 
 fn scroll(cursor_pos: *u8, max: ?usize, dir: cursorDirection) void {
