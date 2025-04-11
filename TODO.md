@@ -1,7 +1,6 @@
 # MUZIG
 
 ## CURRENT
-- [ ] removing bugs
 
 ## Bugs/Fixes
 - [x] MAC BLOCK TERMINAL WRITES
@@ -13,6 +12,7 @@
 - [x] NoSongs error, the find object probably being mishandled
 - [x] don't let switch column before correct song item displaying
 - [x] weird bug where highlight didn't update on normal queue
+- [x] removing bugs on delete
 - [ ] algorithm tweak, prioritize matches at the start of the string, for best match functions e.g. Tyler, The Creator
 - [ ] algoirthm fix, EXETER failing best match
 - [ ] display full album content, regardless of artist

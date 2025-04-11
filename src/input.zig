@@ -269,9 +269,14 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState) !void {
         'x' => {
             if (debounce()) return;
             try mpd.rmFromPos(wrkallocator, app.scroll_q.absolutePos());
-            // if (app.scroll_q.pos == 0) {
-            //     if (app.queue.items.len > 1) return;
-            // }
+            // If we're deleting the last item in the queue, move cursor up
+            if (app.scroll_q.absolutePos() >= app.queue.items.len - 1 and app.scroll_q.pos > 0) {
+                if (app.scroll_q.slice_inc > 0)
+                    app.scroll_q.slice_inc -= 1
+                else
+                    app.scroll_q.pos -= 1;
+            }
+            render_state.queueEffects = true;
         },
         '\x1B' => {
             var escBuffer: [8]u8 = undefined;
