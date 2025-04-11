@@ -266,14 +266,14 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState) !void {
             // Ctrl-d: Move down half a page (like vim)
             const half_height = app.scroll_q.area_height / 2;
             var move_down: usize = 0;
-            
+
             // Determine how many positions we can move down
             if (app.scroll_q.absolutePos() + half_height < app.queue.items.len) {
                 move_down = half_height;
             } else if (app.scroll_q.absolutePos() < app.queue.items.len) {
                 move_down = app.queue.items.len - app.scroll_q.absolutePos() - 1;
             }
-            
+
             if (move_down > 0) {
                 // Try to keep cursor position in the middle of the screen when possible
                 if (app.scroll_q.pos + move_down < app.scroll_q.area_height) {
@@ -300,14 +300,14 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState) !void {
             // Ctrl-u: Move up half a page (like vim)
             const half_height = app.scroll_q.area_height / 2;
             var move_up: usize = 0;
-            
+
             // Determine how many positions we can move up
             if (app.scroll_q.absolutePos() >= half_height) {
                 move_up = half_height;
             } else {
                 move_up = app.scroll_q.absolutePos();
             }
-            
+
             if (move_up > 0) {
                 // First use slice_inc if available
                 if (app.scroll_q.slice_inc >= move_up) {
@@ -440,17 +440,17 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
             const current: ColumnWithRender = getCurrent(app, render_state);
             const next: ?ColumnWithRender = getNext(app, render_state);
             const prev: ?ColumnWithRender = getPrev(app, render_state);
-            
+
             const half_height = y_len / 2;
             var move_down: usize = 0;
-            
+
             // Determine how many positions we can move down
             if (current.col.absolutePos() + half_height < current.col.displaying.len) {
                 move_down = half_height;
             } else if (current.col.absolutePos() < current.col.displaying.len) {
                 move_down = current.col.displaying.len - current.col.absolutePos() - 1;
             }
-            
+
             if (move_down > 0) {
                 // Try to keep cursor position in the middle of the screen when possible
                 if (current.col.pos + move_down < y_len) {
@@ -469,10 +469,10 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
                         current.col.slice_inc += move_down;
                     }
                 }
-                
+
                 current.render_col.* = true;
                 current.render_cursor.* = true;
-                
+
                 // Handle column dependencies
                 try handleColumnDependencies(current, next, prev, app);
             }
@@ -482,17 +482,17 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
             const current: ColumnWithRender = getCurrent(app, render_state);
             const next: ?ColumnWithRender = getNext(app, render_state);
             const prev: ?ColumnWithRender = getPrev(app, render_state);
-            
+
             const half_height = y_len / 2;
             var move_up: usize = 0;
-            
+
             // Determine how many positions we can move up
             if (current.col.absolutePos() >= half_height) {
                 move_up = half_height;
             } else {
                 move_up = current.col.absolutePos();
             }
-            
+
             if (move_up > 0) {
                 // First use slice_inc if available
                 if (current.col.slice_inc >= move_up) {
@@ -503,10 +503,10 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
                     current.col.slice_inc = 0;
                     current.col.pos -= @intCast(remaining);
                 }
-                
+
                 current.render_col.* = true;
                 current.render_cursor.* = true;
-                
+
                 // Handle column dependencies
                 try handleColumnDependencies(current, next, prev, app);
             }
@@ -518,7 +518,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
             current.col.slice_inc = 0;
             current.render_col.* = true;
             current.render_cursor.* = true;
-            
+
             // Handle potential column dependencies
             const next: ?ColumnWithRender = getNext(app, render_state);
             if (current.col.type == .Select) {
@@ -548,7 +548,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
                 }
                 current.render_col.* = true;
                 current.render_cursor.* = true;
-                
+
                 // Handle potential column dependencies
                 const next: ?ColumnWithRender = getNext(app, render_state);
                 if (current.col.type == .Select) {
@@ -575,7 +575,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
             current.render_col.* = true;
         },
         '\n', '\r' => try browserHandleEnter(app),
-        else => unreachable,
+        else => return,
     }
 }
 
@@ -752,7 +752,7 @@ fn browserScrollVertical(
     current.col.scroll(dir, max, y_len);
 
     try handleColumnDependencies(current, next, prev, app);
-    
+
     current.render_col.* = true;
     current.render_cursor.* = true;
 }
