@@ -217,13 +217,14 @@ pub fn initIdle() !void {
     try connSend("idle player playlist\n", &idleStream);
 }
 
-pub fn checkIdle(buffer: []u8) !?Event {
+pub fn checkIdle(buffer: []u8) ![2]?Event {
     assert(buffer.len == 18);
     var reader = idleStream.reader();
+    var event: [2]?Event = .{ null, null };
     while (true) {
         const line = reader.readUntilDelimiter(buffer, '\n') catch |err| switch (err) {
-            error.WouldBlock => return null, // No data available
-            error.EndOfStream => return null, // EOF
+            error.WouldBlock => return .{ null, null }, // No data available
+            error.EndOfStream => return error.IdleConnectionClosed,
             else => return err,
         };
         if (mem.eql(u8, line, "OK")) break;
@@ -232,11 +233,12 @@ pub fn checkIdle(buffer: []u8) !?Event {
         if (mem.indexOf(u8, line, ": ")) |separator_index| {
             const value = line[separator_index + 2 ..];
 
-            if (mem.eql(u8, value, "player")) return Event{ .idle = Idle.player };
-            if (mem.eql(u8, value, "playlist")) return Event{ .idle = Idle.queue };
+            if (mem.eql(u8, value, "player")) event[0] = Event{ .idle = Idle.player };
+            if (mem.eql(u8, value, "playlist")) event[1] = Event{ .idle = Idle.queue };
         }
     }
-    return null;
+    try initIdle();
+    return event;
 }
 
 pub fn togglePlaystate(isPlaying: bool) !bool {

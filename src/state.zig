@@ -277,7 +277,7 @@ const BrowseDisplayType = enum {
 };
 
 const EventBuffer = struct {
-    buffer: [4]Event = undefined,
+    buffer: [5]Event = undefined,
     len: u8 = 0,
 };
 
@@ -328,7 +328,6 @@ fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState) !void {
             _ = app.song.init();
             try mpd.getCurrentSong(wrkallocator, &alloc.wrkfba.end_index, &app.song);
             try mpd.getCurrentTrackTime(wrkallocator, &alloc.wrkfba.end_index, &app.song);
-            try mpd.initIdle();
             app.last_elapsed = app.song.time.elapsed;
             //lazy
             app.last_second = @divTrunc(time.milliTimestamp(), 1000);
@@ -344,7 +343,6 @@ fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState) !void {
             try mpd.getQueue(alloc.respAllocator, &app.queue);
             app.queue.items = app.queue.getItems();
             _ = alloc.respArena.reset(.free_all);
-            try mpd.initIdle();
             render_state.queue = true;
             render_state.queueEffects = true;
         },

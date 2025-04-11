@@ -133,12 +133,13 @@ pub fn main() !void {
 
         const input_event: ?Event = try input.checkInputEvent(wrkbuf[wrkfba.end_index .. wrkfba.end_index + 1]);
         const released_event: ?Event = try input.checkReleaseEvent(input_event);
-        const idle_event: ?Event = try mpd.checkIdle(wrkbuf[wrkfba.end_index .. wrkfba.end_index + 18]);
+        const idle_event: [2]?Event = try mpd.checkIdle(wrkbuf[wrkfba.end_index .. wrkfba.end_index + 18]);
         const time_event: Event = Event{ .time = loop_start_time };
 
         if (input_event) |event| app.appendEvent(event);
         if (released_event) |event| app.appendEvent(event);
-        if (idle_event) |event| app.appendEvent(event);
+        if (idle_event[0]) |event| app.appendEvent(event);
+        if (idle_event[1]) |event| app.appendEvent(event);
         app.appendEvent(time_event);
 
         app.updateState(&render_state);

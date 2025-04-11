@@ -156,8 +156,6 @@ fn queueRender(
     items: []mpd.QSong,
     inc: usize,
 ) !void {
-    util.log("rendering queue", .{});
-
     for (0..area.ylen) |i| {
         try term.moveCursor(area.ymin + i, area.xmin);
         try term.writeByteNTimes(' ', area.xlen);
