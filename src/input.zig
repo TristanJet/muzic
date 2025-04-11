@@ -241,6 +241,87 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState) !void {
             if (inc_changed) render_state.queue = true;
             render_state.queueEffects = true;
         },
+        'g' => {
+            // Go to top of queue
+            app.scroll_q.pos = 0;
+            app.scroll_q.slice_inc = 0;
+            render_state.queue = true;
+            render_state.queueEffects = true;
+        },
+        'G' => {
+            // Go to bottom of queue
+            if (app.queue.items.len > 0) {
+                if (app.queue.items.len > app.scroll_q.area_height) {
+                    app.scroll_q.slice_inc = app.queue.items.len - app.scroll_q.area_height;
+                    app.scroll_q.pos = @intCast(app.scroll_q.area_height - 1);
+                } else {
+                    app.scroll_q.slice_inc = 0;
+                    app.scroll_q.pos = @intCast(app.queue.items.len - 1);
+                }
+                render_state.queue = true;
+                render_state.queueEffects = true;
+            }
+        },
+        'd' & '\x1F' => {
+            // Ctrl-d: Move down half a page (like vim)
+            const half_height = app.scroll_q.area_height / 2;
+            var move_down: usize = 0;
+            
+            // Determine how many positions we can move down
+            if (app.scroll_q.absolutePos() + half_height < app.queue.items.len) {
+                move_down = half_height;
+            } else if (app.scroll_q.absolutePos() < app.queue.items.len) {
+                move_down = app.queue.items.len - app.scroll_q.absolutePos() - 1;
+            }
+            
+            if (move_down > 0) {
+                // Try to keep cursor position in the middle of the screen when possible
+                if (app.scroll_q.pos + move_down < app.scroll_q.area_height) {
+                    // If we can move the cursor down without scrolling, do that
+                    app.scroll_q.pos += @intCast(move_down);
+                } else {
+                    // Otherwise, move the slice increment (scroll the view)
+                    const cursor_target: u8 = @intCast(app.scroll_q.area_height / 2);
+                    if (app.scroll_q.pos > cursor_target) {
+                        // Move cursor to middle position and adjust slice_inc
+                        const pos_diff = app.scroll_q.pos - cursor_target;
+                        app.scroll_q.slice_inc += @as(usize, pos_diff) + move_down;
+                        app.scroll_q.pos = cursor_target;
+                    } else {
+                        // Just increase slice_inc
+                        app.scroll_q.slice_inc += move_down;
+                    }
+                }
+                render_state.queue = true;
+                render_state.queueEffects = true;
+            }
+        },
+        'u' & '\x1F' => {
+            // Ctrl-u: Move up half a page (like vim)
+            const half_height = app.scroll_q.area_height / 2;
+            var move_up: usize = 0;
+            
+            // Determine how many positions we can move up
+            if (app.scroll_q.absolutePos() >= half_height) {
+                move_up = half_height;
+            } else {
+                move_up = app.scroll_q.absolutePos();
+            }
+            
+            if (move_up > 0) {
+                // First use slice_inc if available
+                if (app.scroll_q.slice_inc >= move_up) {
+                    app.scroll_q.slice_inc -= move_up;
+                } else {
+                    // Move cursor position by any remaining amount
+                    const remaining = move_up - app.scroll_q.slice_inc;
+                    app.scroll_q.slice_inc = 0;
+                    app.scroll_q.pos -= @intCast(remaining);
+                }
+                render_state.queue = true;
+                render_state.queueEffects = true;
+            }
+        },
         'p' => {
             if (debounce()) return;
             app.isPlaying = try mpd.togglePlaystate(app.isPlaying);
@@ -353,6 +434,137 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
             const next: ?ColumnWithRender = getNext(app, render_state);
             const prev: ?ColumnWithRender = getPrev(app, render_state);
             try browserScrollVertical(.up, current, next, prev, app);
+        },
+        'd' & '\x1F' => {
+            // Ctrl-d: Move down half the screen height (like vim)
+            const current: ColumnWithRender = getCurrent(app, render_state);
+            const next: ?ColumnWithRender = getNext(app, render_state);
+            const prev: ?ColumnWithRender = getPrev(app, render_state);
+            
+            const half_height = y_len / 2;
+            var move_down: usize = 0;
+            
+            // Determine how many positions we can move down
+            if (current.col.absolutePos() + half_height < current.col.displaying.len) {
+                move_down = half_height;
+            } else if (current.col.absolutePos() < current.col.displaying.len) {
+                move_down = current.col.displaying.len - current.col.absolutePos() - 1;
+            }
+            
+            if (move_down > 0) {
+                // Try to keep cursor position in the middle of the screen when possible
+                if (current.col.pos + move_down < y_len) {
+                    // If we can move the cursor down without scrolling, do that
+                    current.col.pos += @intCast(move_down);
+                } else {
+                    // Otherwise, move the slice increment (scroll the view)
+                    const cursor_target: u8 = @intCast(y_len / 2);
+                    if (current.col.pos > cursor_target) {
+                        // Move cursor to middle position and adjust slice_inc
+                        const pos_diff = current.col.pos - cursor_target;
+                        current.col.slice_inc += @as(usize, pos_diff) + move_down;
+                        current.col.pos = cursor_target;
+                    } else {
+                        // Just increase slice_inc
+                        current.col.slice_inc += move_down;
+                    }
+                }
+                
+                current.render_col.* = true;
+                current.render_cursor.* = true;
+                
+                // Handle column dependencies
+                try handleColumnDependencies(current, next, prev, app);
+            }
+        },
+        'u' & '\x1F' => {
+            // Ctrl-u: Move up half the screen height (like vim)
+            const current: ColumnWithRender = getCurrent(app, render_state);
+            const next: ?ColumnWithRender = getNext(app, render_state);
+            const prev: ?ColumnWithRender = getPrev(app, render_state);
+            
+            const half_height = y_len / 2;
+            var move_up: usize = 0;
+            
+            // Determine how many positions we can move up
+            if (current.col.absolutePos() >= half_height) {
+                move_up = half_height;
+            } else {
+                move_up = current.col.absolutePos();
+            }
+            
+            if (move_up > 0) {
+                // First use slice_inc if available
+                if (current.col.slice_inc >= move_up) {
+                    current.col.slice_inc -= move_up;
+                } else {
+                    // Move cursor position by any remaining amount
+                    const remaining = move_up - current.col.slice_inc;
+                    current.col.slice_inc = 0;
+                    current.col.pos -= @intCast(remaining);
+                }
+                
+                current.render_col.* = true;
+                current.render_cursor.* = true;
+                
+                // Handle column dependencies
+                try handleColumnDependencies(current, next, prev, app);
+            }
+        },
+        'g' => {
+            // Go to top of current column
+            const current: ColumnWithRender = getCurrent(app, render_state);
+            current.col.pos = 0;
+            current.col.slice_inc = 0;
+            current.render_col.* = true;
+            current.render_cursor.* = true;
+            
+            // Handle potential column dependencies
+            const next: ?ColumnWithRender = getNext(app, render_state);
+            if (current.col.type == .Select) {
+                select_pos = current.col.pos;
+                // Update column 2 based on select position
+                switch (current.col.pos) {
+                    0 => browserSetColumn2ToAlbums(app),
+                    1 => browserSetColumn2ToArtists(app),
+                    2 => browserSetColumn2ToTracks(app),
+                    else => {},
+                }
+                if (next) |next_col| {
+                    next_col.render_col.* = true;
+                }
+            }
+        },
+        'G' => {
+            // Go to bottom of current column
+            const current: ColumnWithRender = getCurrent(app, render_state);
+            if (current.col.displaying.len > 0) {
+                if (current.col.displaying.len > y_len) {
+                    current.col.slice_inc = current.col.displaying.len - y_len;
+                    current.col.pos = @intCast(@min(y_len - 1, current.col.displaying.len - 1));
+                } else {
+                    current.col.slice_inc = 0;
+                    current.col.pos = @intCast(current.col.displaying.len - 1);
+                }
+                current.render_col.* = true;
+                current.render_cursor.* = true;
+                
+                // Handle potential column dependencies
+                const next: ?ColumnWithRender = getNext(app, render_state);
+                if (current.col.type == .Select) {
+                    select_pos = current.col.pos;
+                    // Update column 2 based on select position
+                    switch (current.col.pos) {
+                        0 => browserSetColumn2ToAlbums(app),
+                        1 => browserSetColumn2ToArtists(app),
+                        2 => browserSetColumn2ToTracks(app),
+                        else => {},
+                    }
+                    if (next) |next_col| {
+                        next_col.render_col.* = true;
+                    }
+                }
+            }
         },
         'h' => browserNavigateLeft(app, render_state),
         'l' => browserSelectNextColumn(app, render_state),
@@ -481,18 +693,13 @@ fn getNext(app: *state.State, render_state: *RenderState) ?ColumnWithRender {
         .three => null,
     };
 }
-// Browser vertical scrolling - handles all three columns in one place
-fn browserScrollVertical(
-    dir: cursorDirection,
+// Helper function to handle column dependencies (used by browserScrollVertical and Ctrl-u/d)
+fn handleColumnDependencies(
     current: ColumnWithRender,
     next: ?ColumnWithRender,
     prev: ?ColumnWithRender,
     app: *state.State,
 ) !void {
-    next_col_ready = false;
-    const max: ?u8 = if (dir == .up) null else @intCast(@min(y_len, current.col.displaying.len));
-    current.col.scroll(dir, max, y_len);
-
     if (current.col.type == .Select) {
         // Update column 2 content based on column 1 selection
         select_pos = current.col.pos;
@@ -530,6 +737,22 @@ fn browserScrollVertical(
             }
         }
     }
+}
+
+// Browser vertical scrolling - handles all three columns in one place
+fn browserScrollVertical(
+    dir: cursorDirection,
+    current: ColumnWithRender,
+    next: ?ColumnWithRender,
+    prev: ?ColumnWithRender,
+    app: *state.State,
+) !void {
+    next_col_ready = false;
+    const max: ?u8 = if (dir == .up) null else @intCast(@min(y_len, current.col.displaying.len));
+    current.col.scroll(dir, max, y_len);
+
+    try handleColumnDependencies(current, next, prev, app);
+    
     current.render_col.* = true;
     current.render_cursor.* = true;
 }
@@ -770,7 +993,7 @@ fn browserHandleEnter(app: *state.State) !void {
 // Handle key release events specifically for the browser
 fn handleBrowseKeyRelease(char: u8, app: *state.State, render_state: *RenderState) !void {
     switch (char) {
-        'j', 'k', 'l', '\n', '\r' => {
+        'j', 'k', 'l', '\n', '\r', 'g', 'G', 'd' & '\x1F', 'u' & '\x1F' => {
             // Only update column 3 when column 2 is selected and has items
             switch (app.selected_column) {
                 .two => {

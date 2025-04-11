@@ -2,9 +2,6 @@
 
 ## CURRENT
 - [ ] space bar -> replace queue with selected
-- [ ] X -> clear queue
-- [ ] ctrl-d , ctrl-u
-- [ ] g, G top and bottom
 
 ## Bugs/Fixes
 - [x] MAC BLOCK TERMINAL WRITES
@@ -39,6 +36,7 @@
 
 ## Features 
 **V1**
+- [x] X -> clear queue
 - [x] browser typing
 - [x] search in browser
 - [x] permanent solution to queue length
@@ -46,6 +44,8 @@
 - [x] Browser
 - [x] D -> clear from current pos to end queue
 - [x] add album contents to queue
+- [x] g, G top and bottom
+- [x] ctrl-d , ctrl-u
 - [ ] moving around in queue, visual mode?
 - [ ] True color
 - [ ] shift arrow to seek faster
