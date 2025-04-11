@@ -282,14 +282,14 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState) !void {
             if (debounce()) return;
             const position: usize = app.scroll_q.absolutePos();
             try mpd.rmRangeFromPos(wrkallocator, position);
-            
+
             // Always move cursor up after deleting to the end
             if (app.scroll_q.pos > 0) {
                 app.scroll_q.pos -= 1;
             } else if (app.scroll_q.slice_inc > 0) {
                 app.scroll_q.slice_inc -= 1;
             }
-            
+
             render_state.queueEffects = true;
         },
         '\x1B' => {
@@ -361,7 +361,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
             current.clear_cursor.* = true;
             current.render_col.* = true;
         },
-        '\n', '\r' => try browserHandleEnter(app, render_state),
+        '\n', '\r' => if (next_col_ready) try browserHandleEnter(app),
         else => unreachable,
     }
 }
@@ -654,7 +654,14 @@ fn browserMoveFromColumn1ToColumn2(app: *state.State, render_state: *RenderState
 
 fn browserMoveFromColumn2ToColumn3(app: *state.State, render_state: *RenderState) void {
     const current = getCurrent(app, render_state);
+    const next = getNext(app, render_state);
     if (current.col.type == .Tracks) return;
+    if (next.?.col.type == .Albums) {
+        // Get the album for filtering
+        app.find_filter.album = app.column_3.displaying[0];
+        // Fetch tracks from selected album
+        tracks_from_album = mpd.findTracksFromAlbum(&app.find_filter, alloc.respAllocator, alloc.persistentAllocator) catch return;
+    }
     app.selected_column = .three;
     render_state.clear_browse_cursor_two = true;
     render_state.browse_cursor_three = true;
@@ -691,8 +698,6 @@ fn switcheroo(app: *state.State) !void {
     // First, clear any temporary allocations
     _ = alloc.respArena.reset(.free_all);
 
-    // Get the album for filtering
-    app.find_filter.album = app.column_3.displaying[app.column_3.absolutePos()];
     const artists = app.column_2.displaying;
     const albums = app.column_3.displaying;
 
@@ -711,9 +716,6 @@ fn switcheroo(app: *state.State) !void {
     app.column_1.type = .Artists;
     app.column_2.type = .Albums;
 
-    // Fetch tracks from selected album
-    tracks_from_album = try mpd.findTracksFromAlbum(&app.find_filter, alloc.respAllocator, alloc.persistentAllocator);
-
     // Create a new slice of just the titles from SongStringAndUri objects
     var titles = try alloc.persistentAllocator.alloc([]const u8, tracks_from_album.len);
 
@@ -728,29 +730,37 @@ fn switcheroo(app: *state.State) !void {
 }
 
 // Handle Enter key press in browser mode
-fn browserHandleEnter(app: *state.State, render_state: *RenderState) !void {
+fn browserHandleEnter(app: *state.State) !void {
     switch (app.selected_column) {
-        .one => browserSelectNextColumn(app, render_state),
+        .one => return,
         .two => {
-            if (app.column_2.type == .Tracks) {
-                const pos = app.column_2.absolutePos();
-                if (pos < data.songs.len) {
-                    const uri = data.songs[pos].uri;
-                    try mpd.addFromUri(alloc.typingAllocator, uri);
-                }
-            } else {
-                browserSelectNextColumn(app, render_state);
+            switch (app.column_2.type) {
+                .Tracks => {
+                    const pos = app.column_2.absolutePos();
+                    if (pos < data.songs.len) {
+                        const uri = data.songs[pos].uri;
+                        try mpd.addFromUri(alloc.typingAllocator, uri);
+                    }
+                },
+                .Albums => {
+                    mpd.addList(alloc.typingAllocator, tracks_from_album) catch return error.CommandFailed;
+                },
+                else => return,
             }
         },
         .three => {
-            if (app.column_3.type == .Tracks) {
-                const pos = app.column_3.absolutePos();
-                if (pos < tracks_from_album.len) {
-                    const uri = tracks_from_album[pos].uri;
-                    try mpd.addFromUri(alloc.typingAllocator, uri);
-                }
-            } else {
-                browserSelectNextColumn(app, render_state);
+            switch (app.column_3.type) {
+                .Tracks => {
+                    const pos = app.column_3.absolutePos();
+                    if (pos < tracks_from_album.len) {
+                        const uri = tracks_from_album[pos].uri;
+                        try mpd.addFromUri(alloc.typingAllocator, uri);
+                    }
+                },
+                .Albums => {
+                    mpd.addList(alloc.typingAllocator, tracks_from_album) catch return error.CommandFailed;
+                },
+                else => return,
             }
         },
     }
@@ -761,12 +771,22 @@ fn handleBrowseKeyRelease(char: u8, app: *state.State, render_state: *RenderStat
     switch (char) {
         'j', 'k', 'l', '\n', '\r' => {
             // Only update column 3 when column 2 is selected and has items
-            if (app.selected_column != .two) return;
-            if (app.column_2.displaying.len == 0) return;
-            if (app.column_2.type == .Tracks) return;
+            switch (app.selected_column) {
+                .two => {
+                    if (app.column_2.displaying.len == 0) return;
+                    if (app.column_2.type == .Tracks) return;
 
-            try browserUpdateColumn3FromColumn2(app);
-            render_state.browse_three = true;
+                    try browserUpdateColumn3FromColumn2(app);
+                    render_state.browse_three = true;
+                },
+                .three => {
+                    if (app.column_3.type == .Tracks) return;
+                    if (app.column_3.displaying.len == 0) return;
+                    app.find_filter.album = app.column_3.displaying[app.column_3.absolutePos()];
+                    tracks_from_album = try mpd.findTracksFromAlbum(&app.find_filter, alloc.respAllocator, alloc.typingAllocator);
+                },
+                else => return,
+            }
         },
         else => {
             log("unrecognized key", .{});

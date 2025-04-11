@@ -323,7 +323,7 @@ pub const QSong = struct {
     time: u16,
     // Technically queue max len is 256
     pos: u8,
-    id: u8,
+    id: usize,
 };
 
 pub fn getQueue(respAllocator: mem.Allocator, queue: *Queue) !void {
@@ -363,7 +363,7 @@ pub fn getQueue(respAllocator: mem.Allocator, queue: *Queue) !void {
                 current.?.pos = try std.fmt.parseInt(u8, pos_str, 10);
             } else if (std.mem.startsWith(u8, line, "Id:")) {
                 const id_str = std.mem.trimLeft(u8, line[3..], " ");
-                current.?.id = try std.fmt.parseInt(u8, id_str, 10);
+                current.?.id = try std.fmt.parseInt(usize, id_str, 10);
             }
         }
     }
@@ -776,6 +776,15 @@ fn appendSongStringAndUri(
 pub fn addFromUri(allocator: mem.Allocator, uri: []const u8) !void {
     const command = try fmt.allocPrint(allocator, "add \"{s}\"\n", .{uri});
     try sendCommand(command);
+}
+
+pub fn addList(allocator: mem.Allocator, list: []SongStringAndUri) !void {
+    try connSend("command_list_begin\n", &cmdStream);
+    for (list) |item| {
+        const command = try fmt.allocPrint(allocator, "add \"{s}\"\n", .{item.uri});
+        try connSend(command, &cmdStream);
+    }
+    try sendCommand("command_list_end\n");
 }
 
 pub fn rmFromPos(allocator: mem.Allocator, pos: usize) !void {

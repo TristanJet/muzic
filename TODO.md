@@ -1,9 +1,10 @@
 # MUZIG
 
 ## CURRENT
-- [ ] D -> clear from current pos to end queue
-- [ ] dd -> clear queue
 - [ ] space bar -> replace queue with selected
+- [ ] dd -> clear queue
+- [ ] ctrl-d , ctrl-u
+- [ ] gg, G top and bottom
 
 ## Bugs/Fixes
 - [x] MAC BLOCK TERMINAL WRITES
@@ -26,6 +27,8 @@
 - [ ] hold x from the top breaks
 - [ ] get rid of ALL UNNECESSARY public variables
 - [ ] rewrite Browser - Describe in terms of prev, current, next
+- [ ] MEMORY LEAK suspected at 717 - input.zig
+- [ ] carefully track persistentallocator use
 - [ ] NUMBER FIX - program will crash if queue longer than 256
 
 - [x] queue max_len could be runtime derived from column size in render
@@ -41,8 +44,8 @@
 - [x] permanent solution to queue length
 - [x] queue scrolling
 - [x] Browser
-- [ ] add album contents to queue
-- [ ] ctrl-d , ctrl-u
+- [x] D -> clear from current pos to end queue
+- [x] add album contents to queue
 - [ ] True color
 - [ ] shift arrow to seek faster
 - [ ] return to original state, whatever was printed before running goes back to being visible
