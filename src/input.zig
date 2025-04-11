@@ -278,6 +278,20 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState) !void {
             }
             render_state.queueEffects = true;
         },
+        'D' => {
+            if (debounce()) return;
+            const position: usize = app.scroll_q.absolutePos();
+            try mpd.rmRangeFromPos(wrkallocator, position);
+            
+            // Always move cursor up after deleting to the end
+            if (app.scroll_q.pos > 0) {
+                app.scroll_q.pos -= 1;
+            } else if (app.scroll_q.slice_inc > 0) {
+                app.scroll_q.slice_inc -= 1;
+            }
+            
+            render_state.queueEffects = true;
+        },
         '\x1B' => {
             var escBuffer: [8]u8 = undefined;
             const escRead = try term.readEscapeCode(&escBuffer);

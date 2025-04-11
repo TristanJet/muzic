@@ -783,6 +783,11 @@ pub fn rmFromPos(allocator: mem.Allocator, pos: usize) !void {
     try sendCommand(command);
 }
 
+pub fn rmRangeFromPos(allocator: mem.Allocator, pos: usize) !void {
+    const command = try fmt.allocPrint(allocator, "delete {}:\n", .{pos});
+    try sendCommand(command);
+}
+
 test "do it work" {
     const start = std.time.milliTimestamp();
     var respArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
