@@ -292,6 +292,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState) !void {
 
             render_state.queueEffects = true;
         },
+        'X' => try mpd.clearQueue(),
         '\x1B' => {
             var escBuffer: [8]u8 = undefined;
             const escRead = try term.readEscapeCode(&escBuffer);
@@ -361,7 +362,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
             current.clear_cursor.* = true;
             current.render_col.* = true;
         },
-        '\n', '\r' => if (next_col_ready) try browserHandleEnter(app),
+        '\n', '\r' => try browserHandleEnter(app),
         else => unreachable,
     }
 }
@@ -743,7 +744,7 @@ fn browserHandleEnter(app: *state.State) !void {
                     }
                 },
                 .Albums => {
-                    mpd.addList(alloc.typingAllocator, tracks_from_album) catch return error.CommandFailed;
+                    if (next_col_ready) mpd.addList(alloc.typingAllocator, tracks_from_album) catch return error.CommandFailed;
                 },
                 else => return,
             }
@@ -758,7 +759,7 @@ fn browserHandleEnter(app: *state.State) !void {
                     }
                 },
                 .Albums => {
-                    mpd.addList(alloc.typingAllocator, tracks_from_album) catch return error.CommandFailed;
+                    if (next_col_ready) mpd.addList(alloc.typingAllocator, tracks_from_album) catch return error.CommandFailed;
                 },
                 else => return,
             }

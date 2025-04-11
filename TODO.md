@@ -2,9 +2,9 @@
 
 ## CURRENT
 - [ ] space bar -> replace queue with selected
-- [ ] dd -> clear queue
+- [ ] X -> clear queue
 - [ ] ctrl-d , ctrl-u
-- [ ] gg, G top and bottom
+- [ ] g, G top and bottom
 
 ## Bugs/Fixes
 - [x] MAC BLOCK TERMINAL WRITES
@@ -46,6 +46,7 @@
 - [x] Browser
 - [x] D -> clear from current pos to end queue
 - [x] add album contents to queue
+- [ ] moving around in queue, visual mode?
 - [ ] True color
 - [ ] shift arrow to seek faster
 - [ ] return to original state, whatever was printed before running goes back to being visible

@@ -797,6 +797,10 @@ pub fn rmRangeFromPos(allocator: mem.Allocator, pos: usize) !void {
     try sendCommand(command);
 }
 
+pub fn clearQueue() !void {
+    try sendCommand("clear\n");
+}
+
 test "do it work" {
     const start = std.time.milliTimestamp();
     var respArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
