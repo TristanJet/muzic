@@ -53,7 +53,7 @@ pub fn ttyFile() *const fs.File {
 pub fn readBytes(read_buffer: []u8) ReadError!usize {
     return tty.read(read_buffer) catch |err| switch (err) {
         error.WouldBlock => 0, // No input available
-        else => return ReadError.Unexpected,
+        else => ReadError.Unexpected,
     };
 }
 
@@ -80,8 +80,14 @@ fn setNonBlock() !void {
     // Use platform-independent fcntl with O_NONBLOCK
     const flags = try posix.fcntl(tty.handle, posix.F.GETFL, 0);
     // Use direct constant instead of NONBLOCK which may not be available on all platforms
-    const NONBLOCK = 0x0004; // This is O_NONBLOCK value for most systems including macOS
+    // const NONBLOCK = 0x0004; // This is O_NONBLOCK value for most systems including macOS
+    const NONBLOCK = 0o4000;
     _ = try posix.fcntl(tty.handle, posix.F.SETFL, flags | NONBLOCK);
+    const updated_flags = try posix.fcntl(tty.handle, posix.F.GETFL, 0);
+    log("setNonBlock: Set flags=0x{x}, expected NONBLOCK=0x{x}", .{ updated_flags, NONBLOCK });
+    if ((updated_flags & NONBLOCK) == 0) {
+        log("setNonBlock: Failed to set O_NONBLOCK", .{});
+    }
 }
 
 pub fn deinit() !void {

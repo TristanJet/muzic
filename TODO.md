@@ -12,6 +12,7 @@
 - [ ] carefully track persistentallocator use
 - [ ] rewrite Browser - Describe in terms of prev, current, next
 - [ ] get rid of ALL UNNECESSARY public variables
+- [ ] ROBUST NONBLOCK flag handling
 
 - [x] MAC BLOCK TERMINAL WRITES
 - [x] key release event

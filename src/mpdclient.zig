@@ -184,7 +184,8 @@ pub fn connect(buffer: []u8, stream_type: StreamType, nonblock: bool) !void {
             return err;
         };
         // Use direct constant instead of NONBLOCK which may not be available on all platforms
-        const NONBLOCK = 0x0004; // This is O_NONBLOCK value for most systems including macOS
+        // const NONBLOCK = 0x0004; // This is O_NONBLOCK value for most systems including macOS
+        const NONBLOCK = 0o4000;
         _ = std.posix.fcntl(stream.handle, std.posix.F.SETFL, flags | NONBLOCK) catch |err| {
             util.log("Error setting socket to nonblocking: {}", .{err});
             return err;

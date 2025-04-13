@@ -4,9 +4,11 @@ const math = std.math;
 var logtty: fs.File = undefined;
 var logger: fs.File.Writer = undefined;
 
+//macos tty: /dev/ttys001
+
 pub fn init() !void {
     logtty = try fs.cwd().openFile(
-        "/dev/ttys001",
+        "/dev/pts/1",
         .{ .mode = fs.File.OpenMode.write_only },
     );
     logger = logtty.writer();
