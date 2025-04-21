@@ -457,7 +457,7 @@ const Find_add_Song = struct {
 
 pub const Filter_Songs = struct {
     artist: ?[]const u8,
-    album: []const u8,
+    album: ?[]const u8,
 };
 
 pub const SongStringAndUri = struct {
@@ -488,7 +488,7 @@ pub fn findAlbumsFromArtists(
 }
 
 pub fn findTracksFromAlbum(
-    filter: *const Filter_Songs,
+    filter: Filter_Songs,
     temp_alloc: mem.Allocator,
     persist_alloc: mem.Allocator,
 ) ![]SongStringAndUri {
@@ -496,7 +496,8 @@ pub fn findTracksFromAlbum(
     if (filter.artist) |raw| {
         artist = try fmt.allocPrint(temp_alloc, " AND (Artist == \\\"{s}\\\")", .{try escapeMpdString(temp_alloc, raw)});
     }
-    const escaped_album = try escapeMpdString(temp_alloc, filter.album);
+    const album = filter.album orelse return error.FilterError;
+    const escaped_album = try escapeMpdString(temp_alloc, album);
     const command = try fmt.allocPrint(temp_alloc, "find \"((Album == \\\"{s}\\\"){s})\"\n", .{ escaped_album, artist });
 
     const data = try readLargeResponse(temp_alloc, command);
@@ -537,6 +538,14 @@ pub fn findTracksFromAlbum(
     }
 
     return try songs.toOwnedSlice();
+}
+
+pub fn titlesFromTracks(tracks: []SongStringAndUri, allocator: mem.Allocator) ![][]const u8 {
+    var titles = try allocator.alloc([]const u8, tracks.len);
+    for (tracks, 0..) |track, i| {
+        titles[i] = track.string;
+    }
+    return titles;
 }
 
 pub fn findAdd(song: *const Find_add_Song, allocator: mem.Allocator) !void {

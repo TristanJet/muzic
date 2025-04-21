@@ -94,7 +94,7 @@ pub fn main() !void {
 
         .selected_column = .one,
         .column_1 = state.BrowseColumn{
-            .displaying = input.browse_types[0..],
+            .displaying = state.browse_types[0..],
             .pos = 0,
             .prev_pos = 0,
             .slice_inc = 0,
@@ -113,11 +113,6 @@ pub fn main() !void {
             .prev_pos = 0,
             .slice_inc = 0,
             .type = .Tracks,
-        },
-
-        .find_filter = .{
-            .album = undefined,
-            .artist = null,
         },
 
         .input_state = .normal_queue,

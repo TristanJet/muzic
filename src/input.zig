@@ -8,7 +8,8 @@ const window = @import("window.zig");
 const mem = std.mem;
 const time = std.time;
 const assert = std.debug.assert;
-const RenderState = @import("render.zig").RenderState;
+// const handleNormalBrowse = @import("browser.zig").handleNormalBrowse;
+pub const RenderState = @import("render.zig").RenderState;
 
 const util = @import("util.zig");
 const log = util.log;
@@ -25,10 +26,6 @@ pub var y_len: usize = undefined;
 
 var key_down: ?u8 = null;
 
-// This contains shared data that will be refactored into the browser module
-var tracks_from_album: []mpd.SongStringAndUri = undefined;
-var albums_from_artist: []const []const u8 = undefined;
-
 var all_albums_pos: u8 = undefined;
 var all_artists_pos: u8 = undefined;
 var all_songs_pos: u8 = undefined;
@@ -44,7 +41,23 @@ var modeSwitch: bool = false;
 var browse_typed: bool = false;
 var next_col_ready: bool = false;
 
-pub const browse_types: [3][]const u8 = .{ "Albums", "Artists", "Songs" };
+var node_buffer: state.Browser = state.Browser{
+    .buf = .{
+        .{ .pos = 0, .slice_inc = 0, .displaying = &state.browse_types, .callback_type = null, .type = .Select },
+        null,
+        null,
+        null,
+    },
+    .apex = .UNSET,
+    .tracks = null,
+    .find_filter = .{
+        .artist = null,
+        .album = null,
+    },
+    .index = 0,
+    .len = 1,
+};
+var selected_column: u8 = 0;
 
 pub const Input_State = enum {
     normal_queue,
@@ -163,7 +176,7 @@ fn onBrowseExit(app: *state.State, render_state: *RenderState) void {
     } else {
         // Ensure safe default display state anyway
         app.column_1.type = .Select;
-        app.column_1.displaying = browse_types[0..];
+        app.column_1.displaying = state.browse_types[0..];
         app.column_1.pos = 0;
         app.column_1.slice_inc = 0;
     }
@@ -171,7 +184,7 @@ fn onBrowseExit(app: *state.State, render_state: *RenderState) void {
     // Reset application state
     app.input_state = .normal_queue;
     app.selected_column = .one;
-    app.find_filter = mpd.Filter_Songs{
+    node_buffer.find_filter = mpd.Filter_Songs{
         .album = undefined,
         .artist = null,
     };
@@ -419,9 +432,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
             var escBuffer: [8]u8 = undefined;
             const escRead = try term.readEscapeCode(&escBuffer);
 
-            if (escRead == 0) {
-                onBrowseExit(app, render_state);
-            }
+            if (escRead == 0) onBrowseExit(app, render_state);
         },
         'j' => {
             const current: ColumnWithRender = getCurrent(app, render_state);
@@ -435,139 +446,48 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
             const prev: ?ColumnWithRender = getPrev(app, render_state);
             try browserScrollVertical(.up, current, next, prev, app);
         },
-        'd' & '\x1F' => {
-            // Ctrl-d: Move down half the screen height (like vim)
-            const current: ColumnWithRender = getCurrent(app, render_state);
-            const next: ?ColumnWithRender = getNext(app, render_state);
-            const prev: ?ColumnWithRender = getPrev(app, render_state);
-
-            const half_height = y_len / 2;
-            var move_down: usize = 0;
-
-            // Determine how many positions we can move down
-            if (current.col.absolutePos() + half_height < current.col.displaying.len) {
-                move_down = half_height;
-            } else if (current.col.absolutePos() < current.col.displaying.len) {
-                move_down = current.col.displaying.len - current.col.absolutePos() - 1;
-            }
-
-            if (move_down > 0) {
-                // Try to keep cursor position in the middle of the screen when possible
-                if (current.col.pos + move_down < y_len) {
-                    // If we can move the cursor down without scrolling, do that
-                    current.col.pos += @intCast(move_down);
-                } else {
-                    // Otherwise, move the slice increment (scroll the view)
-                    const cursor_target: u8 = @intCast(y_len / 2);
-                    if (current.col.pos > cursor_target) {
-                        // Move cursor to middle position and adjust slice_inc
-                        const pos_diff = current.col.pos - cursor_target;
-                        current.col.slice_inc += @as(usize, pos_diff) + move_down;
-                        current.col.pos = cursor_target;
-                    } else {
-                        // Just increase slice_inc
-                        current.col.slice_inc += move_down;
-                    }
-                }
-
-                current.render_col.* = true;
-                current.render_cursor.* = true;
-
-                // Handle column dependencies
-                try handleColumnDependencies(current, next, prev, app);
-            }
-        },
-        'u' & '\x1F' => {
-            // Ctrl-u: Move up half the screen height (like vim)
-            const current: ColumnWithRender = getCurrent(app, render_state);
-            const next: ?ColumnWithRender = getNext(app, render_state);
-            const prev: ?ColumnWithRender = getPrev(app, render_state);
-
-            const half_height = y_len / 2;
-            var move_up: usize = 0;
-
-            // Determine how many positions we can move up
-            if (current.col.absolutePos() >= half_height) {
-                move_up = half_height;
-            } else {
-                move_up = current.col.absolutePos();
-            }
-
-            if (move_up > 0) {
-                // First use slice_inc if available
-                if (current.col.slice_inc >= move_up) {
-                    current.col.slice_inc -= move_up;
-                } else {
-                    // Move cursor position by any remaining amount
-                    const remaining = move_up - current.col.slice_inc;
-                    current.col.slice_inc = 0;
-                    current.col.pos -= @intCast(remaining);
-                }
-
-                current.render_col.* = true;
-                current.render_cursor.* = true;
-
-                // Handle column dependencies
-                try handleColumnDependencies(current, next, prev, app);
-            }
-        },
-        'g' => {
-            // Go to top of current column
-            const current: ColumnWithRender = getCurrent(app, render_state);
-            current.col.pos = 0;
-            current.col.slice_inc = 0;
-            current.render_col.* = true;
-            current.render_cursor.* = true;
-
-            // Handle potential column dependencies
-            const next: ?ColumnWithRender = getNext(app, render_state);
-            if (current.col.type == .Select) {
-                select_pos = current.col.pos;
-                // Update column 2 based on select position
-                switch (current.col.pos) {
-                    0 => browserSetColumn2ToAlbums(app),
-                    1 => browserSetColumn2ToArtists(app),
-                    2 => browserSetColumn2ToTracks(app),
-                    else => {},
-                }
-                if (next) |next_col| {
-                    next_col.render_col.* = true;
-                }
-            }
-        },
-        'G' => {
-            // Go to bottom of current column
-            const current: ColumnWithRender = getCurrent(app, render_state);
-            if (current.col.displaying.len > 0) {
-                if (current.col.displaying.len > y_len) {
-                    current.col.slice_inc = current.col.displaying.len - y_len;
-                    current.col.pos = @intCast(@min(y_len - 1, current.col.displaying.len - 1));
-                } else {
-                    current.col.slice_inc = 0;
-                    current.col.pos = @intCast(current.col.displaying.len - 1);
-                }
-                current.render_col.* = true;
-                current.render_cursor.* = true;
-
-                // Handle potential column dependencies
-                const next: ?ColumnWithRender = getNext(app, render_state);
-                if (current.col.type == .Select) {
-                    select_pos = current.col.pos;
-                    // Update column 2 based on select position
-                    switch (current.col.pos) {
-                        0 => browserSetColumn2ToAlbums(app),
-                        1 => browserSetColumn2ToArtists(app),
-                        2 => browserSetColumn2ToTracks(app),
-                        else => {},
-                    }
-                    if (next) |next_col| {
-                        next_col.render_col.* = true;
-                    }
-                }
-            }
-        },
+        'd' & '\x1F' => try halfDown(app, render_state),
+        'u' & '\x1F' => try halfUp(app, render_state),
+        'g' => goTop(app, render_state),
+        'G' => goBottom(app, render_state),
         'h' => browserNavigateLeft(app, render_state),
-        'l' => browserSelectNextColumn(app, render_state),
+        'l' => {
+            log("--L PRESS--", .{});
+            log("node index {}", .{node_buffer.index});
+            const node = try node_buffer.getCurrentNode();
+            log("node: {}", .{node.type});
+            log("selected col: {}", .{app.selected_column});
+            defer {
+                log("node index {}", .{node_buffer.index});
+                log("selected col: {}", .{app.selected_column});
+                log("length: {}", .{node_buffer.len});
+            }
+            const current = getCurrent(app, render_state);
+
+            if (current.col.type == .Select) {
+                const selected: state.Column_Type = switch (current.col.pos) {
+                    0 => .Albums,
+                    1 => .Artists,
+                    2 => .Tracks,
+                    else => unreachable,
+                };
+                node_buffer = state.Browser.init(selected, data);
+            }
+            if (node_buffer.index == node_buffer.len - 1) return;
+            const next_ren = getNext(app, render_state);
+            const next_col = if (next_ren) |next| next.col else null;
+            const column_switched: bool = try node_buffer.incrementNode(current.col, next_col, &app.selected_column, 3);
+            if (column_switched) {
+                const prev = getPrev(app, render_state);
+                const current_final = getCurrent(app, render_state);
+                prev.?.clear_cursor.* = true;
+                current_final.render_cursor.* = true;
+            } else {
+                next_ren.?.render_col.* = true;
+                current.render_col.* = true;
+                current.render_cursor.* = true;
+            }
+        },
         '/' => {
             app.input_state = .typing_browse;
             const current: ColumnWithRender = getCurrent(app, render_state);
@@ -576,6 +496,141 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
         },
         '\n', '\r' => try browserHandleEnter(app),
         else => return,
+    }
+}
+
+fn halfUp(app: *state.State, render_state: *RenderState) !void {
+    // Ctrl-u: Move up half the screen height (like vim)
+    const current: ColumnWithRender = getCurrent(app, render_state);
+    const next: ?ColumnWithRender = getNext(app, render_state);
+    const prev: ?ColumnWithRender = getPrev(app, render_state);
+
+    const half_height = y_len / 2;
+    var move_up: usize = 0;
+
+    // Determine how many positions we can move up
+    if (current.col.absolutePos() >= half_height) {
+        move_up = half_height;
+    } else {
+        move_up = current.col.absolutePos();
+    }
+
+    if (move_up > 0) {
+        // First use slice_inc if available
+        if (current.col.slice_inc >= move_up) {
+            current.col.slice_inc -= move_up;
+        } else {
+            // Move cursor position by any remaining amount
+            const remaining = move_up - current.col.slice_inc;
+            current.col.slice_inc = 0;
+            current.col.pos -= @intCast(remaining);
+        }
+
+        current.render_col.* = true;
+        current.render_cursor.* = true;
+
+        // Handle column dependencies
+        try handleColumnDependencies(current, next, prev, app);
+    }
+}
+
+fn halfDown(app: *state.State, render_state: *RenderState) !void {
+    // Ctrl-d: Move down half the screen height (like vim)
+    const current: ColumnWithRender = getCurrent(app, render_state);
+    const next: ?ColumnWithRender = getNext(app, render_state);
+    const prev: ?ColumnWithRender = getPrev(app, render_state);
+
+    const half_height = y_len / 2;
+    var move_down: usize = 0;
+
+    // Determine how many positions we can move down
+    if (current.col.absolutePos() + half_height < current.col.displaying.len) {
+        move_down = half_height;
+    } else if (current.col.absolutePos() < current.col.displaying.len) {
+        move_down = current.col.displaying.len - current.col.absolutePos() - 1;
+    }
+
+    if (move_down > 0) {
+        // Try to keep cursor position in the middle of the screen when possible
+        if (current.col.pos + move_down < y_len) {
+            // If we can move the cursor down without scrolling, do that
+            current.col.pos += @intCast(move_down);
+        } else {
+            // Otherwise, move the slice increment (scroll the view)
+            const cursor_target: u8 = @intCast(y_len / 2);
+            if (current.col.pos > cursor_target) {
+                // Move cursor to middle position and adjust slice_inc
+                const pos_diff = current.col.pos - cursor_target;
+                current.col.slice_inc += @as(usize, pos_diff) + move_down;
+                current.col.pos = cursor_target;
+            } else {
+                // Just increase slice_inc
+                current.col.slice_inc += move_down;
+            }
+        }
+
+        current.render_col.* = true;
+        current.render_cursor.* = true;
+
+        // Handle column dependencies
+        try handleColumnDependencies(current, next, prev, app);
+    }
+}
+
+fn goTop(app: *state.State, render_state: *RenderState) void {
+    // Go to top of current column
+    const current: ColumnWithRender = getCurrent(app, render_state);
+    current.col.pos = 0;
+    current.col.slice_inc = 0;
+    current.render_col.* = true;
+    current.render_cursor.* = true;
+
+    // Handle potential column dependencies
+    const next: ?ColumnWithRender = getNext(app, render_state);
+    if (current.col.type == .Select) {
+        select_pos = current.col.pos;
+        // Update column 2 based on select position
+        switch (current.col.pos) {
+            0 => browserSetColumn2ToAlbums(app),
+            1 => browserSetColumn2ToArtists(app),
+            2 => browserSetColumn2ToTracks(app),
+            else => {},
+        }
+        if (next) |next_col| {
+            next_col.render_col.* = true;
+        }
+    }
+}
+
+fn goBottom(app: *state.State, render_state: *RenderState) void {
+    // Go to bottom of current column
+    const current: ColumnWithRender = getCurrent(app, render_state);
+    if (current.col.displaying.len > 0) {
+        if (current.col.displaying.len > y_len) {
+            current.col.slice_inc = current.col.displaying.len - y_len;
+            current.col.pos = @intCast(@min(y_len - 1, current.col.displaying.len - 1));
+        } else {
+            current.col.slice_inc = 0;
+            current.col.pos = @intCast(current.col.displaying.len - 1);
+        }
+        current.render_col.* = true;
+        current.render_cursor.* = true;
+
+        // Handle potential column dependencies
+        const next: ?ColumnWithRender = getNext(app, render_state);
+        if (current.col.type == .Select) {
+            select_pos = current.col.pos;
+            // Update column 2 based on select position
+            switch (current.col.pos) {
+                0 => browserSetColumn2ToAlbums(app),
+                1 => browserSetColumn2ToArtists(app),
+                2 => browserSetColumn2ToTracks(app),
+                else => {},
+            }
+            if (next) |next_col| {
+                next_col.render_col.* = true;
+            }
+        }
     }
 }
 
@@ -787,8 +842,8 @@ fn browserNavigateLeft(app: *state.State, render_state: *RenderState) void {
         .one => {}, // Nothing to do when already in column 1
         .two => {
             app.selected_column = .one;
-            app.find_filter = mpd.Filter_Songs{
-                .album = undefined,
+            node_buffer.find_filter = mpd.Filter_Songs{
+                .album = null,
                 .artist = null,
             };
             app.column_1.pos = select_pos;
@@ -824,7 +879,7 @@ fn revertSwitcheroo(app: *state.State) void {
     if (col1Empty or col2Empty) {
         // Just reset to safe defaults if data is missing
         app.column_1.type = .Select;
-        app.column_1.displaying = browse_types[0..];
+        app.column_1.displaying = state.browse_types[0..];
         app.column_2.type = .Artists;
         app.column_2.displaying = data.artists;
         app.column_3.type = .None;
@@ -836,7 +891,7 @@ fn revertSwitcheroo(app: *state.State) void {
     // Store references to current column data
     const artists = app.column_1.displaying;
     const albums = app.column_2.displaying;
-    const select = browse_types[0..];
+    const select = state.browse_types[0..];
 
     // Reset positions
     app.column_1.slice_inc = 0;
@@ -856,13 +911,7 @@ fn revertSwitcheroo(app: *state.State) void {
 }
 
 // Browser column navigation - handles moving to next column
-fn browserSelectNextColumn(app: *state.State, render_state: *RenderState) void {
-    switch (app.selected_column) {
-        .one => browserMoveFromColumn1ToColumn2(app, render_state),
-        .two => if (next_col_ready) browserMoveFromColumn2ToColumn3(app, render_state),
-        .three => if (next_col_ready) browserHandleColumn3Selection(app, render_state),
-    }
-}
+fn browserNextColumn() void {}
 
 fn browserMoveFromColumn1ToColumn2(app: *state.State, render_state: *RenderState) void {
     app.column_3.type = switch (app.column_2.type) {
@@ -874,83 +923,6 @@ fn browserMoveFromColumn1ToColumn2(app: *state.State, render_state: *RenderState
     app.selected_column = .two;
     render_state.clear_browse_cursor_one = true;
     render_state.browse_cursor_two = true;
-}
-
-fn browserMoveFromColumn2ToColumn3(app: *state.State, render_state: *RenderState) void {
-    const current = getCurrent(app, render_state);
-    const next = getNext(app, render_state);
-    if (current.col.type == .Tracks) return;
-    if (next.?.col.type == .Albums) {
-        // Get the album for filtering
-        app.find_filter.album = app.column_3.displaying[0];
-        // Fetch tracks from selected album
-        tracks_from_album = mpd.findTracksFromAlbum(&app.find_filter, alloc.respAllocator, alloc.persistentAllocator) catch return;
-    }
-    app.selected_column = .three;
-    render_state.clear_browse_cursor_two = true;
-    render_state.browse_cursor_three = true;
-}
-
-fn browserHandleColumn3Selection(app: *state.State, render_state: *RenderState) void {
-    switch (app.column_3.type) {
-        .Albums => {
-            switcheroo(app) catch |err|
-                log("column switch error: {}", .{err});
-            render_state.browse_one = true;
-            render_state.browse_two = true;
-            render_state.browse_three = true;
-            render_state.browse_cursor_three = true;
-        },
-        .Tracks => {}, // Nothing to do for tracks in column 3
-        else => unreachable,
-    }
-}
-
-fn switcheroo(app: *state.State) !void {
-    // Check for valid indices before accessing
-    if (app.column_3.displaying.len == 0) {
-        log("Empty column 3", .{});
-        return;
-    }
-
-    const absPos = app.column_3.absolutePos();
-    if (absPos >= app.column_3.displaying.len) {
-        log("Invalid column 3 index", .{});
-        return;
-    }
-
-    // First, clear any temporary allocations
-    _ = alloc.respArena.reset(.free_all);
-
-    const artists = app.column_2.displaying;
-    const albums = app.column_3.displaying;
-
-    // Reset positions to known good states
-    app.column_1.slice_inc = 0;
-    app.column_2.slice_inc = 0;
-    app.column_3.slice_inc = 0;
-    app.column_3.pos = 0;
-    app.column_2.pos = 0;
-    app.column_1.pos = 0;
-
-    // Rearrange columns
-    app.column_1.displaying = artists;
-    app.column_2.displaying = albums;
-    app.column_3.type = .Tracks;
-    app.column_1.type = .Artists;
-    app.column_2.type = .Albums;
-
-    // Create a new slice of just the titles from SongStringAndUri objects
-    var titles = try alloc.persistentAllocator.alloc([]const u8, tracks_from_album.len);
-
-    for (tracks_from_album, 0..) |song, i| {
-        titles[i] = song.string;
-    }
-
-    app.column_3.displaying = titles;
-
-    // Clear any temporary allocations again
-    _ = alloc.respArena.reset(.free_all);
 }
 
 // Handle Enter key press in browser mode
@@ -967,22 +939,24 @@ fn browserHandleEnter(app: *state.State) !void {
                     }
                 },
                 .Albums => {
-                    if (next_col_ready) mpd.addList(alloc.typingAllocator, tracks_from_album) catch return error.CommandFailed;
+                    const tracks = node_buffer.tracks orelse return error.NoTracks;
+                    if (next_col_ready) mpd.addList(alloc.typingAllocator, tracks) catch return error.CommandFailed;
                 },
                 else => return,
             }
         },
         .three => {
+            const tracks = node_buffer.tracks orelse return error.NoTracks;
             switch (app.column_3.type) {
                 .Tracks => {
                     const pos = app.column_3.absolutePos();
-                    if (pos < tracks_from_album.len) {
-                        const uri = tracks_from_album[pos].uri;
+                    if (pos < tracks.len) {
+                        const uri = tracks[pos].uri;
                         try mpd.addFromUri(alloc.typingAllocator, uri);
                     }
                 },
                 .Albums => {
-                    if (next_col_ready) mpd.addList(alloc.typingAllocator, tracks_from_album) catch return error.CommandFailed;
+                    if (next_col_ready) mpd.addList(alloc.typingAllocator, tracks) catch return error.CommandFailed;
                 },
                 else => return,
             }
@@ -992,78 +966,33 @@ fn browserHandleEnter(app: *state.State) !void {
 
 // Handle key release events specifically for the browser
 fn handleBrowseKeyRelease(char: u8, app: *state.State, render_state: *RenderState) !void {
+    if (node_buffer.index != 1) return;
+    log("--RELEASE--", .{});
     switch (char) {
-        'j', 'k', 'l', '\n', '\r', 'g', 'G', 'd' & '\x1F', 'u' & '\x1F' => {
-            // Only update column 3 when column 2 is selected and has items
-            switch (app.selected_column) {
-                .two => {
-                    if (app.column_2.displaying.len == 0) return;
-                    if (app.column_2.type == .Tracks) return;
-
-                    try browserUpdateColumn3FromColumn2(app);
-                    render_state.browse_three = true;
+        'j', 'k', 'g', 'G', 'd' & '\x1F', 'u' & '\x1F' => {
+            const current = getCurrent(app, render_state);
+            switch (current.col.type) {
+                .Albums => {
+                    node_buffer.find_filter.album = current.col.displaying[current.col.absolutePos()];
                 },
-                .three => {
-                    if (app.column_3.type == .Tracks) return;
-                    if (app.column_3.displaying.len == 0) return;
-                    app.find_filter.album = app.column_3.displaying[app.column_3.absolutePos()];
-                    tracks_from_album = try mpd.findTracksFromAlbum(&app.find_filter, alloc.respAllocator, alloc.typingAllocator);
+                .Artists => {
+                    node_buffer.find_filter.artist = current.col.displaying[current.col.absolutePos()];
                 },
                 else => return,
             }
+            const next_ren = getNext(app, render_state);
+            const next_col = if (getNext(app, render_state)) |next| next.col else null;
+            try node_buffer.setNodes(next_col, alloc.respAllocator, alloc.typingAllocator);
+            if (next_ren) |next| next.render_col.* = true;
         },
-        else => {
-            log("unrecognized key", .{});
+        'l' => {
+            const next_ren = getNext(app, render_state);
+            const next_col = if (getNext(app, render_state)) |next| next.col else null;
+            try node_buffer.setNodes(next_col, alloc.respAllocator, alloc.typingAllocator);
+            if (next_ren) |next| next.render_col.* = true;
         },
+        else => return,
     }
-}
-
-// Update column 3 content based on column 2 selection
-fn browserUpdateColumn3FromColumn2(app: *state.State) !void {
-    // Check if there's anything to display
-    if (app.column_2.displaying.len == 0) return;
-
-    // Get the actual index with slice_inc offset
-    const actual_index = app.column_2.absolutePos();
-
-    // Make sure the index is valid
-    if (actual_index >= app.column_2.displaying.len) return;
-
-    // First, reset any previous allocations to avoid memory leaks
-    _ = alloc.respArena.reset(.free_all);
-
-    var next_col_display: [][]const u8 = undefined;
-
-    switch (app.column_2.type) {
-        .Albums => {
-            app.find_filter.album = app.column_2.displaying[actual_index];
-            log("album: {s}", .{app.find_filter.album});
-
-            // Use respAllocator for temporary allocations
-            tracks_from_album = try mpd.findTracksFromAlbum(&app.find_filter, alloc.respAllocator, alloc.persistentAllocator);
-
-            // Create a new slice of just the titles
-            // Use persistentAllocator for longer-lived data
-            var titles = try alloc.persistentAllocator.alloc([]const u8, tracks_from_album.len);
-            for (tracks_from_album, 0..) |song, i| {
-                titles[i] = song.string;
-            }
-            next_col_display = titles;
-        },
-        .Artists => {
-            app.find_filter.artist = app.column_2.displaying[actual_index];
-            // Use persistentAllocator for the results since they need to live longer
-            next_col_display = try mpd.findAlbumsFromArtists(app.column_2.displaying[actual_index], alloc.respAllocator, alloc.persistentAllocator);
-        },
-        .Tracks => return,
-        else => unreachable,
-    }
-
-    // Any intermediate temp data that was allocated in respAllocator can now be freed
-    _ = alloc.respArena.reset(.free_all);
-
-    app.column_3.displaying = next_col_display;
-    app.column_3.slice_inc = 0; // Reset slice increment for the third column
 }
 
 // ---- Utility Functions ----

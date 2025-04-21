@@ -6,6 +6,7 @@ const log = @import("util.zig").log;
 const RenderState = @import("render.zig").RenderState;
 const expect = std.testing.expect;
 const time = std.time;
+const mem = std.mem;
 
 const alloc = @import("allocators.zig");
 const wrkallocator = alloc.wrkallocator;
@@ -35,8 +36,6 @@ pub const State = struct {
     column_1: BrowseColumn,
     column_2: BrowseColumn,
     column_3: BrowseColumn,
-
-    find_filter: mpd.Filter_Songs,
 
     input_state: input.Input_State,
 };
@@ -103,6 +102,22 @@ pub const Columns = enum {
     one,
     two,
     three,
+
+    pub fn increment(self: *Columns) !void {
+        self.* = switch (self.*) {
+            .one => .two,
+            .two => .three,
+            .three => return error.EnumIncrement,
+        };
+    }
+
+    pub fn decrement(self: *Columns) !void {
+        self.* = switch (self.*) {
+            .one => return error.EnumIncrement,
+            .two => .one,
+            .three => .two,
+        };
+    }
 };
 
 pub const Column_Type = enum {
@@ -111,6 +126,226 @@ pub const Column_Type = enum {
     Albums,
     Tracks,
     None,
+};
+
+const CallbackType = enum {
+    AlbumsFromArtist,
+    TitlesFromTracks,
+};
+const DisplayCallback = union(CallbackType) {
+    AlbumsFromArtist: struct {
+        func: *const fn ([]const u8, mem.Allocator, mem.Allocator) anyerror![][]const u8,
+        artist: []const u8,
+    },
+    TitlesFromTracks: struct {
+        func: *const fn ([]mpd.SongStringAndUri, mem.Allocator) anyerror![][]const u8,
+        tracks: []mpd.SongStringAndUri,
+    },
+};
+
+//A node is a virtual column.
+pub const BrowseNode = struct {
+    pos: u8,
+    slice_inc: usize,
+    displaying: ?[]const []const u8,
+    callback_type: ?CallbackType,
+    type: Column_Type,
+
+    fn setCallback(self: *const BrowseNode, selected_artist: ?[]const u8, tracks: ?[]mpd.SongStringAndUri) !DisplayCallback {
+        if (self.callback_type) |type_| {
+            return switch (type_) {
+                .AlbumsFromArtist => DisplayCallback{ .AlbumsFromArtist = .{
+                    .func = &mpd.findAlbumsFromArtists,
+                    .artist = selected_artist orelse return error.CallbackMishandled,
+                } },
+                .TitlesFromTracks => DisplayCallback{ .TitlesFromTracks = .{
+                    .func = &mpd.titlesFromTracks,
+                    .tracks = tracks orelse return error.CallbackMishandled,
+                } },
+            };
+        } else return error.NodeError;
+    }
+
+    fn displayingCallback(self: *BrowseNode, cb: DisplayCallback, temp_alloc: mem.Allocator, pers_alloc: mem.Allocator) !void {
+        self.displaying = switch (cb) {
+            .AlbumsFromArtist => |data| try data.func(data.artist, temp_alloc, pers_alloc),
+            .TitlesFromTracks => |data| try data.func(data.tracks, temp_alloc),
+        };
+    }
+};
+
+const NodeApex = enum {
+    Albums,
+    Artists,
+    Tracks,
+    UNSET,
+};
+
+pub const browse_types: [3][]const u8 = .{ "Albums", "Artists", "Songs" };
+
+//Virtual representation of the browser independent of columns
+//Allows to save state of the browser regardless of column layout
+pub const Browser = struct {
+    const Direction = enum {
+        forward,
+        backward,
+    };
+    buf: [4]?BrowseNode,
+    index: u8,
+    len: u8,
+    apex: NodeApex,
+    tracks: ?[]mpd.SongStringAndUri,
+    find_filter: mpd.Filter_Songs,
+
+    pub fn init(selected: Column_Type, data: Data) Browser {
+        return switch (selected) {
+            .Albums => Browser{
+                .buf = .{
+                    .{ .pos = 1, .slice_inc = 0, .displaying = &browse_types, .callback_type = null, .type = .Select },
+                    .{ .pos = 0, .slice_inc = 0, .displaying = data.albums, .callback_type = null, .type = .Albums },
+                    .{ .pos = 0, .slice_inc = 0, .displaying = null, .callback_type = .TitlesFromTracks, .type = .Tracks },
+                    null,
+                },
+                .apex = .Albums,
+                .index = 0,
+                .len = 3,
+                .tracks = null,
+                .find_filter = .{
+                    .artist = null,
+                    .album = data.albums[0],
+                },
+            },
+            .Artists => Browser{
+                .buf = .{
+                    .{ .pos = 2, .slice_inc = 0, .displaying = &browse_types, .callback_type = null, .type = .Select },
+                    .{ .pos = 0, .slice_inc = 0, .displaying = data.artists, .callback_type = null, .type = .Artists },
+                    .{ .pos = 0, .slice_inc = 0, .displaying = null, .callback_type = .AlbumsFromArtist, .type = .Albums },
+                    .{ .pos = 0, .slice_inc = 0, .displaying = null, .callback_type = .TitlesFromTracks, .type = .Tracks },
+                },
+                .apex = .Artists,
+                .index = 0,
+                .len = 4,
+                .tracks = null,
+                .find_filter = .{
+                    .artist = data.artists[0],
+                    .album = null,
+                },
+            },
+            .Tracks => Browser{
+                .buf = .{
+                    .{ .pos = 3, .slice_inc = 0, .displaying = &browse_types, .callback_type = null, .type = .Select },
+                    .{ .pos = 0, .slice_inc = 0, .displaying = data.song_titles, .callback_type = null, .type = .Tracks },
+                    null,
+                    null,
+                },
+                .apex = .Tracks,
+                .index = 0,
+                .len = 2,
+                .tracks = data.songs,
+                .find_filter = .{
+                    .artist = null,
+                    .album = null,
+                },
+            },
+            else => unreachable,
+        };
+    }
+
+    fn saveNode(self: *Browser, column: *const BrowseColumn) void {
+        var node: BrowseNode = self.buf[self.index].?;
+        node.pos = column.pos;
+        node.slice_inc = column.slice_inc;
+        if (node.displaying == null) node.displaying = column.displaying;
+    }
+
+    pub fn setNodes(
+        self: *Browser,
+        next_column: ?*BrowseColumn,
+        temp_alloc: mem.Allocator,
+        pers_alloc: mem.Allocator,
+    ) !void {
+        if (self.index != 1) return error.NotApex;
+        const next_node: *BrowseNode = try self.getNextNode();
+        switch (self.apex) {
+            .Albums => {
+                const tracks = try mpd.findTracksFromAlbum(self.find_filter, alloc.respAllocator, alloc.typingAllocator);
+                self.tracks = tracks;
+                const cb = try next_node.setCallback(null, tracks);
+                try next_node.displayingCallback(cb, temp_alloc, pers_alloc);
+                if (next_column) |col| col.displaying = next_node.displaying.?;
+            },
+            .Artists => {
+                const final: *BrowseNode = if (self.buf[self.index + 2]) |*node| node else return error.NoNode;
+                var cb = try next_node.setCallback(self.find_filter.artist, null);
+                try next_node.displayingCallback(cb, temp_alloc, pers_alloc);
+                if (next_column) |col| col.displaying = next_node.displaying.?;
+                self.find_filter.album = next_node.displaying.?[0];
+                self.tracks = try mpd.findTracksFromAlbum(self.find_filter, alloc.respAllocator, alloc.typingAllocator);
+                cb = try final.setCallback(null, self.tracks);
+                try final.displayingCallback(cb, temp_alloc, pers_alloc);
+                log("final node Displaying {s}", .{final.displaying.?[0]});
+            },
+            .Tracks => return,
+            .UNSET => return error.UnsetApex,
+        }
+        log("next_node Displaying {s}", .{next_node.displaying.?[0]});
+    }
+    //Next node has to be synchronised during scroll
+    //Synchronize node from column on column switch
+    pub fn incrementNode(self: *Browser, column: *BrowseColumn, next_column: ?*BrowseColumn, selected_col: *Columns, nColumns: u8) !bool {
+        saveNode(self, column);
+        log("len: {}", .{self.len});
+        if (self.len > nColumns and selected_col.* == .two and (nColumns - self.index) > 1) {
+            var next = self.buf[self.index + 1] orelse return error.NextNode;
+            log("--next type--: {}", .{next.type});
+            const next_displaying: []const []const u8 = next.displaying orelse return error.NextNode;
+            column.displaying = next_displaying;
+            column.pos = next.pos;
+            column.slice_inc = next.slice_inc;
+            column.type = next.type;
+            self.index += 1;
+            next = self.buf[self.index + 1] orelse return error.NextNode;
+            const next_col: *BrowseColumn = next_column orelse return error.NoColumn;
+            next_col.displaying = next.displaying.?;
+            return false;
+        } else {
+            try selected_col.increment();
+            self.index += 1;
+            return true;
+        }
+    }
+
+    pub fn decrementNode(self: *Browser, column: BrowseColumn, selected_col: *Columns, nColumns: u8) !void {
+        saveNode(self, column);
+        if (self.len > nColumns and selected_col == .two and (nColumns - self.index) < 1) {
+            const prev = self.buf[self.index - 1].?;
+            column.displaying = prev.displaying.?;
+            column.pos = prev.pos;
+            column.slice_inc = prev.slice_inc;
+            column.type = prev.type;
+        } else try selected_col.decrement();
+        self.index -= 1;
+    }
+
+    pub fn getCurrentNode(self: *Browser) !*BrowseNode {
+        // if (self.index == self.len - 1) return error.indexError;
+
+        if (self.buf[self.index]) |*node| {
+            return node;
+        } else {
+            return error.NoNode;
+        }
+    }
+
+    pub fn getNextNode(self: *Browser) !*BrowseNode {
+        // if (self.index == self.len - 1) return error.indexError;
+
+        if (self.buf[self.index + 1]) |*node| {
+            return node;
+        } else {
+            return error.NoNode;
+        }
+    }
 };
 
 pub const BrowseColumn = struct {

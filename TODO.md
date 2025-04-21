@@ -42,6 +42,7 @@
 - [ ] True color
 - [ ] shift arrow to seek faster
 - [ ] return to original state, whatever was printed before running goes back to being visible
+- [ ] schedule interface to release?
 - [x] X -> clear queue
 - [x] browser typing
 - [x] search in browser
