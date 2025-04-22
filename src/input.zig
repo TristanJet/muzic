@@ -57,7 +57,6 @@ var node_buffer: state.Browser = state.Browser{
     .index = 0,
     .len = 1,
 };
-var selected_column: u8 = 0;
 
 pub const Input_State = enum {
     normal_queue,
@@ -170,22 +169,11 @@ fn onBrowseExit(app: *state.State, render_state: *RenderState) void {
     render_state.clear_browse_cursor_two = true;
     render_state.clear_browse_cursor_three = true;
 
-    // Make sure we safely restore the column state
-    if (app.column_3.type == .Tracks and app.column_1.type == .Artists) {
-        revertSwitcheroo(app);
-    } else {
-        // Ensure safe default display state anyway
-        app.column_1.type = .Select;
-        app.column_1.displaying = state.browse_types[0..];
-        app.column_1.pos = 0;
-        app.column_1.slice_inc = 0;
-    }
-
     // Reset application state
     app.input_state = .normal_queue;
     app.selected_column = .one;
     node_buffer.find_filter = mpd.Filter_Songs{
-        .album = undefined,
+        .album = null,
         .artist = null,
     };
     // Reset memory arenas - keep these together
@@ -437,20 +425,36 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
         'j' => {
             const current: ColumnWithRender = getCurrent(app, render_state);
             const next: ?ColumnWithRender = getNext(app, render_state);
-            const prev: ?ColumnWithRender = getPrev(app, render_state);
-            try browserScrollVertical(.down, current, next, prev, app);
+            try browserScrollVertical(.down, current, next);
         },
         'k' => {
             const current: ColumnWithRender = getCurrent(app, render_state);
             const next: ?ColumnWithRender = getNext(app, render_state);
-            const prev: ?ColumnWithRender = getPrev(app, render_state);
-            try browserScrollVertical(.up, current, next, prev, app);
+            try browserScrollVertical(.up, current, next);
         },
         'd' & '\x1F' => try halfDown(app, render_state),
         'u' & '\x1F' => try halfUp(app, render_state),
-        'g' => goTop(app, render_state),
-        'G' => goBottom(app, render_state),
-        'h' => browserNavigateLeft(app, render_state),
+        'g' => try goTop(app, render_state),
+        'G' => try goBottom(app, render_state),
+        'h' => {
+            const initial = getCurrent(app, render_state);
+            const current_node = try node_buffer.getCurrentNode();
+            if (current_node.type == .Select) return;
+
+            const prev_ren = getPrev(app, render_state);
+            const prev_col = if (prev_ren) |prev| prev.col else null;
+            const col_switched: bool = try node_buffer.decrementNode(initial.col, prev_col, &app.selected_column, 3);
+            app.node_switched = true;
+            if (col_switched) {
+                initial.render_col.* = true;
+                initial.clear_cursor.* = true;
+                prev_ren.?.render_col.* = true;
+                prev_ren.?.render_cursor.* = true;
+            } else {
+                initial.render_col.* = true;
+                initial.render_cursor.* = true;
+            }
+        },
         'l' => {
             log("--L PRESS--", .{});
             log("node index {}", .{node_buffer.index});
@@ -464,7 +468,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
             }
             const current = getCurrent(app, render_state);
 
-            if (current.col.type == .Select) {
+            if (node.type == .Select) {
                 const selected: state.Column_Type = switch (current.col.pos) {
                     0 => .Albums,
                     1 => .Artists,
@@ -477,6 +481,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
             const next_ren = getNext(app, render_state);
             const next_col = if (next_ren) |next| next.col else null;
             const column_switched: bool = try node_buffer.incrementNode(current.col, next_col, &app.selected_column, 3);
+            app.node_switched = true;
             if (column_switched) {
                 const prev = getPrev(app, render_state);
                 const current_final = getCurrent(app, render_state);
@@ -494,7 +499,10 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
             current.clear_cursor.* = true;
             current.render_col.* = true;
         },
-        '\n', '\r' => try browserHandleEnter(app),
+        '\n', '\r' => {
+            const current = getCurrent(app, render_state);
+            try browserHandleEnter(current);
+        },
         else => return,
     }
 }
@@ -502,8 +510,6 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
 fn halfUp(app: *state.State, render_state: *RenderState) !void {
     // Ctrl-u: Move up half the screen height (like vim)
     const current: ColumnWithRender = getCurrent(app, render_state);
-    const next: ?ColumnWithRender = getNext(app, render_state);
-    const prev: ?ColumnWithRender = getPrev(app, render_state);
 
     const half_height = y_len / 2;
     var move_up: usize = 0;
@@ -530,15 +536,12 @@ fn halfUp(app: *state.State, render_state: *RenderState) !void {
         current.render_cursor.* = true;
 
         // Handle column dependencies
-        try handleColumnDependencies(current, next, prev, app);
     }
 }
 
 fn halfDown(app: *state.State, render_state: *RenderState) !void {
     // Ctrl-d: Move down half the screen height (like vim)
     const current: ColumnWithRender = getCurrent(app, render_state);
-    const next: ?ColumnWithRender = getNext(app, render_state);
-    const prev: ?ColumnWithRender = getPrev(app, render_state);
 
     const half_height = y_len / 2;
     var move_down: usize = 0;
@@ -571,13 +574,10 @@ fn halfDown(app: *state.State, render_state: *RenderState) !void {
 
         current.render_col.* = true;
         current.render_cursor.* = true;
-
-        // Handle column dependencies
-        try handleColumnDependencies(current, next, prev, app);
     }
 }
 
-fn goTop(app: *state.State, render_state: *RenderState) void {
+fn goTop(app: *state.State, render_state: *RenderState) !void {
     // Go to top of current column
     const current: ColumnWithRender = getCurrent(app, render_state);
     current.col.pos = 0;
@@ -587,22 +587,17 @@ fn goTop(app: *state.State, render_state: *RenderState) void {
 
     // Handle potential column dependencies
     const next: ?ColumnWithRender = getNext(app, render_state);
-    if (current.col.type == .Select) {
+    const curr_node = try node_buffer.getCurrentNode();
+    if (curr_node.type == .Select) {
         select_pos = current.col.pos;
         // Update column 2 based on select position
-        switch (current.col.pos) {
-            0 => browserSetColumn2ToAlbums(app),
-            1 => browserSetColumn2ToArtists(app),
-            2 => browserSetColumn2ToTracks(app),
-            else => {},
-        }
         if (next) |next_col| {
             next_col.render_col.* = true;
         }
     }
 }
 
-fn goBottom(app: *state.State, render_state: *RenderState) void {
+fn goBottom(app: *state.State, render_state: *RenderState) !void {
     // Go to bottom of current column
     const current: ColumnWithRender = getCurrent(app, render_state);
     if (current.col.displaying.len > 0) {
@@ -618,15 +613,10 @@ fn goBottom(app: *state.State, render_state: *RenderState) void {
 
         // Handle potential column dependencies
         const next: ?ColumnWithRender = getNext(app, render_state);
-        if (current.col.type == .Select) {
+        const curr_node = try node_buffer.getCurrentNode();
+        if (curr_node.type == .Select) {
             select_pos = current.col.pos;
             // Update column 2 based on select position
-            switch (current.col.pos) {
-                0 => browserSetColumn2ToAlbums(app),
-                1 => browserSetColumn2ToArtists(app),
-                2 => browserSetColumn2ToTracks(app),
-                else => {},
-            }
             if (next) |next_col| {
                 next_col.render_col.* = true;
             }
@@ -641,7 +631,8 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState) !void {
         current.col.prev_pos = 0;
         current.col.slice_inc = 0;
 
-        search_strings = switch (current.col.type) {
+        const curr_node = try node_buffer.getCurrentNode();
+        search_strings = switch (curr_node.type) {
             .Albums => data.albums,
             .Artists => data.artists,
             .Tracks => data.song_titles,
@@ -654,7 +645,8 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState) !void {
             const escRead = try term.readEscapeCode(&escBuffer);
 
             if (escRead == 0) {
-                current.col.displaying = switch (current.col.type) {
+                const curr_node = try node_buffer.getCurrentNode();
+                current.col.displaying = switch (curr_node.type) {
                     .Albums => data.albums,
                     .Artists => data.artists,
                     else => return error.BadSearch,
@@ -748,92 +740,31 @@ fn getNext(app: *state.State, render_state: *RenderState) ?ColumnWithRender {
         .three => null,
     };
 }
-// Helper function to handle column dependencies (used by browserScrollVertical and Ctrl-u/d)
-fn handleColumnDependencies(
-    current: ColumnWithRender,
-    next: ?ColumnWithRender,
-    prev: ?ColumnWithRender,
-    app: *state.State,
-) !void {
-    if (current.col.type == .Select) {
-        // Update column 2 content based on column 1 selection
-        select_pos = current.col.pos;
-        switch (current.col.pos) {
-            0 => browserSetColumn2ToAlbums(app),
-            1 => browserSetColumn2ToArtists(app),
-            2 => browserSetColumn2ToTracks(app),
-            else => unreachable,
-        }
-        const next_col = next orelse return error.NextError;
-        next_col.render_col.* = true;
-    } else {
-        //if not select, if not final, then reset the position of the next one
-        if (next) |next_col| {
-            if (next_col.col.pos != 0) next_col.col.pos = 0;
-        }
-    }
-
-    if (prev) |prev_col| {
-        if (prev_col.col.type == .Select) {
-            switch (current.col.type) {
-                .Albums => {
-                    all_albums_pos = current.col.pos;
-                    all_albums_inc = current.col.slice_inc;
-                },
-                .Artists => {
-                    all_artists_pos = current.col.pos;
-                    all_artists_inc = current.col.slice_inc;
-                },
-                .Tracks => {
-                    all_songs_pos = current.col.pos;
-                    all_songs_inc = current.col.slice_inc;
-                },
-                else => {},
-            }
-        }
-    }
-}
 
 // Browser vertical scrolling - handles all three columns in one place
-fn browserScrollVertical(
-    dir: cursorDirection,
-    current: ColumnWithRender,
-    next: ?ColumnWithRender,
-    prev: ?ColumnWithRender,
-    app: *state.State,
-) !void {
+fn browserScrollVertical(dir: cursorDirection, current: ColumnWithRender, next: ?ColumnWithRender) !void {
     next_col_ready = false;
     const max: ?u8 = if (dir == .up) null else @intCast(@min(y_len, current.col.displaying.len));
     current.col.scroll(dir, max, y_len);
 
-    try handleColumnDependencies(current, next, prev, app);
-
+    const curr_node = try node_buffer.getCurrentNode();
+    if (curr_node.type == .Select) {
+        const next_col = next orelse return error.NoNext;
+        if (node_buffer.apex == .UNSET) {
+            next_col.col.displaying = switch (current.col.pos) {
+                0 => data.albums,
+                1 => data.artists,
+                2 => data.song_titles,
+                else => return error.ScrollOverflow,
+            };
+        } else {}
+        next_col.render_col.* = true;
+    } else {
+        log("here! ", .{});
+        try node_buffer.zeroForward();
+    }
     current.render_col.* = true;
     current.render_cursor.* = true;
-}
-
-fn browserSetColumn2ToAlbums(app: *state.State) void {
-    app.column_2.type = .Albums;
-    app.column_3.type = .Artists;
-    app.column_2.slice_inc = all_albums_inc;
-    app.column_2.pos = all_albums_pos;
-    app.column_2.displaying = data.albums;
-}
-
-fn browserSetColumn2ToArtists(app: *state.State) void {
-    app.column_2.type = .Artists;
-    app.column_3.type = .Albums;
-    app.column_2.slice_inc = all_artists_inc;
-    app.column_2.pos = all_artists_pos;
-    app.column_2.displaying = data.artists;
-}
-
-fn browserSetColumn2ToTracks(app: *state.State) void {
-    app.column_2.type = .Tracks;
-    app.column_3.type = .None;
-    app.column_2.slice_inc = all_songs_inc;
-    app.column_2.pos = all_songs_pos;
-    app.column_2.displaying = data.song_titles;
 }
 
 // Browser left navigation - handles column dependency
@@ -926,41 +857,30 @@ fn browserMoveFromColumn1ToColumn2(app: *state.State, render_state: *RenderState
 }
 
 // Handle Enter key press in browser mode
-fn browserHandleEnter(app: *state.State) !void {
-    switch (app.selected_column) {
-        .one => return,
-        .two => {
-            switch (app.column_2.type) {
-                .Tracks => {
-                    const pos = app.column_2.absolutePos();
-                    if (pos < data.songs.len) {
-                        const uri = data.songs[pos].uri;
-                        try mpd.addFromUri(alloc.typingAllocator, uri);
-                    }
-                },
-                .Albums => {
-                    const tracks = node_buffer.tracks orelse return error.NoTracks;
-                    if (next_col_ready) mpd.addList(alloc.typingAllocator, tracks) catch return error.CommandFailed;
-                },
-                else => return,
+// dependency only needed in one branch
+fn browserHandleEnter(curr_col: ColumnWithRender) !void {
+    const curr_node = try node_buffer.getCurrentNode();
+    switch (curr_node.type) {
+        .Tracks => {
+            const pos = curr_col.col.absolutePos();
+            if (node_buffer.apex == .Tracks) {
+                if (pos < data.songs.len) {
+                    const uri = data.songs[pos].uri;
+                    try mpd.addFromUri(alloc.typingAllocator, uri);
+                    return;
+                } else return error.OutOfBounds;
             }
-        },
-        .three => {
             const tracks = node_buffer.tracks orelse return error.NoTracks;
-            switch (app.column_3.type) {
-                .Tracks => {
-                    const pos = app.column_3.absolutePos();
-                    if (pos < tracks.len) {
-                        const uri = tracks[pos].uri;
-                        try mpd.addFromUri(alloc.typingAllocator, uri);
-                    }
-                },
-                .Albums => {
-                    if (next_col_ready) mpd.addList(alloc.typingAllocator, tracks) catch return error.CommandFailed;
-                },
-                else => return,
-            }
+            if (pos < tracks.len) {
+                const uri = tracks[pos].uri;
+                try mpd.addFromUri(alloc.typingAllocator, uri);
+            } else return error.OutOfBounds;
         },
+        .Albums => {
+            const tracks = node_buffer.tracks orelse return error.NoTracks;
+            if (next_col_ready) mpd.addList(alloc.typingAllocator, tracks) catch return error.CommandFailed;
+        },
+        else => return,
     }
 }
 
@@ -970,13 +890,14 @@ fn handleBrowseKeyRelease(char: u8, app: *state.State, render_state: *RenderStat
     log("--RELEASE--", .{});
     switch (char) {
         'j', 'k', 'g', 'G', 'd' & '\x1F', 'u' & '\x1F' => {
-            const current = getCurrent(app, render_state);
-            switch (current.col.type) {
+            const curr_node = try node_buffer.getCurrentNode();
+            const curr_col = getCurrent(app, render_state);
+            switch (curr_node.type) {
                 .Albums => {
-                    node_buffer.find_filter.album = current.col.displaying[current.col.absolutePos()];
+                    node_buffer.find_filter.album = curr_col.col.displaying[curr_col.col.absolutePos()];
                 },
                 .Artists => {
-                    node_buffer.find_filter.artist = current.col.displaying[current.col.absolutePos()];
+                    node_buffer.find_filter.artist = curr_col.col.displaying[curr_col.col.absolutePos()];
                 },
                 else => return,
             }

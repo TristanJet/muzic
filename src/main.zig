@@ -98,22 +98,20 @@ pub fn main() !void {
             .pos = 0,
             .prev_pos = 0,
             .slice_inc = 0,
-            .type = .Select,
         },
         .column_2 = state.BrowseColumn{
             .displaying = data.albums,
             .pos = 0,
             .prev_pos = 0,
             .slice_inc = 0,
-            .type = .Albums,
         },
         .column_3 = state.BrowseColumn{
             .displaying = undefined,
             .pos = 0,
             .prev_pos = 0,
             .slice_inc = 0,
-            .type = .Tracks,
         },
+        .node_switched = false,
 
         .input_state = .normal_queue,
     };

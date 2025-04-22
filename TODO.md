@@ -1,6 +1,8 @@
 # MUZIG
 
 ## Bugs/Fixes
+- [ ] cursor reset -- render function and save apex
+
 **V1**
 - [ ] initial config settings
 - [ ] cursor on third column needs to reset

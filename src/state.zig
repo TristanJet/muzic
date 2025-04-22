@@ -36,6 +36,7 @@ pub const State = struct {
     column_1: BrowseColumn,
     column_2: BrowseColumn,
     column_3: BrowseColumn,
+    node_switched: bool,
 
     input_state: input.Input_State,
 };
@@ -142,7 +143,6 @@ const DisplayCallback = union(CallbackType) {
         tracks: []mpd.SongStringAndUri,
     },
 };
-
 //A node is a virtual column.
 pub const BrowseNode = struct {
     pos: u8,
@@ -150,6 +150,21 @@ pub const BrowseNode = struct {
     displaying: ?[]const []const u8,
     callback_type: ?CallbackType,
     type: Column_Type,
+
+    fn resetPos(self: *BrowseNode) void {
+        self.pos = 0;
+        self.slice_inc = 0;
+    }
+
+    fn posFromColumn(self: *BrowseNode, column: *const BrowseColumn) void {
+        self.pos = column.pos;
+        self.slice_inc = column.slice_inc;
+    }
+
+    fn posToColumn(self: *const BrowseNode, column: *BrowseColumn) void {
+        column.pos = self.pos;
+        column.slice_inc = self.slice_inc;
+    }
 
     fn setCallback(self: *const BrowseNode, selected_artist: ?[]const u8, tracks: ?[]mpd.SongStringAndUri) !DisplayCallback {
         if (self.callback_type) |type_| {
@@ -251,13 +266,6 @@ pub const Browser = struct {
         };
     }
 
-    fn saveNode(self: *Browser, column: *const BrowseColumn) void {
-        var node: BrowseNode = self.buf[self.index].?;
-        node.pos = column.pos;
-        node.slice_inc = column.slice_inc;
-        if (node.displaying == null) node.displaying = column.displaying;
-    }
-
     pub fn setNodes(
         self: *Browser,
         next_column: ?*BrowseColumn,
@@ -293,38 +301,53 @@ pub const Browser = struct {
     //Next node has to be synchronised during scroll
     //Synchronize node from column on column switch
     pub fn incrementNode(self: *Browser, column: *BrowseColumn, next_column: ?*BrowseColumn, selected_col: *Columns, nColumns: u8) !bool {
-        saveNode(self, column);
-        log("len: {}", .{self.len});
+        const current_node = try self.getCurrentNode();
+        current_node.posFromColumn(column);
+        log("index: {} --- pos: {}", .{ self.index, current_node.pos });
+        var next = self.buf[self.index + 1] orelse return error.NextNode;
+        const next_displaying: []const []const u8 = next.displaying orelse return error.NextNode;
         if (self.len > nColumns and selected_col.* == .two and (nColumns - self.index) > 1) {
-            var next = self.buf[self.index + 1] orelse return error.NextNode;
-            log("--next type--: {}", .{next.type});
-            const next_displaying: []const []const u8 = next.displaying orelse return error.NextNode;
             column.displaying = next_displaying;
-            column.pos = next.pos;
-            column.slice_inc = next.slice_inc;
-            column.type = next.type;
+            next.posToColumn(column);
             self.index += 1;
             next = self.buf[self.index + 1] orelse return error.NextNode;
             const next_col: *BrowseColumn = next_column orelse return error.NoColumn;
             next_col.displaying = next.displaying.?;
             return false;
         } else {
-            try selected_col.increment();
+            const next_col: *BrowseColumn = next_column orelse return error.NoColumn;
+            next_col.displaying = next_displaying;
+            next.posToColumn(next_col);
             self.index += 1;
+            try selected_col.increment();
             return true;
         }
     }
 
-    pub fn decrementNode(self: *Browser, column: BrowseColumn, selected_col: *Columns, nColumns: u8) !void {
-        saveNode(self, column);
-        if (self.len > nColumns and selected_col == .two and (nColumns - self.index) < 1) {
-            const prev = self.buf[self.index - 1].?;
-            column.displaying = prev.displaying.?;
-            column.pos = prev.pos;
-            column.slice_inc = prev.slice_inc;
-            column.type = prev.type;
-        } else try selected_col.decrement();
-        self.index -= 1;
+    pub fn decrementNode(self: *Browser, column: *BrowseColumn, prev_column: ?*BrowseColumn, selected_col: *Columns, nColumns: u8) !bool {
+        const current_node = try self.getCurrentNode();
+        current_node.posFromColumn(column);
+        log("index: {} --- pos: {}", .{ self.index, current_node.pos });
+        const prev = self.buf[self.index - 1].?;
+        const prev_displaying = prev.displaying orelse return error.NextError;
+        if (self.len > nColumns and selected_col.* == .two and (nColumns - self.index) == 1) {
+            column.displaying = prev_displaying;
+            prev.posToColumn(column);
+            self.index -= 1;
+            return false;
+        } else {
+            const prev_col: *BrowseColumn = prev_column orelse return error.NoColumn;
+            prev.posToColumn(prev_col);
+            self.index -= 1;
+            try selected_col.decrement();
+            return true;
+        }
+    }
+
+    pub fn zeroForward(self: *Browser) !void {
+        for (self.index + 1..self.len) |i| {
+            self.buf[i].?.resetPos();
+        }
     }
 
     pub fn getCurrentNode(self: *Browser) !*BrowseNode {
@@ -353,7 +376,6 @@ pub const BrowseColumn = struct {
     prev_pos: u8,
     slice_inc: usize,
     displaying: []const []const u8,
-    type: Column_Type,
 
     pub fn absolutePos(self: *const BrowseColumn) usize {
         return self.pos + self.slice_inc;
