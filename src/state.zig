@@ -277,9 +277,8 @@ pub const Browser = struct {
             .Albums => {
                 if (self.index != 1) return false;
                 const next_node: *BrowseNode = try self.getNextNode();
-                const tracks = try mpd.findTracksFromAlbum(self.find_filter, alloc.respAllocator, alloc.typingAllocator);
-                self.tracks = tracks;
-                const cb = try next_node.setCallback(null, tracks);
+                self.tracks = try mpd.findTracksFromAlbum(self.find_filter, alloc.respAllocator, alloc.typingAllocator);
+                const cb = try next_node.setCallback(null, self.tracks);
                 try next_node.displayingCallback(cb, temp_alloc, pers_alloc);
                 if (next_column) |col| col.displaying = next_node.displaying.?;
                 return true;
@@ -299,8 +298,8 @@ pub const Browser = struct {
                     return true;
                 } else if (self.index == 2) {
                     const next_node: *BrowseNode = try self.getNextNode();
-                    const tracks = try mpd.findTracksFromAlbum(self.find_filter, alloc.respAllocator, alloc.typingAllocator);
-                    const cb = try next_node.setCallback(null, tracks);
+                    self.tracks = try mpd.findTracksFromAlbum(self.find_filter, alloc.respAllocator, alloc.typingAllocator);
+                    const cb = try next_node.setCallback(null, self.tracks);
                     try next_node.displayingCallback(cb, temp_alloc, pers_alloc);
                     if (next_column) |col| col.displaying = next_node.displaying.?;
                     return true;

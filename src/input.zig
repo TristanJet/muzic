@@ -891,10 +891,10 @@ fn handleBrowseKeyRelease(char: u8, app: *state.State, render_state: *RenderStat
         'j', 'k', 'g', 'G', 'd' & '\x1F', 'u' & '\x1F' => {
             const curr_node = try node_buffer.getCurrentNode();
             const curr_col = getCurrent(app, render_state);
-            log("type  {}", .{curr_node.type});
             switch (curr_node.type) {
                 .Albums => {
                     node_buffer.find_filter.album = curr_col.col.displaying[curr_col.col.absolutePos()];
+                    log("Selected album: {s}", .{node_buffer.find_filter.album.?});
                 },
                 .Artists => {
                     node_buffer.find_filter.artist = curr_col.col.displaying[curr_col.col.absolutePos()];
