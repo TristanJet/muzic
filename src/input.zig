@@ -886,12 +886,12 @@ fn browserHandleEnter(curr_col: ColumnWithRender) !void {
 
 // Handle key release events specifically for the browser
 fn handleBrowseKeyRelease(char: u8, app: *state.State, render_state: *RenderState) !void {
-    if (node_buffer.index != 1) return;
     log("--RELEASE--", .{});
     switch (char) {
         'j', 'k', 'g', 'G', 'd' & '\x1F', 'u' & '\x1F' => {
             const curr_node = try node_buffer.getCurrentNode();
             const curr_col = getCurrent(app, render_state);
+            log("type  {}", .{curr_node.type});
             switch (curr_node.type) {
                 .Albums => {
                     node_buffer.find_filter.album = curr_col.col.displaying[curr_col.col.absolutePos()];
@@ -903,13 +903,15 @@ fn handleBrowseKeyRelease(char: u8, app: *state.State, render_state: *RenderStat
             }
             const next_ren = getNext(app, render_state);
             const next_col = if (getNext(app, render_state)) |next| next.col else null;
-            try node_buffer.setNodes(next_col, alloc.respAllocator, alloc.typingAllocator);
+            const resp = try node_buffer.setNodes(next_col, alloc.respAllocator, alloc.typingAllocator);
+            if (!resp) return;
             if (next_ren) |next| next.render_col.* = true;
         },
         'l' => {
             const next_ren = getNext(app, render_state);
             const next_col = if (getNext(app, render_state)) |next| next.col else null;
-            try node_buffer.setNodes(next_col, alloc.respAllocator, alloc.typingAllocator);
+            const resp = try node_buffer.setNodes(next_col, alloc.respAllocator, alloc.typingAllocator);
+            if (!resp) return;
             if (next_ren) |next| next.render_col.* = true;
         },
         else => return,

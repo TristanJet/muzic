@@ -271,32 +271,44 @@ pub const Browser = struct {
         next_column: ?*BrowseColumn,
         temp_alloc: mem.Allocator,
         pers_alloc: mem.Allocator,
-    ) !void {
-        if (self.index != 1) return error.NotApex;
-        const next_node: *BrowseNode = try self.getNextNode();
+    ) !bool {
+        log("called!", .{});
         switch (self.apex) {
             .Albums => {
+                if (self.index != 1) return false;
+                const next_node: *BrowseNode = try self.getNextNode();
                 const tracks = try mpd.findTracksFromAlbum(self.find_filter, alloc.respAllocator, alloc.typingAllocator);
                 self.tracks = tracks;
                 const cb = try next_node.setCallback(null, tracks);
                 try next_node.displayingCallback(cb, temp_alloc, pers_alloc);
                 if (next_column) |col| col.displaying = next_node.displaying.?;
+                return true;
             },
             .Artists => {
-                const final: *BrowseNode = if (self.buf[self.index + 2]) |*node| node else return error.NoNode;
-                var cb = try next_node.setCallback(self.find_filter.artist, null);
-                try next_node.displayingCallback(cb, temp_alloc, pers_alloc);
-                if (next_column) |col| col.displaying = next_node.displaying.?;
-                self.find_filter.album = next_node.displaying.?[0];
-                self.tracks = try mpd.findTracksFromAlbum(self.find_filter, alloc.respAllocator, alloc.typingAllocator);
-                cb = try final.setCallback(null, self.tracks);
-                try final.displayingCallback(cb, temp_alloc, pers_alloc);
-                log("final node Displaying {s}", .{final.displaying.?[0]});
+                if (self.index == 1) {
+                    const next_node: *BrowseNode = try self.getNextNode();
+                    const final: *BrowseNode = if (self.buf[self.index + 2]) |*node| node else return error.NoNode;
+                    var cb = try next_node.setCallback(self.find_filter.artist, null);
+                    try next_node.displayingCallback(cb, temp_alloc, pers_alloc);
+                    if (next_column) |col| col.displaying = next_node.displaying.?;
+                    self.find_filter.album = next_node.displaying.?[0];
+                    self.tracks = try mpd.findTracksFromAlbum(self.find_filter, alloc.respAllocator, alloc.typingAllocator);
+                    cb = try final.setCallback(null, self.tracks);
+                    try final.displayingCallback(cb, temp_alloc, pers_alloc);
+                    log("final node Displaying {s}", .{final.displaying.?[0]});
+                    return true;
+                } else if (self.index == 2) {
+                    const next_node: *BrowseNode = try self.getNextNode();
+                    const tracks = try mpd.findTracksFromAlbum(self.find_filter, alloc.respAllocator, alloc.typingAllocator);
+                    const cb = try next_node.setCallback(null, tracks);
+                    try next_node.displayingCallback(cb, temp_alloc, pers_alloc);
+                    if (next_column) |col| col.displaying = next_node.displaying.?;
+                    return true;
+                } else return false;
             },
-            .Tracks => return,
+            .Tracks => return false,
             .UNSET => return error.UnsetApex,
         }
-        log("next_node Displaying {s}", .{next_node.displaying.?[0]});
     }
     //Next node has to be synchronised during scroll
     //Synchronize node from column on column switch
