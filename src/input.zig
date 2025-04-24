@@ -767,95 +767,6 @@ fn browserScrollVertical(dir: cursorDirection, current: ColumnWithRender, next: 
     current.render_cursor.* = true;
 }
 
-// Browser left navigation - handles column dependency
-fn browserNavigateLeft(app: *state.State, render_state: *RenderState) void {
-    switch (app.selected_column) {
-        .one => {}, // Nothing to do when already in column 1
-        .two => {
-            app.selected_column = .one;
-            node_buffer.find_filter = mpd.Filter_Songs{
-                .album = null,
-                .artist = null,
-            };
-            app.column_1.pos = select_pos;
-            render_state.clear_browse_cursor_two = true;
-            render_state.browse_cursor_one = true;
-            render_state.clear_col_three = true;
-        },
-        .three => {
-            if (app.column_3.type == .Tracks and app.column_1.type == .Artists) {
-                revertSwitcheroo(app);
-                app.column_2.slice_inc = all_artists_inc;
-                app.column_2.pos = all_artists_pos;
-                render_state.browse_one = true;
-                render_state.browse_two = true;
-                render_state.browse_three = true;
-                render_state.browse_cursor_three = true;
-                return;
-            }
-
-            app.selected_column = .two;
-            app.column_3.pos = 0;
-            render_state.clear_browse_cursor_three = true;
-            render_state.browse_cursor_two = true;
-        },
-    }
-}
-
-fn revertSwitcheroo(app: *state.State) void {
-    // First ensure we have valid data in the columns
-    const col1Empty = app.column_1.displaying.len == 0;
-    const col2Empty = app.column_2.displaying.len == 0;
-
-    if (col1Empty or col2Empty) {
-        // Just reset to safe defaults if data is missing
-        app.column_1.type = .Select;
-        app.column_1.displaying = state.browse_types[0..];
-        app.column_2.type = .Artists;
-        app.column_2.displaying = data.artists;
-        app.column_3.type = .None;
-        app.column_3.displaying = &[_][]const u8{};
-        app.column_3.pos = 0;
-        return;
-    }
-
-    // Store references to current column data
-    const artists = app.column_1.displaying;
-    const albums = app.column_2.displaying;
-    const select = state.browse_types[0..];
-
-    // Reset positions
-    app.column_1.slice_inc = 0;
-    app.column_2.slice_inc = 0;
-    app.column_3.slice_inc = 0;
-    app.column_3.pos = 0;
-    app.column_2.pos = 0;
-    app.column_1.pos = 0;
-
-    // Rearrange columns safely
-    app.column_1.displaying = select;
-    app.column_2.displaying = artists;
-    app.column_3.displaying = albums;
-    app.column_3.type = .Albums;
-    app.column_2.type = .Artists;
-    app.column_1.type = .Select;
-}
-
-// Browser column navigation - handles moving to next column
-fn browserNextColumn() void {}
-
-fn browserMoveFromColumn1ToColumn2(app: *state.State, render_state: *RenderState) void {
-    app.column_3.type = switch (app.column_2.type) {
-        .Albums => .Tracks,
-        .Artists => .Albums,
-        .Tracks => .None,
-        else => unreachable,
-    };
-    app.selected_column = .two;
-    render_state.clear_browse_cursor_one = true;
-    render_state.browse_cursor_two = true;
-}
-
 // Handle Enter key press in browser mode
 // dependency only needed in one branch
 fn browserHandleEnter(curr_col: ColumnWithRender) !void {
@@ -866,14 +777,14 @@ fn browserHandleEnter(curr_col: ColumnWithRender) !void {
             if (node_buffer.apex == .Tracks) {
                 if (pos < data.songs.len) {
                     const uri = data.songs[pos].uri;
-                    try mpd.addFromUri(alloc.typingAllocator, uri);
+                    mpd.addFromUri(alloc.typingAllocator, uri) catch return error.CommandFailed;
                     return;
                 } else return error.OutOfBounds;
             }
             const tracks = node_buffer.tracks orelse return error.NoTracks;
             if (pos < tracks.len) {
                 const uri = tracks[pos].uri;
-                try mpd.addFromUri(alloc.typingAllocator, uri);
+                mpd.addFromUri(alloc.typingAllocator, uri) catch return error.CommandFailed;
             } else return error.OutOfBounds;
         },
         .Albums => {
@@ -894,7 +805,6 @@ fn handleBrowseKeyRelease(char: u8, app: *state.State, render_state: *RenderStat
             switch (curr_node.type) {
                 .Albums => {
                     node_buffer.find_filter.album = curr_col.col.displaying[curr_col.col.absolutePos()];
-                    log("Selected album: {s}", .{node_buffer.find_filter.album.?});
                 },
                 .Artists => {
                     node_buffer.find_filter.artist = curr_col.col.displaying[curr_col.col.absolutePos()];

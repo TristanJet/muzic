@@ -2,6 +2,7 @@
 
 ## Bugs/Fixes
 - [ ] cursor reset -- render function and save apex
+- [ ] next_col_ready reimplement
 
 **V1**
 - [ ] initial config settings

@@ -184,7 +184,7 @@ pub const BrowseNode = struct {
     fn displayingCallback(self: *BrowseNode, cb: DisplayCallback, temp_alloc: mem.Allocator, pers_alloc: mem.Allocator) !void {
         self.displaying = switch (cb) {
             .AlbumsFromArtist => |data| try data.func(data.artist, temp_alloc, pers_alloc),
-            .TitlesFromTracks => |data| try data.func(data.tracks, temp_alloc),
+            .TitlesFromTracks => |data| try data.func(data.tracks, pers_alloc),
         };
     }
 };
@@ -272,7 +272,6 @@ pub const Browser = struct {
         temp_alloc: mem.Allocator,
         pers_alloc: mem.Allocator,
     ) !bool {
-        log("called!", .{});
         switch (self.apex) {
             .Albums => {
                 if (self.index != 1) return false;
@@ -291,14 +290,13 @@ pub const Browser = struct {
                     try next_node.displayingCallback(cb, temp_alloc, pers_alloc);
                     if (next_column) |col| col.displaying = next_node.displaying.?;
                     self.find_filter.album = next_node.displaying.?[0];
-                    self.tracks = try mpd.findTracksFromAlbum(self.find_filter, alloc.respAllocator, alloc.typingAllocator);
+                    self.tracks = try mpd.findTracksFromAlbum(self.find_filter, temp_alloc, pers_alloc);
                     cb = try final.setCallback(null, self.tracks);
                     try final.displayingCallback(cb, temp_alloc, pers_alloc);
-                    log("final node Displaying {s}", .{final.displaying.?[0]});
                     return true;
                 } else if (self.index == 2) {
                     const next_node: *BrowseNode = try self.getNextNode();
-                    self.tracks = try mpd.findTracksFromAlbum(self.find_filter, alloc.respAllocator, alloc.typingAllocator);
+                    self.tracks = try mpd.findTracksFromAlbum(self.find_filter, temp_alloc, pers_alloc);
                     const cb = try next_node.setCallback(null, self.tracks);
                     try next_node.displayingCallback(cb, temp_alloc, pers_alloc);
                     if (next_column) |col| col.displaying = next_node.displaying.?;
@@ -314,7 +312,6 @@ pub const Browser = struct {
     pub fn incrementNode(self: *Browser, column: *BrowseColumn, next_column: ?*BrowseColumn, selected_col: *Columns, nColumns: u8) !bool {
         const current_node = try self.getCurrentNode();
         current_node.posFromColumn(column);
-        log("index: {} --- pos: {}", .{ self.index, current_node.pos });
         var next = self.buf[self.index + 1] orelse return error.NextNode;
         const next_displaying: []const []const u8 = next.displaying orelse return error.NextNode;
         if (self.len > nColumns and selected_col.* == .two and (nColumns - self.index) > 1) {
@@ -338,7 +335,6 @@ pub const Browser = struct {
     pub fn decrementNode(self: *Browser, column: *BrowseColumn, prev_column: ?*BrowseColumn, selected_col: *Columns, nColumns: u8) !bool {
         const current_node = try self.getCurrentNode();
         current_node.posFromColumn(column);
-        log("index: {} --- pos: {}", .{ self.index, current_node.pos });
         const prev = self.buf[self.index - 1].?;
         const prev_displaying = prev.displaying orelse return error.NextError;
         if (self.len > nColumns and selected_col.* == .two and (nColumns - self.index) == 1) {
@@ -362,8 +358,7 @@ pub const Browser = struct {
     }
 
     pub fn getCurrentNode(self: *Browser) !*BrowseNode {
-        // if (self.index == self.len - 1) return error.indexError;
-
+        if (self.index >= self.len) return error.indexError;
         if (self.buf[self.index]) |*node| {
             return node;
         } else {
@@ -372,8 +367,7 @@ pub const Browser = struct {
     }
 
     pub fn getNextNode(self: *Browser) !*BrowseNode {
-        // if (self.index == self.len - 1) return error.indexError;
-
+        if (self.index >= self.len) return error.indexError;
         if (self.buf[self.index + 1]) |*node| {
             return node;
         } else {

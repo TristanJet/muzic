@@ -71,12 +71,12 @@ pub fn render(app_state: *state.State, render_state_: *RenderState, panels: wind
     if (render_state.queue) try queueRender(wrkallocator, panels.queue.validArea(), app.queue.items, app.scroll_q.slice_inc);
     if (render_state.queueEffects) try queueEffectsRender(wrkallocator, panels.queue.validArea(), app.queue.items, app.scroll_q.absolutePos(), app.scroll_q.absolutePrevPos(), app.scroll_q.slice_inc, app.input_state, app.song.id);
     if (render_state.find) try findRender(panels.find);
-    if (render_state.browse_one) try browseColumn(panels.browse1.validArea(), current.column_1.displaying, current.column_1.slice_inc);
-    if (render_state.browse_two) try browseColumn(panels.browse2.validArea(), current.column_2.displaying, current.column_2.slice_inc);
-    if (render_state.browse_three) try browseColumn(panels.browse3.validArea(), current.column_3.displaying, current.column_3.slice_inc);
-    if (render_state.browse_cursor_one) try browseCursorRender(panels.browse1.validArea(), app.column_1.displaying, app.column_1.prev_pos, app.column_1.pos, app.column_1.slice_inc, app.node_switched);
-    if (render_state.browse_cursor_two) try browseCursorRender(panels.browse2.validArea(), app.column_2.displaying, app.column_2.prev_pos, app.column_2.pos, app.column_2.slice_inc, app.node_switched);
-    if (render_state.browse_cursor_three) try browseCursorRender(panels.browse3.validArea(), app.column_3.displaying, app.column_3.prev_pos, app.column_3.pos, app.column_3.slice_inc, app.node_switched);
+    if (render_state.browse_one) try browseColumn(panels.browse1.validArea(), app.column_1.displaying, app.column_1.slice_inc);
+    if (render_state.browse_two) try browseColumn(panels.browse2.validArea(), app.column_2.displaying, app.column_2.slice_inc);
+    if (render_state.browse_three) try browseColumn(panels.browse3.validArea(), app.column_3.displaying, app.column_3.slice_inc);
+    if (render_state.browse_cursor_one) try browseCursorRender(panels.browse1.validArea(), app.column_1.displaying, app.column_1.prev_pos, app.column_1.pos, app.column_1.slice_inc, &app.node_switched);
+    if (render_state.browse_cursor_two) try browseCursorRender(panels.browse2.validArea(), app.column_2.displaying, app.column_2.prev_pos, app.column_2.pos, app.column_2.slice_inc, &app.node_switched);
+    if (render_state.browse_cursor_three) try browseCursorRender(panels.browse3.validArea(), app.column_3.displaying, app.column_3.prev_pos, app.column_3.pos, app.column_3.slice_inc, &app.node_switched);
     if (render_state.clear_browse_cursor_one) try clearCursor(panels.browse1.validArea(), current.column_1.displaying, current.column_1.pos);
     if (render_state.clear_browse_cursor_two) try clearCursor(panels.browse2.validArea(), current.column_2.displaying, current.column_2.pos);
     if (render_state.clear_browse_cursor_three) try clearCursor(panels.browse3.validArea(), current.column_3.displaying, current.column_3.pos);
@@ -371,11 +371,11 @@ fn clear(area: window.Area) !void {
     }
 }
 
-fn browseCursorRender(area: window.Area, strings: []const []const u8, prev_pos: u8, pos: u8, slice_inc: usize, switched: bool) !void {
+fn browseCursorRender(area: window.Area, strings: []const []const u8, prev_pos: u8, pos: u8, slice_inc: usize, switched: *bool) !void {
     if (strings.len == 0) return;
     var xmax = area.xlen;
     var nSpace: usize = 0;
-    if (!switched) {
+    if (!switched.*) {
         if (prev_pos >= area.ylen) return error.OutOfBounds;
         if (prev_pos + slice_inc >= strings.len) return error.OutOfBounds;
         const prev = strings[prev_pos + slice_inc];
@@ -388,7 +388,7 @@ fn browseCursorRender(area: window.Area, strings: []const []const u8, prev_pos: 
         try term.attributeReset();
         try term.writeAll(prev[0..xmax]);
         if (nSpace > 0) try term.writeByteNTimes(' ', nSpace);
-    }
+    } else switched.* = false;
     if (pos >= area.ylen) return error.OutOfBounds;
     if (pos + slice_inc >= strings.len) return error.OutOfBounds;
 
