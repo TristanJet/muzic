@@ -171,13 +171,8 @@ fn onBrowseExit(app: *state.State, render_state: *RenderState) void {
 
     // Reset application state
     app.input_state = .normal_queue;
-    app.selected_column = .one;
-    node_buffer.find_filter = mpd.Filter_Songs{
-        .album = null,
-        .artist = null,
-    };
     // Reset memory arenas - keep these together
-    _ = alloc.typingArena.reset(.retain_capacity);
+    app.typing_free = true;
     _ = alloc.respArena.reset(.free_all);
 }
 
@@ -196,12 +191,10 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState) !void {
             }
         },
         'n' & '\x1F' => {
-            log("input: Ctrl-n\r\n", .{});
             scroll(&app.find_cursor_pos, app.viewable_searchable.?.len - 1, .down);
             render_state.find = true;
         },
         'p' & '\x1F' => {
-            log("input: Ctrl-p\r\n", .{});
             scroll(&app.find_cursor_pos, null, .up);
             render_state.find = true;
         },
@@ -222,7 +215,6 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState) !void {
                 &searchable_items,
             );
             app.viewable_searchable = slice[0..];
-            log("viewable string: {s}\n", .{slice[0].string});
             render_state.find = true;
             return;
         },
@@ -457,15 +449,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
         },
         'l' => {
             log("--L PRESS--", .{});
-            log("node index {}", .{node_buffer.index});
             const node = try node_buffer.getCurrentNode();
-            log("node: {}", .{node.type});
-            log("selected col: {}", .{app.selected_column});
-            defer {
-                log("node index {}", .{node_buffer.index});
-                log("selected col: {}", .{app.selected_column});
-                log("length: {}", .{node_buffer.len});
-            }
             const current = getCurrent(app, render_state);
 
             if (node.type == .Select) {
@@ -760,7 +744,6 @@ fn browserScrollVertical(dir: cursorDirection, current: ColumnWithRender, next: 
         } else {}
         next_col.render_col.* = true;
     } else {
-        log("here! ", .{});
         try node_buffer.zeroForward();
     }
     current.render_col.* = true;

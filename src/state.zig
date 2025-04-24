@@ -14,6 +14,7 @@ const ArrayList = std.ArrayList;
 
 pub const State = struct {
     quit: bool,
+    typing_free: bool,
     first_render: bool,
 
     song: mpd.CurrentSong,
