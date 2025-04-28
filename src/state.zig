@@ -12,6 +12,8 @@ const alloc = @import("allocators.zig");
 const wrkallocator = alloc.wrkallocator;
 const ArrayList = std.ArrayList;
 
+pub const n_browse_columns: u4 = 3;
+
 pub const State = struct {
     quit: bool,
     typing_free: bool,
@@ -33,10 +35,7 @@ pub const State = struct {
     find_cursor_pos: u8,
     viewable_searchable: ?[]mpd.SongStringAndUri,
 
-    selected_column: Columns,
-    column_1: BrowseColumn,
-    column_2: BrowseColumn,
-    column_3: BrowseColumn,
+    col_arr: ColumnArray(n_browse_columns),
     node_switched: bool,
 
     input_state: input.Input_State,
@@ -100,28 +99,6 @@ pub const Data = struct {
     }
 };
 
-pub const Columns = enum {
-    one,
-    two,
-    three,
-
-    pub fn increment(self: *Columns) !void {
-        self.* = switch (self.*) {
-            .one => .two,
-            .two => .three,
-            .three => return error.EnumIncrement,
-        };
-    }
-
-    pub fn decrement(self: *Columns) !void {
-        self.* = switch (self.*) {
-            .one => return error.EnumIncrement,
-            .two => .one,
-            .three => .two,
-        };
-    }
-};
-
 pub const Column_Type = enum {
     Select,
     Artists,
@@ -160,11 +137,6 @@ pub const BrowseNode = struct {
     fn posFromColumn(self: *BrowseNode, column: *const BrowseColumn) void {
         self.pos = column.pos;
         self.slice_inc = column.slice_inc;
-    }
-
-    fn posToColumn(self: *const BrowseNode, column: *BrowseColumn) void {
-        column.pos = self.pos;
-        column.slice_inc = self.slice_inc;
     }
 
     fn setCallback(self: *const BrowseNode, selected_artist: ?[]const u8, tracks: ?[]mpd.SongStringAndUri) !DisplayCallback {
@@ -269,7 +241,7 @@ pub const Browser = struct {
 
     pub fn setNodes(
         self: *Browser,
-        next_column: ?*BrowseColumn,
+        columns: *ColumnArray(n_browse_columns),
         temp_alloc: mem.Allocator,
         pers_alloc: mem.Allocator,
     ) !bool {
@@ -280,7 +252,7 @@ pub const Browser = struct {
                 self.tracks = try mpd.findTracksFromAlbum(self.find_filter, alloc.respAllocator, alloc.typingAllocator);
                 const cb = try next_node.setCallback(null, self.tracks);
                 try next_node.displayingCallback(cb, temp_alloc, pers_alloc);
-                if (next_column) |col| col.displaying = next_node.displaying.?;
+                try columns.setAllDisplaying(self);
                 return true;
             },
             .Artists => {
@@ -289,7 +261,7 @@ pub const Browser = struct {
                     const final: *BrowseNode = if (self.buf[self.index + 2]) |*node| node else return error.NoNode;
                     var cb = try next_node.setCallback(self.find_filter.artist, null);
                     try next_node.displayingCallback(cb, temp_alloc, pers_alloc);
-                    if (next_column) |col| col.displaying = next_node.displaying.?;
+                    try columns.setAllDisplaying(self);
                     self.find_filter.album = next_node.displaying.?[0];
                     self.tracks = try mpd.findTracksFromAlbum(self.find_filter, temp_alloc, pers_alloc);
                     cb = try final.setCallback(null, self.tracks);
@@ -300,7 +272,7 @@ pub const Browser = struct {
                     self.tracks = try mpd.findTracksFromAlbum(self.find_filter, temp_alloc, pers_alloc);
                     const cb = try next_node.setCallback(null, self.tracks);
                     try next_node.displayingCallback(cb, temp_alloc, pers_alloc);
-                    if (next_column) |col| col.displaying = next_node.displaying.?;
+                    try columns.setAllDisplaying(self);
                     return true;
                 } else return false;
             },
@@ -309,45 +281,45 @@ pub const Browser = struct {
         }
     }
     //Next node has to be synchronised during scroll
-    //Synchronize node from column on column switch
-    pub fn incrementNode(self: *Browser, column: *BrowseColumn, next_column: ?*BrowseColumn, selected_col: *Columns, nColumns: u8) !bool {
-        const current_node = try self.getCurrentNode();
-        current_node.posFromColumn(column);
-        var next = self.buf[self.index + 1] orelse return error.NextNode;
-        const next_displaying: []const []const u8 = next.displaying orelse return error.NextNode;
-        if (self.len > nColumns and selected_col.* == .two and (nColumns - self.index) > 1) {
-            column.displaying = next_displaying;
-            next.posToColumn(column);
+    pub fn incrementNode(self: *Browser, columns: *ColumnArray(n_browse_columns)) !bool {
+        const init_col: *BrowseColumn = &columns.buf[columns.index];
+        const init_node = try self.getCurrentNode();
+        init_node.posFromColumn(init_col);
+        const next_node = try self.getNextNode();
+        log("cond 1: {}", .{(self.len > columns.len)});
+        log("cond 2: {}", .{(columns.index == (columns.len / 2))});
+        log("cond 3: {}", .{((self.len - self.index) != columns.len)});
+        if (self.len > columns.len and columns.index == (columns.len / 2) and (self.len - self.index) == columns.len) {
+            init_col.setPos(next_node.pos, next_node.slice_inc);
+            columns.inc += 1;
             self.index += 1;
-            next = self.buf[self.index + 1] orelse return error.NextNode;
-            const next_col: *BrowseColumn = next_column orelse return error.NoColumn;
-            next_col.displaying = next.displaying.?;
+            try columns.setAllDisplaying(self);
             return false;
         } else {
-            const next_col: *BrowseColumn = next_column orelse return error.NoColumn;
-            next_col.displaying = next_displaying;
-            next.posToColumn(next_col);
+            const next_col: *BrowseColumn = &columns.buf[columns.index + 1];
+            next_col.setPos(next_node.pos, next_node.slice_inc);
+            columns.index += 1;
             self.index += 1;
-            try selected_col.increment();
             return true;
         }
     }
 
-    pub fn decrementNode(self: *Browser, column: *BrowseColumn, prev_column: ?*BrowseColumn, selected_col: *Columns, nColumns: u8) !bool {
-        const current_node = try self.getCurrentNode();
-        current_node.posFromColumn(column);
-        const prev = self.buf[self.index - 1].?;
-        const prev_displaying = prev.displaying orelse return error.NextError;
-        if (self.len > nColumns and selected_col.* == .two and (nColumns - self.index) == 1) {
-            column.displaying = prev_displaying;
-            prev.posToColumn(column);
+    pub fn decrementNode(self: *Browser, columns: *ColumnArray(n_browse_columns)) !bool {
+        const init_col: *BrowseColumn = &columns.buf[columns.index];
+        const init_node = try self.getCurrentNode();
+        init_node.posFromColumn(init_col);
+        const prev_node = self.buf[self.index - 1].?;
+        if (self.len > columns.len and columns.index == (columns.len / 2) and (self.len - self.index) != columns.len) {
+            init_col.setPos(prev_node.pos, prev_node.slice_inc);
+            columns.inc -= 1;
             self.index -= 1;
+            try columns.setAllDisplaying(self);
             return false;
         } else {
-            const prev_col: *BrowseColumn = prev_column orelse return error.NoColumn;
-            prev.posToColumn(prev_col);
+            const prev_col: *BrowseColumn = &columns.buf[columns.index - 1];
+            prev_col.setPos(prev_node.pos, prev_node.slice_inc);
+            columns.index -= 1;
             self.index -= 1;
-            try selected_col.decrement();
             return true;
         }
     }
@@ -377,11 +349,71 @@ pub const Browser = struct {
     }
 };
 
+pub fn ColumnArray(n_col: u8) type {
+    return struct {
+        const Self = @This();
+        buf: [n_col]BrowseColumn,
+        index: u8,
+        inc: u8,
+        len: u8,
+
+        pub fn init() Self {
+            var i: u8 = 0;
+            var buf: [n_col]BrowseColumn = undefined;
+            while (i < n_col) : (i += 1) {
+                buf[i] = BrowseColumn{
+                    .pos = 0,
+                    .prev_pos = 0,
+                    .slice_inc = 0,
+                    .displaying = null,
+                    .index = i,
+                };
+                if (i == 0) buf[i].displaying = &browse_types;
+            }
+            return .{
+                .buf = buf,
+                .index = 0,
+                .inc = 0,
+                .len = n_col,
+            };
+        }
+
+        fn setAllDisplaying(self: *Self, browser: *const Browser) !void {
+            var i: u8 = 0;
+            while (i < self.len) : (i += 1) {
+                const browse_node = if (browser.buf[self.inc + i]) |node| node else return error.NoNode;
+                const displaying: []const []const u8 = browse_node.displaying orelse return error.NoDisplaying;
+                self.buf[i].displaying = displaying;
+            }
+        }
+
+        pub fn getCurrent(self: *Self) *BrowseColumn {
+            return &self.buf[self.index];
+        }
+
+        pub fn getPrev(self: *Self) ?*BrowseColumn {
+            if (self.index == 0) return null;
+            return &self.buf[self.index - 1];
+        }
+
+        pub fn getNext(self: *Self) ?*BrowseColumn {
+            if (self.index + 1 >= self.len) return null;
+            return &self.buf[self.index + 1];
+        }
+    };
+}
+
 pub const BrowseColumn = struct {
     pos: u8,
     prev_pos: u8,
     slice_inc: usize,
-    displaying: []const []const u8,
+    displaying: ?[]const []const u8,
+    index: u8,
+
+    pub fn setPos(self: *BrowseColumn, pos: u8, slice_inc: usize) void {
+        self.pos = pos;
+        self.slice_inc = slice_inc;
+    }
 
     pub fn absolutePos(self: *const BrowseColumn) usize {
         return self.pos + self.slice_inc;
@@ -402,18 +434,36 @@ pub const BrowseColumn = struct {
                 }
             },
             .down => {
+                const displaying = self.displaying orelse return;
                 if (self.pos < max.? - 1 and max.? > 0) {
                     self.pos += 1;
                     // If cursor position exceeds threshold (80% of visible area)
-                    if (self.pos >= threshold_pos and self.slice_inc + area_height < self.displaying.len) {
+                    if (self.pos >= threshold_pos and self.slice_inc + area_height < displaying.len) {
                         self.slice_inc += 1;
                         self.pos -= 1;
                     }
-                } else if (self.slice_inc + area_height < self.displaying.len) {
+                } else if (self.slice_inc + area_height < displaying.len) {
                     self.slice_inc += 1;
                 }
             },
         }
+    }
+
+    pub fn render(self: *BrowseColumn, render_state: *RenderState(n_browse_columns)) void {
+        render_state.browse_col[self.index] = true;
+    }
+
+    pub fn renderCursor(self: *BrowseColumn, render_state: *RenderState(n_browse_columns)) void {
+        render_state.browse_cursor[self.index] = true;
+    }
+
+    pub fn clearCursor(self: *BrowseColumn, render_state: *RenderState(n_browse_columns)) void {
+        render_state.browse_clear_cursor[self.index] = true;
+    }
+
+    pub fn clear(self: *BrowseColumn, render_state: *RenderState(n_browse_columns)) !void {
+        if (self.index == 0) return error.NoClear;
+        render_state.browse_clear[self.index - 1] = true;
     }
 };
 
@@ -494,7 +544,7 @@ pub const App = struct {
         self.event_buffer.len += 1;
     }
     // Update function that processes events
-    pub fn updateState(self: *App, render_state: *RenderState) void {
+    pub fn updateState(self: *App, render_state: *RenderState(n_browse_columns)) void {
         // Process all events in the buffer
         var i: u8 = 0;
         while (i < self.event_buffer.len) : (i += 1) {
@@ -505,7 +555,7 @@ pub const App = struct {
     }
 
     // Handle individual events
-    fn handleEvent(self: *App, event: Event, render_state: *RenderState) void {
+    fn handleEvent(self: *App, event: Event, render_state: *RenderState(n_browse_columns)) void {
         switch (event) {
             .input => |char| input.handleInput(char, &self.state, render_state),
             .release => |char| input.handleRelease(char, &self.state, render_state),
@@ -580,12 +630,12 @@ pub const BrowseCursorPos = struct {
     prev_pos: u8,
 };
 
-fn handleTime(time_: i64, app: *State, _render_state: *RenderState) !void {
+fn handleTime(time_: i64, app: *State, _render_state: *RenderState(n_browse_columns)) !void {
     updateElapsed(time_, app, app, _render_state);
     try ping(time_, app);
 }
 
-fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState) !void {
+fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState(n_browse_columns)) !void {
     switch (idle_event) {
         .player => {
             _ = app.song.init();
@@ -612,7 +662,7 @@ fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState) !void {
     }
 }
 
-fn updateElapsed(start: i64, crnt: *const State, app: *State, render_state: *RenderState) void {
+fn updateElapsed(start: i64, crnt: *const State, app: *State, render_state: *RenderState(n_browse_columns)) void {
     if (crnt.isPlaying) {
         const current_second = @divTrunc(start, 1000);
         if (current_second > crnt.last_second) {

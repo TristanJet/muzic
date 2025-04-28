@@ -93,25 +93,7 @@ pub fn main() !void {
         .find_cursor_pos = 0,
         .viewable_searchable = null,
 
-        .selected_column = .one,
-        .column_1 = state.BrowseColumn{
-            .displaying = state.browse_types[0..],
-            .pos = 0,
-            .prev_pos = 0,
-            .slice_inc = 0,
-        },
-        .column_2 = state.BrowseColumn{
-            .displaying = data.albums,
-            .pos = 0,
-            .prev_pos = 0,
-            .slice_inc = 0,
-        },
-        .column_3 = state.BrowseColumn{
-            .displaying = undefined,
-            .pos = 0,
-            .prev_pos = 0,
-            .slice_inc = 0,
-        },
+        .col_arr = state.ColumnArray(state.n_browse_columns).init(),
         .node_switched = false,
 
         .input_state = .normal_queue,
@@ -119,7 +101,7 @@ pub fn main() !void {
 
     var app = App.init(initial_state, &data);
 
-    var render_state = RenderState.init();
+    var render_state = RenderState(state.n_browse_columns).init();
 
     while (!app.state.quit) {
         defer wrkfba.reset();
@@ -138,7 +120,7 @@ pub fn main() !void {
 
         app.updateState(&render_state);
         try render.render(&app.state, &render_state, window.panels, &wrkfba.end_index);
-        render_state = RenderState{};
+        render_state.reset();
         alloc.freeArena(&app.state.typing_free);
 
         // Calculate remaining time in frame and sleep if necessary

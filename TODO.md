@@ -2,21 +2,24 @@
 
 ## Bugs/Fixes
 - [ ] cursor reset -- render function and save apex
+- [ ] I think search strings has to be fixed
 - [ ] next_col_ready reimplement
 
 **V1**
+- [ ] columns should be stored in an array, the same way nodes are, duh
 - [ ] initial config settings
-- [ ] cursor on third column needs to reset
+- [x] cursor on third column needs to reset
 - [ ] algorithm tweak, prioritize matches at the start of the string, for best match functions e.g. Tyler, The Creator
 - [ ] algoirthm fix, EXETER failing best match
 - [ ] More robust input debounce; I suspect, library size has an effect on mpd response speed.
-- [ ] MEMORY LEAK suspected at 717 - input.zig
+- [x] MEMORY LEAK suspected at 717 - input.zig
 - [ ] NUMBER FIX - program will crash if queue longer than 256
 - [ ] carefully track persistentallocator use
-- [ ] rewrite Browser - Describe in terms of prev, current, next
 - [ ] get rid of ALL UNNECESSARY public variables
 - [ ] ROBUST NONBLOCK flag handling
 
+- [x] scrolling horizontally works???? sometimes a bug but I can't reproduce
+- [x] rewrite Browser - Describe in terms of prev, current, next
 - [x] MAC BLOCK TERMINAL WRITES
 - [x] key release event
 - [x] get the uris for all_songs

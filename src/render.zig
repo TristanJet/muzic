@@ -10,78 +10,80 @@ const Input_State = @import("input.zig").Input_State;
 const io = std.io;
 const fs = std.fs;
 const mem = std.mem;
+const n_browse_columns = state.n_browse_columns;
 
 const wrkallocator = alloc.wrkallocator;
 
-var app: *state.State = undefined;
-var render_state: *RenderState = undefined;
 var current: state.State = undefined;
 
-pub const RenderState = struct {
-    borders: bool = false,
-    currentTrack: bool = false,
-    bar: bool = false,
-    queue: bool = false,
-    queueEffects: bool = false,
-    find: bool = false,
-    browse_one: bool = false,
-    browse_two: bool = false,
-    browse_three: bool = false,
-    browse_cursor_one: bool = false,
-    browse_cursor_two: bool = false,
-    browse_cursor_three: bool = false,
-    clear_browse_cursor_one: bool = false,
-    clear_browse_cursor_two: bool = false,
-    clear_browse_cursor_three: bool = false,
-    clear_col_two: bool = false,
-    clear_col_three: bool = false,
+pub fn RenderState(n_col: comptime_int) type {
+    const minus_one: comptime_int = n_col - 1;
+    return struct {
+        const Self = @This();
+        borders: bool = false,
+        currentTrack: bool = false,
+        bar: bool = false,
+        queue: bool = false,
+        queueEffects: bool = false,
+        find: bool = false,
+        browse_col: [n_col]bool = .{false} ** n_col,
+        browse_cursor: [n_col]bool = .{false} ** n_col,
+        browse_clear_cursor: [n_col]bool = .{false} ** n_col,
+        browse_clear: [minus_one]bool = .{false} ** minus_one,
 
-    pub fn init() RenderState {
-        return .{
-            .borders = true,
-            .currentTrack = true,
-            .bar = true,
-            .queue = true,
-            .queueEffects = true,
-            .find = true,
-            .browse_one = false,
-            .browse_two = false,
-            .browse_three = false,
-            .browse_cursor_one = false,
-            .browse_cursor_two = false,
-            .browse_cursor_three = false,
-            .clear_browse_cursor_one = false,
-            .clear_browse_cursor_two = false,
-            .clear_browse_cursor_three = false,
-        };
-    }
-};
+        pub fn init() Self {
+            return Self{
+                .borders = true,
+                .currentTrack = true,
+                .bar = true,
+                .queue = true,
+                .queueEffects = true,
+                .find = true,
+                .browse_col = .{false} ** n_col,
+                .browse_cursor = .{false} ** n_col,
+                .browse_clear_cursor = .{false} ** n_col,
+                .browse_clear = .{false} ** minus_one,
+            };
+        }
 
-pub fn render(app_state: *state.State, render_state_: *RenderState, panels: window.Panels, end_index: *usize) !void {
-    render_state = render_state_;
-    app = app_state;
-    current = app_state.*;
+        pub fn reset(self: *Self) void {
+            self.borders = false;
+            self.currentTrack = false;
+            self.bar = false;
+            self.queue = false;
+            self.queueEffects = false;
+            self.find = false;
+            self.browse_col = .{false} ** n_col;
+            self.browse_cursor = .{false} ** n_col;
+            self.browse_clear_cursor = .{false} ** n_col;
+            self.browse_clear = .{false} ** minus_one;
+        }
+    };
+}
+
+pub fn render(app: *state.State, render_state: *RenderState(n_browse_columns), panels: window.Panels, end_index: *usize) !void {
+    current = app.*;
     if (render_state.borders) try drawBorders(panels.curr_song.area);
     if (render_state.borders) try drawBorders(panels.queue.area);
     if (render_state.borders) try drawHeader(panels.queue.area, "queue");
     if (render_state.borders) try drawBorders(panels.find.area);
     if (render_state.borders or render_state.find) try drawHeader(panels.find.area, try getFindText());
-    if (render_state.currentTrack) try currTrackRender(wrkallocator, panels.curr_song, app.song, end_index);
+    if (render_state.currentTrack) try currTrackRender(wrkallocator, panels.curr_song, app.song, &app.first_render, end_index);
     if (render_state.bar) try barRender(panels.curr_song, app.song, wrkallocator);
     if (render_state.queue) try queueRender(wrkallocator, panels.queue.validArea(), app.queue.items, app.scroll_q.slice_inc);
     if (render_state.queueEffects) try queueEffectsRender(wrkallocator, panels.queue.validArea(), app.queue.items, app.scroll_q.absolutePos(), app.scroll_q.absolutePrevPos(), app.scroll_q.slice_inc, app.input_state, app.song.id);
     if (render_state.find) try findRender(panels.find);
-    if (render_state.browse_one) try browseColumn(panels.browse1.validArea(), app.column_1.displaying, app.column_1.slice_inc);
-    if (render_state.browse_two) try browseColumn(panels.browse2.validArea(), app.column_2.displaying, app.column_2.slice_inc);
-    if (render_state.browse_three) try browseColumn(panels.browse3.validArea(), app.column_3.displaying, app.column_3.slice_inc);
-    if (render_state.browse_cursor_one) try browseCursorRender(panels.browse1.validArea(), app.column_1.displaying, app.column_1.prev_pos, app.column_1.pos, app.column_1.slice_inc, &app.node_switched);
-    if (render_state.browse_cursor_two) try browseCursorRender(panels.browse2.validArea(), app.column_2.displaying, app.column_2.prev_pos, app.column_2.pos, app.column_2.slice_inc, &app.node_switched);
-    if (render_state.browse_cursor_three) try browseCursorRender(panels.browse3.validArea(), app.column_3.displaying, app.column_3.prev_pos, app.column_3.pos, app.column_3.slice_inc, &app.node_switched);
-    if (render_state.clear_browse_cursor_one) try clearCursor(panels.browse1.validArea(), current.column_1.displaying, current.column_1.pos);
-    if (render_state.clear_browse_cursor_two) try clearCursor(panels.browse2.validArea(), current.column_2.displaying, current.column_2.pos);
-    if (render_state.clear_browse_cursor_three) try clearCursor(panels.browse3.validArea(), current.column_3.displaying, current.column_3.pos);
-    if (render_state.clear_col_two) try clear(panels.browse2.validArea());
-    if (render_state.clear_col_three) try clear(panels.browse3.validArea());
+    if (render_state.browse_col[0]) try browseColumn(panels.browse1.validArea(), app.col_arr.buf[0].displaying, app.col_arr.buf[0].slice_inc);
+    if (render_state.browse_col[1]) try browseColumn(panels.browse2.validArea(), app.col_arr.buf[1].displaying, app.col_arr.buf[1].slice_inc);
+    if (render_state.browse_col[2]) try browseColumn(panels.browse3.validArea(), app.col_arr.buf[2].displaying, app.col_arr.buf[2].slice_inc);
+    if (render_state.browse_cursor[0]) try browseCursorRender(panels.browse1.validArea(), app.col_arr.buf[0].displaying, app.col_arr.buf[0].prev_pos, app.col_arr.buf[0].pos, app.col_arr.buf[0].slice_inc, &app.node_switched);
+    if (render_state.browse_cursor[1]) try browseCursorRender(panels.browse2.validArea(), app.col_arr.buf[1].displaying, app.col_arr.buf[1].prev_pos, app.col_arr.buf[1].pos, app.col_arr.buf[1].slice_inc, &app.node_switched);
+    if (render_state.browse_cursor[2]) try browseCursorRender(panels.browse3.validArea(), app.col_arr.buf[2].displaying, app.col_arr.buf[2].prev_pos, app.col_arr.buf[2].pos, app.col_arr.buf[2].slice_inc, &app.node_switched);
+    if (render_state.browse_clear_cursor[0]) try clearCursor(panels.browse1.validArea(), current.col_arr.buf[0].displaying, current.col_arr.buf[0].pos, current.col_arr.buf[0].slice_inc);
+    if (render_state.browse_clear_cursor[1]) try clearCursor(panels.browse2.validArea(), current.col_arr.buf[1].displaying, current.col_arr.buf[1].pos, current.col_arr.buf[1].slice_inc);
+    if (render_state.browse_clear_cursor[2]) try clearCursor(panels.browse3.validArea(), current.col_arr.buf[2].displaying, current.col_arr.buf[2].pos, current.col_arr.buf[2].slice_inc);
+    if (render_state.browse_clear[0]) try clear(panels.browse2.validArea());
+    if (render_state.browse_clear[1]) try clear(panels.browse3.validArea());
 
     term.flushBuffer() catch |err| if (err != error.WouldBlock) return err;
 }
@@ -241,6 +243,7 @@ fn currTrackRender(
     allocator: std.mem.Allocator,
     p: window.Panel,
     s: mpd.CurrentSong,
+    fr: *bool,
     end_index: *usize,
 ) !void {
     const start = end_index.*;
@@ -277,7 +280,7 @@ fn currTrackRender(
     }
     try term.writeLine(s.artist, ycent, xmin, xmax);
     try term.writeLine(trckalb, ycent - 2, xmin, xmax);
-    if (current.first_render) app.first_render = false;
+    if (fr.*) fr.* = false;
 }
 
 fn barRender(panel: window.Panel, song: mpd.CurrentSong, allocator: std.mem.Allocator) !void {
@@ -345,13 +348,14 @@ fn barRender(panel: window.Panel, song: mpd.CurrentSong, allocator: std.mem.Allo
     current.currently_filled = filled;
 }
 
-fn browseColumn(area: window.Area, strings: []const []const u8, inc: usize) !void {
+fn browseColumn(area: window.Area, strings_opt: ?[]const []const u8, inc: usize) !void {
     // Clear the display area
     for (0..area.ylen) |i| {
         try term.moveCursor(area.ymin + i, area.xmin);
         try term.writeByteNTimes(' ', area.xlen);
     }
 
+    const strings = strings_opt orelse return;
     // Display only visible items based on slice_inc
     for (0..area.ylen) |i| {
         const item_index = i + inc;
@@ -371,7 +375,8 @@ fn clear(area: window.Area) !void {
     }
 }
 
-fn browseCursorRender(area: window.Area, strings: []const []const u8, prev_pos: u8, pos: u8, slice_inc: usize, switched: *bool) !void {
+fn browseCursorRender(area: window.Area, strings_opt: ?[]const []const u8, prev_pos: u8, pos: u8, slice_inc: usize, switched: *bool) !void {
+    const strings = strings_opt orelse return;
     if (strings.len == 0) return;
     var xmax = area.xlen;
     var nSpace: usize = 0;
@@ -409,38 +414,12 @@ fn browseCursorRender(area: window.Area, strings: []const []const u8, prev_pos: 
     try term.attributeReset();
 }
 
-fn clearCursor(area: window.Area, strings: []const []const u8, pos: u8) !void {
-    // Safety check for valid position
+fn clearCursor(area: window.Area, strings_opt: ?[]const []const u8, pos: u8, inc: usize) !void {
+    const strings = strings_opt orelse return;
     if (strings.len == 0) return;
-
-    // Get currently displayed slice indexes
-    const col = for (0..3) |i| {
-        const column = switch (i) {
-            0 => current.column_1,
-            1 => current.column_2,
-            2 => current.column_3,
-            else => unreachable,
-        };
-        if (std.meta.eql(column.displaying.ptr, strings.ptr)) {
-            break column;
-        }
-    } else {
-        return; // Column not found
-    };
-
-    const slice_inc = col.slice_inc;
-
-    // Position in the visible window
-    const visible_pos = pos;
-
-    // Check if this position is visible
-    if (visible_pos >= area.ylen) return;
-
-    // Check if we have a valid index in the original array
-    if (visible_pos + slice_inc >= strings.len) return;
-
+    if (pos >= area.ylen) return error.posOverflow;
     // Get the actual string to render
-    const curr = strings[visible_pos + slice_inc];
+    const curr = strings[pos + inc];
 
     var nSpace: usize = 0;
     var xmax = area.xlen;
@@ -448,7 +427,7 @@ fn clearCursor(area: window.Area, strings: []const []const u8, pos: u8) !void {
         nSpace = area.xlen - curr.len;
         xmax = curr.len;
     }
-    try term.moveCursor(area.ymin + visible_pos, area.xmin);
+    try term.moveCursor(area.ymin + pos, area.xmin);
     try term.attributeReset();
     try term.writeAll(curr[0..xmax]);
     if (nSpace > 0) try term.writeByteNTimes(' ', nSpace);

@@ -15,6 +15,7 @@ const util = @import("util.zig");
 const log = util.log;
 const findStringIndex = util.findStringIndex;
 const wrkallocator = alloc.wrkallocator;
+const n_browse_col = state.n_browse_columns;
 
 pub var data: state.Data = undefined;
 
@@ -26,13 +27,7 @@ pub var y_len: usize = undefined;
 
 var key_down: ?u8 = null;
 
-var all_albums_pos: u8 = undefined;
-var all_artists_pos: u8 = undefined;
-var all_songs_pos: u8 = undefined;
 var select_pos: u8 = 0;
-var all_albums_inc: usize = undefined;
-var all_artists_inc: usize = undefined;
-var all_songs_inc: usize = undefined;
 
 var searchable_items: []mpd.SongStringAndUri = undefined;
 var search_strings: [][]const u8 = undefined;
@@ -110,7 +105,7 @@ pub fn checkReleaseEvent(input_event: ?state.Event) !?state.Event {
     }
 }
 
-pub fn handleInput(char: u8, app_state: *state.State, render_state: *RenderState) void {
+pub fn handleInput(char: u8, app_state: *state.State, render_state: *RenderState(state.n_browse_columns)) void {
     const initial_state = app_state.input_state;
     switch (initial_state) {
         .normal_queue => normalQueue(char, app_state, render_state) catch unreachable,
@@ -126,14 +121,14 @@ pub fn handleInput(char: u8, app_state: *state.State, render_state: *RenderState
         modeSwitch = false;
 }
 
-pub fn handleRelease(char: u8, app_state: *state.State, render_state: *RenderState) void {
+pub fn handleRelease(char: u8, app_state: *state.State, render_state: *RenderState(state.n_browse_columns)) void {
     if (app_state.input_state == .normal_browse) handleBrowseKeyRelease(char, app_state, render_state) catch unreachable;
     next_col_ready = true;
 }
 
 // ---- State Transitions ----
 
-fn onTypingExit(app: *state.State, render_state: *RenderState) void {
+fn onTypingExit(app: *state.State, render_state: *RenderState(state.n_browse_columns)) void {
     // Reset application state
     app.typing_buffer.reset();
     app.viewable_searchable = null;
@@ -150,24 +145,22 @@ fn onTypingExit(app: *state.State, render_state: *RenderState) void {
     _ = alloc.algoArena.reset(.free_all);
 }
 
-fn onBrowseTypingExit(app: *state.State, current: ColumnWithRender, render_state: *RenderState) !void {
+fn onBrowseTypingExit(app: *state.State, current: *state.BrowseColumn, render_state: *RenderState(state.n_browse_columns)) !void {
     app.typing_buffer.reset();
     app.input_state = .normal_browse;
 
     if (browse_typed) render_state.borders = true;
-    current.render_col.* = true;
-    current.render_cursor.* = true;
+    current.render(render_state);
+    current.renderCursor(render_state);
 
     // Reset memory arenas
     _ = alloc.algoArena.reset(.free_all);
 }
 
-fn onBrowseExit(app: *state.State, render_state: *RenderState) void {
+fn onBrowseExit(app: *state.State, render_state: *RenderState(state.n_browse_columns)) void {
     // Update rendering state
     render_state.queueEffects = true;
-    render_state.clear_browse_cursor_one = true;
-    render_state.clear_browse_cursor_two = true;
-    render_state.clear_browse_cursor_three = true;
+    render_state.browse_clear_cursor[app.col_arr.index] = true;
 
     // Reset application state
     app.input_state = .normal_queue;
@@ -178,7 +171,7 @@ fn onBrowseExit(app: *state.State, render_state: *RenderState) void {
 
 // ---- Input Mode Handlers ----
 
-fn typingFind(char: u8, app: *state.State, render_state: *RenderState) !void {
+fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
     if (modeSwitch) searchable_items = data.searchable;
     switch (char) {
         '\x1B' => {
@@ -221,7 +214,7 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState) !void {
     }
 }
 
-fn normalQueue(char: u8, app: *state.State, render_state: *RenderState) !void {
+fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
     switch (char) {
         'q' => app.quit = true,
         'j' => {
@@ -334,10 +327,12 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState) !void {
         },
         'b' => {
             app.input_state = .normal_browse;
+            app.node_switched = true;
+            render_state.browse_cursor[0] = true;
+            render_state.browse_col[0] = true;
+            render_state.browse_col[1] = true;
+            render_state.browse_col[2] = true;
             render_state.find = true;
-            render_state.browse_one = true;
-            render_state.browse_cursor_one = true;
-            render_state.browse_two = true;
             render_state.queue = true;
         },
         'x' => {
@@ -397,15 +392,8 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState) !void {
 }
 
 // ---- Browser Module ----
-
-const ColumnWithRender = struct {
-    col: *state.BrowseColumn,
-    render_col: *bool,
-    render_cursor: *bool,
-    clear_cursor: *bool,
-};
-
-fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !void {
+fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
+    if (modeSwitch) {}
     switch (char) {
         'q' => app.quit = true,
         '\x1B' => {
@@ -415,45 +403,69 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
             if (escRead == 0) onBrowseExit(app, render_state);
         },
         'j' => {
-            const current: ColumnWithRender = getCurrent(app, render_state);
-            const next: ?ColumnWithRender = getNext(app, render_state);
-            try browserScrollVertical(.down, current, next);
+            const current: *state.BrowseColumn = app.col_arr.getCurrent();
+            const next: ?*state.BrowseColumn = app.col_arr.getNext();
+            try browserScrollVertical(.down, current, next, render_state);
         },
         'k' => {
-            const current: ColumnWithRender = getCurrent(app, render_state);
-            const next: ?ColumnWithRender = getNext(app, render_state);
-            try browserScrollVertical(.up, current, next);
+            const current: *state.BrowseColumn = app.col_arr.getCurrent();
+            const next: ?*state.BrowseColumn = app.col_arr.getNext();
+            try browserScrollVertical(.up, current, next, render_state);
         },
-        'd' & '\x1F' => try halfDown(app, render_state),
-        'u' & '\x1F' => try halfUp(app, render_state),
-        'g' => try goTop(app, render_state),
-        'G' => try goBottom(app, render_state),
+        'd' & '\x1F' => {
+            const current: *state.BrowseColumn = app.col_arr.getCurrent();
+            try halfDown(current);
+            current.render(render_state);
+            current.renderCursor(render_state);
+        },
+        'u' & '\x1F' => {
+            const current: *state.BrowseColumn = app.col_arr.getCurrent();
+            try halfUp(current);
+            current.render(render_state);
+            current.renderCursor(render_state);
+        },
+        'g' => {
+            const current: *state.BrowseColumn = app.col_arr.getCurrent();
+            current.setPos(0, 0);
+            current.render(render_state);
+            current.renderCursor(render_state);
+        },
+        'G' => {
+            const current: *state.BrowseColumn = app.col_arr.getCurrent();
+            try goBottom(current);
+            current.render(render_state);
+            current.renderCursor(render_state);
+        },
         'h' => {
-            const initial = getCurrent(app, render_state);
+            const initial = app.col_arr.getCurrent();
             const current_node = try node_buffer.getCurrentNode();
             if (current_node.type == .Select) return;
 
-            const prev_ren = getPrev(app, render_state);
-            const prev_col = if (prev_ren) |prev| prev.col else null;
-            const col_switched: bool = try node_buffer.decrementNode(initial.col, prev_col, &app.selected_column, 3);
+            const prev_col = app.col_arr.getPrev();
+            const next_col = app.col_arr.getNext();
+            const col_switched: bool = try node_buffer.decrementNode(&app.col_arr);
             app.node_switched = true;
+            const prev = prev_col orelse return error.NoPrev;
             if (col_switched) {
-                initial.render_col.* = true;
-                initial.clear_cursor.* = true;
-                prev_ren.?.render_col.* = true;
-                prev_ren.?.render_cursor.* = true;
+                initial.render(render_state);
+                initial.clearCursor(render_state);
+                prev.render(render_state);
+                prev.renderCursor(render_state);
             } else {
-                initial.render_col.* = true;
-                initial.render_cursor.* = true;
+                initial.render(render_state);
+                initial.renderCursor(render_state);
+                const next = next_col orelse return error.NoNext;
+                next.render(render_state);
+                prev.render(render_state);
             }
         },
         'l' => {
             log("--L PRESS--", .{});
             const node = try node_buffer.getCurrentNode();
-            const current = getCurrent(app, render_state);
+            const initial: *state.BrowseColumn = app.col_arr.getCurrent();
 
             if (node.type == .Select) {
-                const selected: state.Column_Type = switch (current.col.pos) {
+                const selected: state.Column_Type = switch (initial.pos) {
                     0 => .Albums,
                     1 => .Artists,
                     2 => .Tracks,
@@ -462,158 +474,116 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState) !
                 node_buffer = state.Browser.init(selected, data);
             }
             if (node_buffer.index == node_buffer.len - 1) return;
-            const next_ren = getNext(app, render_state);
-            const next_col = if (next_ren) |next| next.col else null;
-            const column_switched: bool = try node_buffer.incrementNode(current.col, next_col, &app.selected_column, 3);
+            const next_col = app.col_arr.getNext();
+            const prev_col = app.col_arr.getPrev();
+            const column_switched: bool = try node_buffer.incrementNode(&app.col_arr);
             app.node_switched = true;
+            const next = next_col orelse return error.NoNext;
             if (column_switched) {
-                const prev = getPrev(app, render_state);
-                const current_final = getCurrent(app, render_state);
-                prev.?.clear_cursor.* = true;
-                current_final.render_cursor.* = true;
+                initial.clearCursor(render_state);
+                next.renderCursor(render_state);
             } else {
-                next_ren.?.render_col.* = true;
-                current.render_col.* = true;
-                current.render_cursor.* = true;
+                const prev = prev_col orelse return error.NoPrev;
+                prev.render(render_state);
+                initial.render(render_state);
+                next.render(render_state);
+                initial.renderCursor(render_state);
             }
         },
         '/' => {
             app.input_state = .typing_browse;
-            const current: ColumnWithRender = getCurrent(app, render_state);
-            current.clear_cursor.* = true;
-            current.render_col.* = true;
+            const curr_col = app.col_arr.getCurrent();
+            curr_col.render(render_state);
+            curr_col.clearCursor(render_state);
         },
         '\n', '\r' => {
-            const current = getCurrent(app, render_state);
-            try browserHandleEnter(current);
+            const curr_col = app.col_arr.getCurrent();
+            try browserHandleEnter(curr_col.absolutePos());
         },
         else => return,
     }
 }
 
-fn halfUp(app: *state.State, render_state: *RenderState) !void {
+fn halfUp(current: *state.BrowseColumn) !void {
+    if (current.displaying == null) return;
     // Ctrl-u: Move up half the screen height (like vim)
-    const current: ColumnWithRender = getCurrent(app, render_state);
-
     const half_height = y_len / 2;
     var move_up: usize = 0;
 
     // Determine how many positions we can move up
-    if (current.col.absolutePos() >= half_height) {
+    if (current.absolutePos() >= half_height) {
         move_up = half_height;
     } else {
-        move_up = current.col.absolutePos();
+        move_up = current.absolutePos();
     }
 
     if (move_up > 0) {
         // First use slice_inc if available
-        if (current.col.slice_inc >= move_up) {
-            current.col.slice_inc -= move_up;
+        if (current.slice_inc >= move_up) {
+            current.slice_inc -= move_up;
         } else {
             // Move cursor position by any remaining amount
-            const remaining = move_up - current.col.slice_inc;
-            current.col.slice_inc = 0;
-            current.col.pos -= @intCast(remaining);
+            const remaining = move_up - current.slice_inc;
+            current.slice_inc = 0;
+            current.pos -= @intCast(remaining);
         }
-
-        current.render_col.* = true;
-        current.render_cursor.* = true;
-
-        // Handle column dependencies
     }
 }
 
-fn halfDown(app: *state.State, render_state: *RenderState) !void {
+fn halfDown(current: *state.BrowseColumn) !void {
+    const displaying = current.displaying orelse return;
     // Ctrl-d: Move down half the screen height (like vim)
-    const current: ColumnWithRender = getCurrent(app, render_state);
-
     const half_height = y_len / 2;
     var move_down: usize = 0;
 
     // Determine how many positions we can move down
-    if (current.col.absolutePos() + half_height < current.col.displaying.len) {
+    if (current.absolutePos() + half_height < displaying.len) {
         move_down = half_height;
-    } else if (current.col.absolutePos() < current.col.displaying.len) {
-        move_down = current.col.displaying.len - current.col.absolutePos() - 1;
+    } else if (current.absolutePos() < displaying.len) {
+        move_down = displaying.len - current.absolutePos() - 1;
     }
 
     if (move_down > 0) {
         // Try to keep cursor position in the middle of the screen when possible
-        if (current.col.pos + move_down < y_len) {
+        if (current.pos + move_down < y_len) {
             // If we can move the cursor down without scrolling, do that
-            current.col.pos += @intCast(move_down);
+            current.pos += @intCast(move_down);
         } else {
             // Otherwise, move the slice increment (scroll the view)
             const cursor_target: u8 = @intCast(y_len / 2);
-            if (current.col.pos > cursor_target) {
+            if (current.pos > cursor_target) {
                 // Move cursor to middle position and adjust slice_inc
-                const pos_diff = current.col.pos - cursor_target;
-                current.col.slice_inc += @as(usize, pos_diff) + move_down;
-                current.col.pos = cursor_target;
+                const pos_diff = current.pos - cursor_target;
+                current.slice_inc += @as(usize, pos_diff) + move_down;
+                current.pos = cursor_target;
             } else {
                 // Just increase slice_inc
-                current.col.slice_inc += move_down;
+                current.slice_inc += move_down;
             }
         }
-
-        current.render_col.* = true;
-        current.render_cursor.* = true;
     }
 }
 
-fn goTop(app: *state.State, render_state: *RenderState) !void {
-    // Go to top of current column
-    const current: ColumnWithRender = getCurrent(app, render_state);
-    current.col.pos = 0;
-    current.col.slice_inc = 0;
-    current.render_col.* = true;
-    current.render_cursor.* = true;
-
-    // Handle potential column dependencies
-    const next: ?ColumnWithRender = getNext(app, render_state);
-    const curr_node = try node_buffer.getCurrentNode();
-    if (curr_node.type == .Select) {
-        select_pos = current.col.pos;
-        // Update column 2 based on select position
-        if (next) |next_col| {
-            next_col.render_col.* = true;
-        }
-    }
-}
-
-fn goBottom(app: *state.State, render_state: *RenderState) !void {
+fn goBottom(current: *state.BrowseColumn) !void {
+    const displaying = current.displaying orelse return;
     // Go to bottom of current column
-    const current: ColumnWithRender = getCurrent(app, render_state);
-    if (current.col.displaying.len > 0) {
-        if (current.col.displaying.len > y_len) {
-            current.col.slice_inc = current.col.displaying.len - y_len;
-            current.col.pos = @intCast(@min(y_len - 1, current.col.displaying.len - 1));
+    if (displaying.len > 0) {
+        if (displaying.len > y_len) {
+            current.slice_inc = displaying.len - y_len;
+            current.pos = @intCast(@min(y_len - 1, displaying.len - 1));
         } else {
-            current.col.slice_inc = 0;
-            current.col.pos = @intCast(current.col.displaying.len - 1);
-        }
-        current.render_col.* = true;
-        current.render_cursor.* = true;
-
-        // Handle potential column dependencies
-        const next: ?ColumnWithRender = getNext(app, render_state);
-        const curr_node = try node_buffer.getCurrentNode();
-        if (curr_node.type == .Select) {
-            select_pos = current.col.pos;
-            // Update column 2 based on select position
-            if (next) |next_col| {
-                next_col.render_col.* = true;
-            }
+            current.slice_inc = 0;
+            current.pos = @intCast(displaying.len - 1);
         }
     }
 }
 
-fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState) !void {
-    const current: ColumnWithRender = getCurrent(app, render_state);
+fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
     if (modeSwitch) {
-        current.col.pos = 0;
-        current.col.prev_pos = 0;
-        current.col.slice_inc = 0;
+        const current = app.col_arr.getCurrent();
+        current.pos = 0;
+        current.prev_pos = 0;
+        current.slice_inc = 0;
 
         const curr_node = try node_buffer.getCurrentNode();
         search_strings = switch (curr_node.type) {
@@ -629,8 +599,9 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState) !void {
             const escRead = try term.readEscapeCode(&escBuffer);
 
             if (escRead == 0) {
+                const current = app.col_arr.getCurrent();
                 const curr_node = try node_buffer.getCurrentNode();
-                current.col.displaying = switch (curr_node.type) {
+                current.displaying = switch (curr_node.type) {
                     .Albums => data.albums,
                     .Artists => data.artists,
                     else => return error.BadSearch,
@@ -638,8 +609,13 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState) !void {
                 try onBrowseTypingExit(app, current, render_state);
             }
         },
-        '\r', '\n' => try onBrowseTypingExit(app, current, render_state),
+        '\r', '\n' => {
+            const current = app.col_arr.getCurrent();
+            try onBrowseTypingExit(app, current, render_state);
+        },
         else => {
+            const current = app.col_arr.getCurrent();
+            const displaying = current.displaying orelse return;
             browse_typed = true;
             app.typing_buffer.append(char);
             log("typed: {s}\n", .{app.typing_buffer.typed});
@@ -651,122 +627,60 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState) !void {
             );
 
             log("best match: {s}", .{best_match});
-            const index = findStringIndex(best_match, current.col.displaying);
+            const index = findStringIndex(best_match, displaying);
             if (index) |unwrap| {
                 log("index: {}\n", .{unwrap});
                 // move cursor to index
-                current.col.slice_inc = unwrap;
+                current.slice_inc = unwrap;
             }
 
-            current.render_cursor.* = true;
-            current.render_col.* = true;
-
+            current.renderCursor(render_state);
+            current.render(render_state);
             render_state.find = true;
         },
     }
 }
 
-fn getCurrent(app: *state.State, render_state: *RenderState) ColumnWithRender {
-    return switch (app.selected_column) {
-        .one => .{
-            .col = &app.column_1,
-            .render_col = &render_state.browse_one,
-            .render_cursor = &render_state.browse_cursor_one,
-            .clear_cursor = &render_state.clear_browse_cursor_one,
-        },
-        .two => .{
-            .col = &app.column_2,
-            .render_col = &render_state.browse_two,
-            .render_cursor = &render_state.browse_cursor_two,
-            .clear_cursor = &render_state.clear_browse_cursor_two,
-        },
-        .three => .{
-            .col = &app.column_3,
-            .render_col = &render_state.browse_three,
-            .render_cursor = &render_state.browse_cursor_three,
-            .clear_cursor = &render_state.clear_browse_cursor_three,
-        },
-    };
-}
-
-fn getPrev(app: *state.State, render_state: *RenderState) ?ColumnWithRender {
-    return switch (app.selected_column) {
-        .one => null,
-        .two => .{
-            .col = &app.column_1,
-            .render_col = &render_state.browse_one,
-            .render_cursor = &render_state.browse_cursor_one,
-            .clear_cursor = &render_state.clear_browse_cursor_one,
-        },
-        .three => .{
-            .col = &app.column_2,
-            .render_col = &render_state.browse_two,
-            .render_cursor = &render_state.browse_cursor_two,
-            .clear_cursor = &render_state.clear_browse_cursor_two,
-        },
-    };
-}
-
-fn getNext(app: *state.State, render_state: *RenderState) ?ColumnWithRender {
-    return switch (app.selected_column) {
-        .one => .{
-            .col = &app.column_2,
-            .render_col = &render_state.browse_two,
-            .render_cursor = &render_state.browse_cursor_two,
-            .clear_cursor = &render_state.clear_browse_cursor_two,
-        },
-        .two => .{
-            .col = &app.column_3,
-            .render_col = &render_state.browse_three,
-            .render_cursor = &render_state.browse_cursor_three,
-            .clear_cursor = &render_state.clear_browse_cursor_three,
-        },
-        .three => null,
-    };
-}
-
 // Browser vertical scrolling - handles all three columns in one place
-fn browserScrollVertical(dir: cursorDirection, current: ColumnWithRender, next: ?ColumnWithRender) !void {
+fn browserScrollVertical(dir: cursorDirection, current: *state.BrowseColumn, next: ?*state.BrowseColumn, render_state: *RenderState(n_browse_col)) !void {
+    const displaying = current.displaying orelse return;
     next_col_ready = false;
-    const max: ?u8 = if (dir == .up) null else @intCast(@min(y_len, current.col.displaying.len));
-    current.col.scroll(dir, max, y_len);
+    const max: ?u8 = if (dir == .up) null else @intCast(@min(y_len, displaying.len));
+    current.scroll(dir, max, y_len);
 
     const curr_node = try node_buffer.getCurrentNode();
     if (curr_node.type == .Select) {
-        const next_col = next orelse return error.NoNext;
-        if (node_buffer.apex == .UNSET) {
-            next_col.col.displaying = switch (current.col.pos) {
+        if (next) |col| {
+            col.displaying = switch (current.pos) {
                 0 => data.albums,
                 1 => data.artists,
                 2 => data.song_titles,
                 else => return error.ScrollOverflow,
             };
-        } else {}
-        next_col.render_col.* = true;
-    } else {
-        try node_buffer.zeroForward();
+            col.render(render_state);
+        }
     }
-    current.render_col.* = true;
-    current.render_cursor.* = true;
+    try node_buffer.zeroForward();
+    current.render(render_state);
+    current.renderCursor(render_state);
 }
 
 // Handle Enter key press in browser mode
 // dependency only needed in one branch
-fn browserHandleEnter(curr_col: ColumnWithRender) !void {
+fn browserHandleEnter(abs_pos: usize) !void {
     const curr_node = try node_buffer.getCurrentNode();
     switch (curr_node.type) {
         .Tracks => {
-            const pos = curr_col.col.absolutePos();
             if (node_buffer.apex == .Tracks) {
-                if (pos < data.songs.len) {
-                    const uri = data.songs[pos].uri;
+                if (abs_pos < data.songs.len) {
+                    const uri = data.songs[abs_pos].uri;
                     mpd.addFromUri(alloc.typingAllocator, uri) catch return error.CommandFailed;
                     return;
                 } else return error.OutOfBounds;
             }
             const tracks = node_buffer.tracks orelse return error.NoTracks;
-            if (pos < tracks.len) {
-                const uri = tracks[pos].uri;
+            if (abs_pos < tracks.len) {
+                const uri = tracks[abs_pos].uri;
                 mpd.addFromUri(alloc.typingAllocator, uri) catch return error.CommandFailed;
             } else return error.OutOfBounds;
         },
@@ -779,33 +693,32 @@ fn browserHandleEnter(curr_col: ColumnWithRender) !void {
 }
 
 // Handle key release events specifically for the browser
-fn handleBrowseKeyRelease(char: u8, app: *state.State, render_state: *RenderState) !void {
+fn handleBrowseKeyRelease(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
     log("--RELEASE--", .{});
     switch (char) {
         'j', 'k', 'g', 'G', 'd' & '\x1F', 'u' & '\x1F' => {
             const curr_node = try node_buffer.getCurrentNode();
-            const curr_col = getCurrent(app, render_state);
+            const curr_col = app.col_arr.getCurrent();
+            const displaying = curr_col.displaying orelse return;
             switch (curr_node.type) {
                 .Albums => {
-                    node_buffer.find_filter.album = curr_col.col.displaying[curr_col.col.absolutePos()];
+                    node_buffer.find_filter.album = displaying[curr_col.absolutePos()];
                 },
                 .Artists => {
-                    node_buffer.find_filter.artist = curr_col.col.displaying[curr_col.col.absolutePos()];
+                    node_buffer.find_filter.artist = displaying[curr_col.absolutePos()];
                 },
                 else => return,
             }
-            const next_ren = getNext(app, render_state);
-            const next_col = if (getNext(app, render_state)) |next| next.col else null;
-            const resp = try node_buffer.setNodes(next_col, alloc.respAllocator, alloc.typingAllocator);
+            const resp = try node_buffer.setNodes(&app.col_arr, alloc.respAllocator, alloc.typingAllocator);
             if (!resp) return;
-            if (next_ren) |next| next.render_col.* = true;
+            const next_col = app.col_arr.getNext();
+            if (next_col) |next| next.render(render_state);
         },
         'l' => {
-            const next_ren = getNext(app, render_state);
-            const next_col = if (getNext(app, render_state)) |next| next.col else null;
-            const resp = try node_buffer.setNodes(next_col, alloc.respAllocator, alloc.typingAllocator);
+            const resp = try node_buffer.setNodes(&app.col_arr, alloc.respAllocator, alloc.typingAllocator);
             if (!resp) return;
-            if (next_ren) |next| next.render_col.* = true;
+            const next_col = app.col_arr.getNext();
+            if (next_col) |next| next.render(render_state);
         },
         else => return,
     }
