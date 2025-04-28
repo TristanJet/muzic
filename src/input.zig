@@ -8,7 +8,6 @@ const window = @import("window.zig");
 const mem = std.mem;
 const time = std.time;
 const assert = std.debug.assert;
-// const handleNormalBrowse = @import("browser.zig").handleNormalBrowse;
 pub const RenderState = @import("render.zig").RenderState;
 
 const util = @import("util.zig");
@@ -35,8 +34,7 @@ var search_strings: [][]const u8 = undefined;
 var modeSwitch: bool = false;
 var browse_typed: bool = false;
 var next_col_ready: bool = false;
-
-var node_buffer: state.Browser = state.Browser{
+const initial_browser: state.Browser = state.Browser{
     .buf = .{
         .{ .pos = 0, .slice_inc = 0, .displaying = &state.browse_types, .callback_type = null, .type = .Select },
         null,
@@ -53,6 +51,7 @@ var node_buffer: state.Browser = state.Browser{
     .len = 1,
 };
 
+var node_buffer: state.Browser = initial_browser;
 pub const Input_State = enum {
     normal_queue,
     typing_find,
@@ -157,7 +156,7 @@ fn onBrowseTypingExit(app: *state.State, current: *state.BrowseColumn, render_st
     _ = alloc.algoArena.reset(.free_all);
 }
 
-fn onBrowseExit(app: *state.State, render_state: *RenderState(state.n_browse_columns)) void {
+fn onBrowseExit(app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
     // Update rendering state
     render_state.queueEffects = true;
     render_state.browse_clear_cursor[app.col_arr.index] = true;
@@ -165,8 +164,11 @@ fn onBrowseExit(app: *state.State, render_state: *RenderState(state.n_browse_col
     // Reset application state
     app.input_state = .normal_queue;
     // Reset memory arenas - keep these together
-    app.typing_free = true;
-    _ = alloc.respArena.reset(.free_all);
+    var resp: bool = undefined;
+    resp = alloc.typingArena.reset(.retain_capacity);
+    if (!resp) return error.AllocatorFail;
+    resp = alloc.respArena.reset(.free_all);
+    if (!resp) return error.AllocatorFail;
 }
 
 // ---- Input Mode Handlers ----
@@ -328,7 +330,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         'b' => {
             app.input_state = .normal_browse;
             app.node_switched = true;
-            render_state.browse_cursor[0] = true;
+            render_state.browse_cursor[app.col_arr.index] = true;
             render_state.browse_col[0] = true;
             render_state.browse_col[1] = true;
             render_state.browse_col[2] = true;
@@ -393,24 +395,45 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
 
 // ---- Browser Module ----
 fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
-    if (modeSwitch) {}
     switch (char) {
         'q' => app.quit = true,
         '\x1B' => {
             var escBuffer: [8]u8 = undefined;
             const escRead = try term.readEscapeCode(&escBuffer);
 
-            if (escRead == 0) onBrowseExit(app, render_state);
+            if (escRead == 0) try onBrowseExit(app, render_state);
         },
         'j' => {
             const current: *state.BrowseColumn = app.col_arr.getCurrent();
             const next: ?*state.BrowseColumn = app.col_arr.getNext();
-            try browserScrollVertical(.down, current, next, render_state);
+            const reset = try browserScrollVertical(.down, current, next);
+            if (reset) {
+                try resetBrowser(&app.col_arr, next);
+                for (1..app.col_arr.len) |i| {
+                    app.col_arr.buf[i].render(render_state);
+                }
+                app.col_arr.buf[0].renderCursor(render_state);
+            } else {
+                current.render(render_state);
+                current.renderCursor(render_state);
+                if (next) |col| col.render(render_state);
+            }
         },
         'k' => {
             const current: *state.BrowseColumn = app.col_arr.getCurrent();
             const next: ?*state.BrowseColumn = app.col_arr.getNext();
-            try browserScrollVertical(.up, current, next, render_state);
+            const reset = try browserScrollVertical(.up, current, next);
+            if (reset) {
+                try resetBrowser(&app.col_arr, next);
+                for (1..app.col_arr.len) |i| {
+                    app.col_arr.buf[i].render(render_state);
+                }
+                app.col_arr.buf[0].renderCursor(render_state);
+            } else {
+                current.render(render_state);
+                current.renderCursor(render_state);
+                if (next) |col| col.render(render_state);
+            }
         },
         'd' & '\x1F' => {
             const current: *state.BrowseColumn = app.col_arr.getCurrent();
@@ -502,6 +525,15 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
         },
         else => return,
     }
+}
+
+fn resetBrowser(col_arr: *state.ColumnArray(n_browse_col), next: ?*state.BrowseColumn) !void {
+    if (next) |col| col.setPos(0, 0);
+    node_buffer = initial_browser;
+    col_arr.clear();
+    var resp: bool = undefined;
+    resp = alloc.browserArena.reset(.retain_capacity);
+    if (!resp) return error.AllocatorError;
 }
 
 fn halfUp(current: *state.BrowseColumn) !void {
@@ -642,8 +674,8 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
 }
 
 // Browser vertical scrolling - handles all three columns in one place
-fn browserScrollVertical(dir: cursorDirection, current: *state.BrowseColumn, next: ?*state.BrowseColumn, render_state: *RenderState(n_browse_col)) !void {
-    const displaying = current.displaying orelse return;
+fn browserScrollVertical(dir: cursorDirection, current: *state.BrowseColumn, next: ?*state.BrowseColumn) !bool {
+    const displaying = current.displaying orelse return false;
     next_col_ready = false;
     const max: ?u8 = if (dir == .up) null else @intCast(@min(y_len, displaying.len));
     current.scroll(dir, max, y_len);
@@ -657,12 +689,10 @@ fn browserScrollVertical(dir: cursorDirection, current: *state.BrowseColumn, nex
                 2 => data.song_titles,
                 else => return error.ScrollOverflow,
             };
-            col.render(render_state);
         }
+        if (node_buffer.apex != .UNSET) return true;
     }
-    try node_buffer.zeroForward();
-    current.render(render_state);
-    current.renderCursor(render_state);
+    return false;
 }
 
 // Handle Enter key press in browser mode
@@ -696,7 +726,7 @@ fn browserHandleEnter(abs_pos: usize) !void {
 fn handleBrowseKeyRelease(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
     log("--RELEASE--", .{});
     switch (char) {
-        'j', 'k', 'g', 'G', 'd' & '\x1F', 'u' & '\x1F' => {
+        'j', 'k', 'g', 'G', 'd' & '\x1F', 'u' & '\x1F', '\n', '\r' => {
             const curr_node = try node_buffer.getCurrentNode();
             const curr_col = app.col_arr.getCurrent();
             const displaying = curr_col.displaying orelse return;
@@ -709,13 +739,13 @@ fn handleBrowseKeyRelease(char: u8, app: *state.State, render_state: *RenderStat
                 },
                 else => return,
             }
-            const resp = try node_buffer.setNodes(&app.col_arr, alloc.respAllocator, alloc.typingAllocator);
+            const resp = try node_buffer.setNodes(&app.col_arr, alloc.respAllocator, alloc.browserAllocator);
             if (!resp) return;
             const next_col = app.col_arr.getNext();
             if (next_col) |next| next.render(render_state);
         },
         'l' => {
-            const resp = try node_buffer.setNodes(&app.col_arr, alloc.respAllocator, alloc.typingAllocator);
+            const resp = try node_buffer.setNodes(&app.col_arr, alloc.respAllocator, alloc.browserAllocator);
             if (!resp) return;
             const next_col = app.col_arr.getNext();
             if (next_col) |next| next.render(render_state);

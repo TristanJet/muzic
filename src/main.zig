@@ -67,7 +67,6 @@ pub fn main() !void {
 
     const initial_state = state.State{
         .quit = false,
-        .typing_free = false,
         .first_render = true,
 
         .song = initial_song,
@@ -93,7 +92,7 @@ pub fn main() !void {
         .find_cursor_pos = 0,
         .viewable_searchable = null,
 
-        .col_arr = state.ColumnArray(state.n_browse_columns).init(),
+        .col_arr = state.ColumnArray(state.n_browse_columns).init(data.albums),
         .node_switched = false,
 
         .input_state = .normal_queue,
@@ -121,7 +120,6 @@ pub fn main() !void {
         app.updateState(&render_state);
         try render.render(&app.state, &render_state, window.panels, &wrkfba.end_index);
         render_state.reset();
-        alloc.freeArena(&app.state.typing_free);
 
         // Calculate remaining time in frame and sleep if necessary
         const frame_time = time.milliTimestamp() - loop_start_time;

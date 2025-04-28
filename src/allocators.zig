@@ -1,10 +1,6 @@
 const std = @import("std");
 const log = @import("util.zig").log;
 
-// const ArenaFree = struct {
-//     typing: bool,
-// };
-//
 pub var wrkbuf: [4096]u8 = undefined;
 pub var wrkfba = std.heap.FixedBufferAllocator.init(&wrkbuf);
 pub const wrkallocator = wrkfba.allocator();
@@ -21,16 +17,12 @@ pub const algoArenaAllocator = algoArena.allocator();
 pub var typingArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 pub const typingAllocator = typingArena.allocator();
 
-pub fn freeArena(t_free: *bool) void {
-    if (t_free.*) {
-        _ = typingArena.reset(.retain_capacity);
-        t_free.* = false;
-        log("typing arena state: {}", .{typingArena.state.end_index});
-    }
-}
+pub var browserArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+pub const browserAllocator = browserArena.allocator();
 
 pub fn deinit() void {
     persistentArena.deinit();
     algoArena.deinit();
     typingArena.deinit();
+    browserArena.deinit();
 }

@@ -16,7 +16,6 @@ pub const n_browse_columns: u4 = 3;
 
 pub const State = struct {
     quit: bool,
-    typing_free: bool,
     first_render: bool,
 
     song: mpd.CurrentSong,
@@ -249,7 +248,7 @@ pub const Browser = struct {
             .Albums => {
                 if (self.index != 1) return false;
                 const next_node: *BrowseNode = try self.getNextNode();
-                self.tracks = try mpd.findTracksFromAlbum(self.find_filter, alloc.respAllocator, alloc.typingAllocator);
+                self.tracks = try mpd.findTracksFromAlbum(self.find_filter, temp_alloc, pers_alloc);
                 const cb = try next_node.setCallback(null, self.tracks);
                 try next_node.displayingCallback(cb, temp_alloc, pers_alloc);
                 try columns.setAllDisplaying(self);
@@ -357,7 +356,7 @@ pub fn ColumnArray(n_col: u8) type {
         inc: u8,
         len: u8,
 
-        pub fn init() Self {
+        pub fn init(first_strings: []const []const u8) Self {
             var i: u8 = 0;
             var buf: [n_col]BrowseColumn = undefined;
             while (i < n_col) : (i += 1) {
@@ -369,6 +368,7 @@ pub fn ColumnArray(n_col: u8) type {
                     .index = i,
                 };
                 if (i == 0) buf[i].displaying = &browse_types;
+                if (i == 1) buf[i].displaying = first_strings;
             }
             return .{
                 .buf = buf,
@@ -384,6 +384,12 @@ pub fn ColumnArray(n_col: u8) type {
                 const browse_node = if (browser.buf[self.inc + i]) |node| node else return error.NoNode;
                 const displaying: []const []const u8 = browse_node.displaying orelse return error.NoDisplaying;
                 self.buf[i].displaying = displaying;
+            }
+        }
+
+        pub fn clear(self: *Self) void {
+            for (2..self.len) |i| {
+                self.buf[i].displaying = null;
             }
         }
 

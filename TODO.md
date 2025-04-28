@@ -1,12 +1,10 @@
 # MUZIG
 
 ## Bugs/Fixes
-- [ ] cursor reset -- render function and save apex
 - [ ] I think search strings has to be fixed
 - [ ] next_col_ready reimplement
 
 **V1**
-- [ ] columns should be stored in an array, the same way nodes are, duh
 - [ ] initial config settings
 - [x] cursor on third column needs to reset
 - [ ] algorithm tweak, prioritize matches at the start of the string, for best match functions e.g. Tyler, The Creator
@@ -18,6 +16,8 @@
 - [ ] get rid of ALL UNNECESSARY public variables
 - [ ] ROBUST NONBLOCK flag handling
 
+- [x] columns should be stored in an array, the same way nodes are, duh
+- [x] cursor reset -- render function and save apex
 - [x] scrolling horizontally works???? sometimes a bug but I can't reproduce
 - [x] rewrite Browser - Describe in terms of prev, current, next
 - [x] MAC BLOCK TERMINAL WRITES
