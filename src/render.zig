@@ -26,6 +26,7 @@ pub fn RenderState(n_col: comptime_int) type {
         queue: bool = false,
         queueEffects: bool = false,
         find: bool = false,
+        find_clear: bool = false,
         browse_col: [n_col]bool = .{false} ** n_col,
         browse_cursor: [n_col]bool = .{false} ** n_col,
         browse_clear_cursor: [n_col]bool = .{false} ** n_col,
@@ -39,6 +40,7 @@ pub fn RenderState(n_col: comptime_int) type {
                 .queue = true,
                 .queueEffects = true,
                 .find = true,
+                .find_clear = false,
                 .browse_col = .{false} ** n_col,
                 .browse_cursor = .{false} ** n_col,
                 .browse_clear_cursor = .{false} ** n_col,
@@ -53,6 +55,7 @@ pub fn RenderState(n_col: comptime_int) type {
             self.queue = false;
             self.queueEffects = false;
             self.find = false;
+            self.find_clear = false;
             self.browse_col = .{false} ** n_col;
             self.browse_cursor = .{false} ** n_col;
             self.browse_clear_cursor = .{false} ** n_col;
@@ -73,6 +76,7 @@ pub fn render(app: *state.State, render_state: *RenderState(n_browse_columns), p
     if (render_state.queue) try queueRender(wrkallocator, panels.queue.validArea(), app.queue.items, app.scroll_q.slice_inc);
     if (render_state.queueEffects) try queueEffectsRender(wrkallocator, panels.queue.validArea(), app.queue.items, app.scroll_q.absolutePos(), app.scroll_q.absolutePrevPos(), app.scroll_q.slice_inc, app.input_state, app.song.id);
     if (render_state.find) try findRender(panels.find);
+    if (render_state.find_clear) try clear(panels.find.validArea());
     if (render_state.browse_col[0]) try browseColumn(panels.browse1.validArea(), app.col_arr.buf[0].displaying, app.col_arr.buf[0].slice_inc);
     if (render_state.browse_col[1]) try browseColumn(panels.browse2.validArea(), app.col_arr.buf[1].displaying, app.col_arr.buf[1].slice_inc);
     if (render_state.browse_col[2]) try browseColumn(panels.browse3.validArea(), app.col_arr.buf[2].displaying, app.col_arr.buf[2].slice_inc);

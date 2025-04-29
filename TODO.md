@@ -1,9 +1,10 @@
 # muzic
 
 ## NEXT
-- [ ] ROBUST NONBLOCK flag handling
+- [ ] outofbounds error in browser
 
 **V1**
+- [ ] outofbounds error in browser
 - [ ] ROBUST NONBLOCK flag handling
 
 - [ ] fix half up
@@ -14,7 +15,6 @@
 - [ ] algorithm tweak, prioritize matches at the start of the string, for best match functions e.g. Tyler, The Creator
 - [ ] algoirthm fix, EXETER failing best match
 - [ ] display full album content, regardless of artist
-- [ ] const pointer retrieved at START of handle (should fix the weird cursor rendering issue)
 - [ ] carefully track persistentallocator use
 - [ ] handle utf-16 when rendering highlight
 - [ ] Batch HOLD events on release - seeking, skipping through songs

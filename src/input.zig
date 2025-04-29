@@ -137,7 +137,7 @@ fn onTypingExit(app: *state.State, render_state: *RenderState(state.n_browse_col
 
     // Update rendering state
     render_state.borders = true;
-    render_state.find = true;
+    render_state.find_clear = true;
     render_state.queueEffects = true;
 
     // Reset memory arenas
@@ -181,10 +181,7 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_br
             var escBuffer: [8]u8 = undefined;
             const escRead = try term.readEscapeCode(&escBuffer);
 
-            if (escRead == 0) {
-                onTypingExit(app, render_state);
-                return;
-            }
+            if (escRead == 0) onTypingExit(app, render_state);
         },
         'n' & '\x1F' => {
             scroll(&app.find_cursor_pos, app.viewable_searchable.?.len - 1, .down);
@@ -695,6 +692,7 @@ fn browserScrollVertical(dir: cursorDirection, current: *state.BrowseColumn, nex
         }
         if (node_buffer.apex != .UNSET) return true;
     }
+    try node_buffer.zeroForward();
     return false;
 }
 
