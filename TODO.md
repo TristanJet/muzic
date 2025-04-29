@@ -2,7 +2,6 @@
 
 ## Bugs/Fixes
 **breaking bugs**
-- [ ] next_col_ready reimplement
 
 **V1**
 - [ ] ROBUST NONBLOCK flag handling
@@ -18,6 +17,7 @@
 - [ ] carefully track persistentallocator use
 - [ ] handle utf-16 when rendering highlight
 - [ ] Batch HOLD events on release - seeking, skipping through songs
+- [x] next_col_ready reimplement
 - [x] I think search strings has to be fixed
 - [x] MEMORY LEAK suspected at 717 - input.zig
 - [x] cursor on third column needs to reset

@@ -485,6 +485,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
         },
         'l' => {
             log("--L PRESS--", .{});
+            if (!next_col_ready) return;
             const node = try node_buffer.getCurrentNode();
             const initial: *state.BrowseColumn = app.col_arr.getCurrent();
 
@@ -513,6 +514,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
                 next.render(render_state);
                 initial.renderCursor(render_state);
             }
+            if (node_buffer.index == 1) next_col_ready = false;
         },
         '/' => {
             const node = try node_buffer.getCurrentNode();
@@ -646,8 +648,6 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
             const displaying = current.displaying orelse return;
             browse_typed = true;
             app.typing_buffer.append(char);
-            log("------------", .{});
-            log("typed: {s}", .{app.typing_buffer.typed});
             const best_match: []const u8 = try algo.stringBestMatch(
                 &alloc.algoArena,
                 alloc.typingAllocator,
@@ -655,16 +655,9 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
                 &search_strings,
             );
 
-            log("best match: {s}", .{best_match});
-            const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear;
-            log("compare: {}", .{compare_type});
+            const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
             const index = findStringIndex(best_match, displaying, compare_type);
-            if (index) |unwrap| {
-                moveToIndex(unwrap, current, displaying, window.panels.find.validArea().ylen);
-            } else {
-                log("Not found", .{});
-            }
-
+            if (index) |unwrap| moveToIndex(unwrap, current, displaying, window.panels.find.validArea().ylen);
             current.renderCursor(render_state);
             current.render(render_state);
             render_state.find = true;
