@@ -1,11 +1,10 @@
 # muzic
 
 ## NEXT
-- [ ] outofbounds error in browser
+- [ ] ROBUST NONBLOCK flag handling for mac
+- [ ] backspace on type
 
 **V1**
-- [ ] outofbounds error in browser
-- [ ] ROBUST NONBLOCK flag handling
 
 - [ ] fix half up
 - [ ] deliberate number choice
@@ -19,6 +18,7 @@
 - [ ] handle utf-16 when rendering highlight
 - [ ] Batch HOLD events on release - seeking, skipping through songs
 - [ ] store only visible strings in queue
+- [x] outofbounds error in browser
 - [x] next_col_ready reimplement
 - [x] I think search strings has to be fixed
 - [x] MEMORY LEAK suspected at 717 - input.zig
