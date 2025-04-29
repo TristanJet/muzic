@@ -181,7 +181,7 @@ fn queueEffectsRender(
     abs_prev_pos: usize,
     inc: usize,
     input_state: Input_State,
-    current_song_id: u8,
+    current_song_id: usize,
 ) !void {
     var highlighted = false;
 

@@ -38,12 +38,6 @@ fn setStringValue(buffer: []u8, value: []const u8, max_len: usize) ![]const u8 {
     return buffer[0..value.len];
 }
 
-/// Parses a string as a u8
-fn parseU8(value: []const u8) !u8 {
-    if (value.len > 3) return error.TooLong;
-    return try fmt.parseInt(u8, value, 10);
-}
-
 /// Sends an MPD command and checks for OK response
 fn sendCommand(command: []const u8) !void {
     try connSend(command, &cmdStream);
@@ -101,8 +95,8 @@ pub const CurrentSong = struct {
         .elapsed = undefined,
         .duration = undefined,
     },
-    pos: u8 = undefined,
-    id: u8 = undefined,
+    pos: usize = undefined,
+    id: usize = undefined,
 
     pub fn init(self: *CurrentSong) void {
         // Point title to the correct part of bufTitle
@@ -129,11 +123,11 @@ pub const CurrentSong = struct {
     }
 
     pub fn setPos(self: *CurrentSong, pos: []const u8) !void {
-        self.pos = try parseU8(pos);
+        self.pos = try fmt.parseUnsigned(usize, pos, 10);
     }
 
     pub fn setId(self: *CurrentSong, id: []const u8) !void {
-        self.id = try parseU8(id);
+        self.id = try fmt.parseUnsigned(usize, id, 10);
     }
 
     fn handleField(self: *CurrentSong, key: []const u8, value: []const u8) !void {
@@ -322,8 +316,7 @@ pub const QSong = struct {
     title: ?[]const u8,
     artist: ?[]const u8,
     time: u16,
-    // Technically queue max len is 256
-    pos: u8,
+    pos: usize,
     id: usize,
 };
 

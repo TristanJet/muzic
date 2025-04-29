@@ -770,7 +770,7 @@ fn debounce() bool {
     //input debounce
     const app_time = time.milliTimestamp();
     const diff = app_time - last_input;
-    if (diff < 300) {
+    if (diff < 150) {
         return true;
     }
     last_input = app_time;

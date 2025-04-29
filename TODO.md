@@ -1,13 +1,13 @@
 # muzic
 
-## Bugs/Fixes
-**breaking bugs**
+## NEXT
 
 **V1**
 - [ ] ROBUST NONBLOCK flag handling
-- [ ] More robust input debounce; I suspect, library size has an effect on mpd response speed.
-- [ ] NUMBER FIX - program will crash if queue longer than 256
 
+- [ ] fix half up
+- [ ] deliberate number choice
+- [ ] More robust input debounce; I suspect, library size has an effect on mpd response speed.
 - [ ] Input mode scope variables
 - [ ] get rid of ALL UNNECESSARY public variables
 - [ ] algorithm tweak, prioritize matches at the start of the string, for best match functions e.g. Tyler, The Creator
@@ -17,6 +17,7 @@
 - [ ] carefully track persistentallocator use
 - [ ] handle utf-16 when rendering highlight
 - [ ] Batch HOLD events on release - seeking, skipping through songs
+- [ ] store only visible strings in queue
 - [x] next_col_ready reimplement
 - [x] I think search strings has to be fixed
 - [x] MEMORY LEAK suspected at 717 - input.zig
@@ -38,12 +39,14 @@
 - [x] hold x from the top breaks
 - [x] queue max_len could be runtime derived from column size in render
 - [x] pause flickers the bar and timestamp
+- [x] input debounce less
+- [x] NUMBER FIX - program will crash if queue longer than 256
 ## Features 
 **V1**
+- [ ] True color
 
 - [ ] space bar -> replace queue with selected
 - [ ] moving around in queue, visual mode?
-- [ ] True color
 - [ ] shift arrow to seek faster
 - [ ] return to original state, whatever was printed before running goes back to being visible
 - [ ] schedule interface to release?
