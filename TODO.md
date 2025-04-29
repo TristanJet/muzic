@@ -1,6 +1,7 @@
-# MUZIG
+# muzic
 
 ## Bugs/Fixes
+**breaking bugs**
 - [ ] I think search strings has to be fixed
 - [ ] next_col_ready reimplement
 
