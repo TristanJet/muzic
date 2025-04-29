@@ -12,6 +12,7 @@ pub const RenderState = @import("render.zig").RenderState;
 
 const util = @import("util.zig");
 const log = util.log;
+const CompareType = util.CompareType;
 const findStringIndex = util.findStringIndex;
 const wrkallocator = alloc.wrkallocator;
 const n_browse_col = state.n_browse_columns;
@@ -514,8 +515,11 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
             }
         },
         '/' => {
+            const node = try node_buffer.getCurrentNode();
+            if (node.type == .Select) return;
             app.input_state = .typing_browse;
             const curr_col = app.col_arr.getCurrent();
+            try switchToTyping(curr_col);
             curr_col.render(render_state);
             curr_col.clearCursor(render_state);
         },
@@ -610,21 +614,19 @@ fn goBottom(current: *state.BrowseColumn) !void {
     }
 }
 
-fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
-    if (modeSwitch) {
-        const current = app.col_arr.getCurrent();
-        current.pos = 0;
-        current.prev_pos = 0;
-        current.slice_inc = 0;
+fn switchToTyping(curr_col: *state.BrowseColumn) !void {
+    const displaying = curr_col.displaying orelse return error.NoDisplaying;
+    search_strings = try getSearchStrings(displaying, alloc.browserAllocator);
+}
 
-        const curr_node = try node_buffer.getCurrentNode();
-        search_strings = switch (curr_node.type) {
-            .Albums => data.albums,
-            .Artists => data.artists,
-            .Tracks => data.song_titles,
-            else => return error.BadSearch,
-        };
-    }
+fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
+    // if (modeSwitch) {
+    //     const current = app.col_arr.getCurrent();
+    //     current.pos = 0;
+    //     current.prev_pos = 0;
+    //     current.slice_inc = 0;
+    // }
+    util.log("first string: {s}", .{search_strings[0]});
     switch (char) {
         '\x1B' => {
             var escBuffer: [8]u8 = undefined;
@@ -632,12 +634,6 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
 
             if (escRead == 0) {
                 const current = app.col_arr.getCurrent();
-                const curr_node = try node_buffer.getCurrentNode();
-                current.displaying = switch (curr_node.type) {
-                    .Albums => data.albums,
-                    .Artists => data.artists,
-                    else => return error.BadSearch,
-                };
                 try onBrowseTypingExit(app, current, render_state);
             }
         },
@@ -650,7 +646,8 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
             const displaying = current.displaying orelse return;
             browse_typed = true;
             app.typing_buffer.append(char);
-            log("typed: {s}\n", .{app.typing_buffer.typed});
+            log("------------", .{});
+            log("typed: {s}", .{app.typing_buffer.typed});
             const best_match: []const u8 = try algo.stringBestMatch(
                 &alloc.algoArena,
                 alloc.typingAllocator,
@@ -659,11 +656,13 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
             );
 
             log("best match: {s}", .{best_match});
-            const index = findStringIndex(best_match, displaying);
+            const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear;
+            log("compare: {}", .{compare_type});
+            const index = findStringIndex(best_match, displaying, compare_type);
             if (index) |unwrap| {
-                log("index: {}\n", .{unwrap});
-                // move cursor to index
-                current.slice_inc = unwrap;
+                moveToIndex(unwrap, current, displaying, window.panels.find.validArea().ylen);
+            } else {
+                log("Not found", .{});
             }
 
             current.renderCursor(render_state);
@@ -671,6 +670,17 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
             render_state.find = true;
         },
     }
+}
+
+fn moveToIndex(index: usize, col: *state.BrowseColumn, displaying: []const []const u8, ylen: usize) void {
+    log("index: {}", .{index});
+    if (ylen >= displaying.len) {
+        log("moving cursor", .{});
+        col.pos = @intCast(index);
+        return;
+    }
+    log("moving window", .{});
+    col.setPos(0, index);
 }
 
 // Browser vertical scrolling - handles all three columns in one place
@@ -756,6 +766,13 @@ fn handleBrowseKeyRelease(char: u8, app: *state.State, render_state: *RenderStat
 
 // ---- Utility Functions ----
 
+fn getSearchStrings(strings: []const []const u8, allocator: mem.Allocator) ![][]const u8 {
+    var return_strings: [][]const u8 = try allocator.alloc([]const u8, strings.len);
+    for (strings, 0..) |string, i| {
+        return_strings[i] = string;
+    }
+    return return_strings;
+}
 fn debounce() bool {
     //input debounce
     const app_time = time.milliTimestamp();

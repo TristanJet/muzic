@@ -1,6 +1,7 @@
 const std = @import("std");
 const fs = std.fs;
 const math = std.math;
+const mem = std.mem;
 var logtty: fs.File = undefined;
 var logger: fs.File.Writer = undefined;
 //macos tty: /dev/ttys001
@@ -29,6 +30,17 @@ pub fn log(comptime format: []const u8, args: anytype) void {
     logger.print(format ++ "\n", args) catch {};
 }
 
+pub const CompareType = enum {
+    binary,
+    linear,
+};
+
+fn linearFind(key: []const u8, items: []const []const u8) ?usize {
+    for (items, 0..) |item, i| {
+        if (mem.eql(u8, key, item)) return i;
+    }
+    return null;
+}
 const S = struct {
     fn compareStrings(context: void, key: []const u8, mid_item: []const u8) math.Order {
         _ = context;
@@ -40,12 +52,10 @@ const S = struct {
 pub fn findStringIndex(
     key: []const u8,
     items: []const []const u8,
+    compare_type: CompareType,
 ) ?usize {
-    return std.sort.binarySearch(
-        []const u8, // Type T
-        key, // The string to find
-        items, // The sorted slice of strings
-        {}, // Context (empty since we don't need it)
-        S.compareStrings, // Comparison function
-    );
+    return switch (compare_type) {
+        .binary => std.sort.binarySearch([]const u8, key, items, {}, S.compareStrings),
+        .linear => linearFind(key, items),
+    };
 }

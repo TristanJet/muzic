@@ -2,21 +2,25 @@
 
 ## Bugs/Fixes
 **breaking bugs**
-- [ ] I think search strings has to be fixed
 - [ ] next_col_ready reimplement
 
 **V1**
-- [ ] initial config settings
-- [x] cursor on third column needs to reset
+- [ ] ROBUST NONBLOCK flag handling
+- [ ] More robust input debounce; I suspect, library size has an effect on mpd response speed.
+- [ ] NUMBER FIX - program will crash if queue longer than 256
+
+- [ ] Input mode scope variables
+- [ ] get rid of ALL UNNECESSARY public variables
 - [ ] algorithm tweak, prioritize matches at the start of the string, for best match functions e.g. Tyler, The Creator
 - [ ] algoirthm fix, EXETER failing best match
-- [ ] More robust input debounce; I suspect, library size has an effect on mpd response speed.
-- [x] MEMORY LEAK suspected at 717 - input.zig
-- [ ] NUMBER FIX - program will crash if queue longer than 256
+- [ ] display full album content, regardless of artist
+- [ ] const pointer retrieved at START of handle (should fix the weird cursor rendering issue)
 - [ ] carefully track persistentallocator use
-- [ ] get rid of ALL UNNECESSARY public variables
-- [ ] ROBUST NONBLOCK flag handling
-
+- [ ] handle utf-16 when rendering highlight
+- [ ] Batch HOLD events on release - seeking, skipping through songs
+- [x] I think search strings has to be fixed
+- [x] MEMORY LEAK suspected at 717 - input.zig
+- [x] cursor on third column needs to reset
 - [x] columns should be stored in an array, the same way nodes are, duh
 - [x] cursor reset -- render function and save apex
 - [x] scrolling horizontally works???? sometimes a bug but I can't reproduce
@@ -32,18 +36,11 @@
 - [x] weird bug where highlight didn't update on normal queue
 - [x] removing bugs on delete
 - [x] hold x from the top breaks
-- [ ] display full album content, regardless of artist
-- [ ] const pointer retrieved at START of handle (should fix the weird cursor rendering issue)
-- [ ] Batch HOLD events on release
-
 - [x] queue max_len could be runtime derived from column size in render
-- [ ] handle utf-16 when rendering highlight
-- [ ] pause flickers the bar and timestamp
-- [ ] Don't render if cursor doesn't move
-- [ ] don't render queue on seek?
-
+- [x] pause flickers the bar and timestamp
 ## Features 
 **V1**
+
 - [ ] space bar -> replace queue with selected
 - [ ] moving around in queue, visual mode?
 - [ ] True color
@@ -61,6 +58,7 @@
 - [x] g, G top and bottom
 - [x] ctrl-d , ctrl-u
 
+- [ ] input independent of key + keymap customization
 - [ ] cover art??
 - [ ] get multiple of next strings in browser and cache, maybe like 10 - 20 ? 
 - [ ] m to mark positio in Browser
