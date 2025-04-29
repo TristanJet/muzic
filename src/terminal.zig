@@ -2,6 +2,7 @@ const std = @import("std");
 const mem = std.mem;
 
 const log = @import("util.zig").log;
+const fmt = std.fmt;
 const fs = std.fs;
 const os = std.os;
 const posix = std.posix;
@@ -18,6 +19,8 @@ const BUFFER_SIZE = 1024;
 var buffer: [BUFFER_SIZE]u8 = undefined;
 var buffer_pos: usize = 0;
 
+const color_true = true;
+
 const ReadError = error{
     NotATerminal,
     ProcessOrphaned,
@@ -33,6 +36,7 @@ pub fn init() !void {
     try getTty();
     try uncook();
     try setNonBlock();
+    try setColor(.white);
     buffer_pos = 0;
 }
 
@@ -191,6 +195,11 @@ fn writeByteToBuffer(byte: u8) !void {
 // Terminal control sequences
 pub fn attributeReset() !void {
     try writeToBuffer("\x1B[0m");
+    try setColor(.white);
+}
+
+pub fn setBold() !void {
+    try writeToBuffer("\x1B[1m");
 }
 
 pub fn hideCursor() !void {
@@ -205,23 +214,69 @@ pub fn highlight() !void {
     try writeToBuffer("\x1B[7m");
 }
 
-pub fn unhighlight() !void {
-    try writeToBuffer("\x1B[0m");
+pub const Color = enum {
+    // red,
+    // green,
+    // blue,
+    // yellow,
+    white,
+    cyan,
+    magenta,
+};
+
+pub fn setColor(color: Color) !void {
+    var buf: [20]u8 = undefined;
+    const fullSequence: []const u8 = if (color_true)
+        try trueColor(color, &buf)
+    else
+        try ansiColor(color, &buf);
+
+    try writeToBuffer(fullSequence);
 }
 
-pub fn setColor(color: []const u8) !void {
-    try writeToBuffer(color);
+fn ansiColor(color: Color, buf: []u8) ![]const u8 {
+    const color_code: u16 = switch (color) {
+        // .blue => 34,
+        // .red => 31,
+        // .green => 32,
+        // .yellow => 33,
+        .white => 37,
+        .cyan => 36,
+        .magenta => 35,
+    };
+
+    return try fmt.bufPrint(buf, "\x1B[{}m", .{color_code});
 }
 
+fn trueColor(color: Color, buf: []u8) ![]const u8 {
+    // Predefined RGB values for each named color
+    const RGB = struct { r: u8, g: u8, b: u8 };
+    const rgb: RGB = switch (color) {
+        // .blue => .{ .r = 0, .g = 0, .b = 255 }, // True color blue
+        // .red => .{ .r = 80, .g = 30, .b = 170 }, // True color red
+        // .green => .{ .r = 0, .g = 255, .b = 0 }, // True color green
+        // .yellow => .{ .r = 0, .g = 100, .b = 100 },
+        .white => .{ .r = 255, .g = 255, .b = 255 },
+        .cyan => .{ .r = 35, .g = 210, .b = 229 },
+        .magenta => .{ .r = 240, .g = 60, .b = 170 },
+    };
+
+    // Format the true color ANSI sequence
+    return try fmt.bufPrint(
+        buf,
+        "\x1B[38;2;{};{};{}m",
+        .{ rgb.r, rgb.g, rgb.b },
+    );
+}
 // Text output functions
 pub fn writeAll(str: []const u8) !void {
     try writeToBuffer(str);
 }
 
-pub fn print(comptime fmt: []const u8, args: anytype) !void {
+pub fn print(comptime fmt_: []const u8, args: anytype) !void {
     var temp_buf: [512]u8 = undefined;
     var fbs = std.io.fixedBufferStream(&temp_buf);
-    try std.fmt.format(fbs.writer(), fmt, args);
+    try fmt.format(fbs.writer(), fmt_, args);
     try writeToBuffer(fbs.getWritten());
 }
 

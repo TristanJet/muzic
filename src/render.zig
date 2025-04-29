@@ -197,14 +197,14 @@ fn queueEffectsRender(
             const itemTime: []const u8 = formatSeconds(allocator, item.time) catch "";
             try term.highlight();
             try writeQueueLine(area, area.ymin + i, item, itemTime);
-            try term.unhighlight();
+            try term.attributeReset();
             highlighted = true;
         }
         if ((current_song_id == item.id) and !highlighted) {
             const itemTime: []const u8 = formatSeconds(allocator, item.time) catch "";
-            try term.setColor("\x1B[33m");
+            try term.setColor(.cyan);
             try writeQueueLine(area, area.ymin + i, item, itemTime);
-            try term.attributeReset();
+            try term.setColor(.white);
         }
         highlighted = false;
     }
@@ -256,20 +256,13 @@ fn currTrackRender(
     const ycent = p.getYCentre();
 
     const has_album = s.album.len > 0;
-    const has_trackno = s.trackno.len > 0;
 
-    const trckalb = if (!has_album)
-        try std.fmt.allocPrint(allocator, "{s}", .{s.title})
-    else if (!has_trackno)
-        try std.fmt.allocPrint(allocator, "{s} - {s}", .{
-            s.title,
-            s.album,
-        })
+    const artist_alb = if (!has_album)
+        s.artist
     else
-        try std.fmt.allocPrint(allocator, "{s} - \"{s}\" {s}.", .{
-            s.title,
+        try std.fmt.allocPrint(allocator, "{s} \"{s}\"", .{
+            s.artist,
             s.album,
-            s.trackno,
         });
 
     //Include co-ords in the panel drawing?
@@ -278,8 +271,12 @@ fn currTrackRender(
         try term.clearLine(ycent, xmin + 11, xmax);
         try term.clearLine(ycent - 2, xmin, xmax);
     }
-    try term.writeLine(s.artist, ycent, xmin, xmax);
-    try term.writeLine(trckalb, ycent - 2, xmin, xmax);
+    try term.setColor(.magenta);
+    try term.writeLine(artist_alb, ycent, xmin, xmax);
+    try term.setColor(.cyan);
+    try term.setBold();
+    try term.writeLine(s.title, ycent - 2, xmin, xmax);
+    try term.attributeReset();
     if (fr.*) fr.* = false;
 }
 
@@ -448,7 +445,7 @@ fn findRender(panel: window.Panel) !void {
                     if (j == current.find_cursor_pos) try term.highlight();
                     try term.moveCursor(area.ymin + j, area.xmin);
                     try term.writeAll(song.string[0..len]);
-                    if (j == current.find_cursor_pos) try term.unhighlight();
+                    if (j == current.find_cursor_pos) try term.attributeReset();
                 }
             } else {
                 for (0..area.ylen) |i| {

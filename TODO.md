@@ -1,6 +1,7 @@
 # muzic
 
 ## NEXT
+- [ ] ROBUST NONBLOCK flag handling
 
 **V1**
 - [ ] ROBUST NONBLOCK flag handling
@@ -43,13 +44,13 @@
 - [x] NUMBER FIX - program will crash if queue longer than 256
 ## Features 
 **V1**
-- [ ] True color
 
 - [ ] space bar -> replace queue with selected
 - [ ] moving around in queue, visual mode?
 - [ ] shift arrow to seek faster
 - [ ] return to original state, whatever was printed before running goes back to being visible
 - [ ] schedule interface to release?
+- [x] True color
 - [x] X -> clear queue
 - [x] browser typing
 - [x] search in browser
