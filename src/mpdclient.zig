@@ -33,8 +33,11 @@ const MpdError = error{
 
 /// Common function to handle setting string values in a fixed buffer
 fn setStringValue(buffer: []u8, value: []const u8, max_len: usize) ![]const u8 {
-    if (value.len > max_len) return error.TooLong;
-    mem.copyForwards(u8, buffer[0..value.len], value);
+    if (value.len > max_len) {
+        mem.copyForwards(u8, buffer, value[0..max_len]);
+        return buffer[0..max_len];
+    }
+    mem.copyForwards(u8, buffer, value);
     return buffer[0..value.len];
 }
 
@@ -168,20 +171,20 @@ pub fn connect(buffer: []u8, stream_type: StreamType, nonblock: bool) !void {
     const received_data = buffer[0..bytes_read];
 
     if (bytes_read < 2 or !mem.eql(u8, received_data[0..2], "OK")) {
-        util.log("BAD! connection", .{});
+        std.debug.print("BAD! connection", .{});
         return error.InvalidResponse;
     }
 
     if (nonblock) {
         const flags = std.posix.fcntl(stream.handle, std.posix.F.GETFL, 0) catch |err| {
-            util.log("Error getting socket flags: {}", .{err});
+            std.debug.print("Error getting socket flags: {}", .{err});
             return err;
         };
         // Use direct constant instead of NONBLOCK which may not be available on all platforms
         // const NONBLOCK = 0x0004; // This is O_NONBLOCK value for most systems including macOS
         const NONBLOCK = 0o4000;
         _ = std.posix.fcntl(stream.handle, std.posix.F.SETFL, flags | NONBLOCK) catch |err| {
-            util.log("Error setting socket to nonblocking: {}", .{err});
+            std.debug.print("Error setting socket to nonblocking: {}", .{err});
             return err;
         };
     }
@@ -189,7 +192,7 @@ pub fn connect(buffer: []u8, stream_type: StreamType, nonblock: bool) !void {
 
 pub fn checkConnection() !void {
     try sendCommand("ping\n");
-    util.log("PINGED", .{});
+    std.debug.print("PINGED", .{});
 }
 
 fn connSend(data: []const u8, stream: *std.net.Stream) !void {
@@ -376,6 +379,25 @@ pub fn getCurrentTrackTime(allocator: mem.Allocator, end_index: *usize, song: *C
     try processResponse(CurrentSong, allocator, end_index, handleTrackTimeField, song);
 }
 
+pub fn getPlayState(respAlloc: mem.Allocator) !bool {
+    const data = try readLargeResponse(respAlloc, "status\n");
+    var lines = try processLargeResponse(data);
+
+    var is_playing: bool = undefined;
+    while (lines.next()) |line| {
+        if (line.len == 0) continue;
+
+        if (mem.startsWith(u8, line, "state: ")) {
+            is_playing = switch (line[8]) {
+                'a' => false, // state: paused
+                'l' => true, // state: playing
+                else => return error.BadStateRead,
+            };
+        }
+    }
+    return is_playing;
+}
+
 /// Reads a large response from MPD for commands that may return a lot of data
 /// - tempAllocator: Used for the raw response data (should be freed after processing)
 /// - command: The MPD command to send
@@ -546,7 +568,7 @@ pub fn findAdd(song: *const Find_add_Song, allocator: mem.Allocator) !void {
     const album = if (song.album) |album| try fmt.allocPrint(allocator, " AND (Album == \\\"{s}\\\")", .{album}) else "";
 
     const command = try fmt.allocPrint(allocator, "findadd \"((Title == \\\"{s}\\\"){s}{s})\"\n", .{ song.title, album, artist });
-    util.log("command: {s}", .{command});
+    std.debug.print("command: {s}", .{command});
     try sendCommand(command);
 }
 
@@ -566,7 +588,7 @@ test "albumsFromArtist" {
     const songs = try findAlbumsFromArtists("Playboi Carti", tempAllocator, heapAllocator);
     _ = tempArena.reset(.free_all);
     for (songs) |song| {
-        util.log("{s}", .{song});
+        std.debug.print("{s}", .{song});
     }
 }
 test "findTracks" {
@@ -590,8 +612,8 @@ test "findTracks" {
     const songs = try findTracksFromAlbum(&filter, tempAllocator, heapAllocator);
     _ = tempArena.reset(.free_all);
     for (songs) |song| {
-        util.log("Title: {s}", .{song.title});
-        util.log("URI: {s}", .{song.uri});
+        std.debug.print("Title: {s}", .{song.title});
+        std.debug.print("URI: {s}", .{song.uri});
     }
 }
 

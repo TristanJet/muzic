@@ -2,7 +2,6 @@ const std = @import("std");
 const mpd = @import("mpdclient.zig");
 const input = @import("input.zig");
 const algo = @import("algo.zig");
-const log = @import("util.zig").log;
 const RenderState = @import("render.zig").RenderState;
 const expect = std.testing.expect;
 const time = std.time;
@@ -285,9 +284,6 @@ pub const Browser = struct {
         const init_node = try self.getCurrentNode();
         init_node.posFromColumn(init_col);
         const next_node = try self.getNextNode();
-        log("cond 1: {}", .{(self.len > columns.len)});
-        log("cond 2: {}", .{(columns.index == (columns.len / 2))});
-        log("cond 3: {}", .{((self.len - self.index) != columns.len)});
         if (self.len > columns.len and columns.index == (columns.len / 2) and (self.len - self.index) == columns.len) {
             init_col.setPos(next_node.pos, next_node.slice_inc);
             columns.inc += 1;
@@ -566,11 +562,11 @@ pub const App = struct {
             .input => |char| input.handleInput(char, &self.state, render_state),
             .release => |char| input.handleRelease(char, &self.state, render_state),
             .idle => |idle_type| handleIdle(idle_type, &self.state, render_state) catch |err| {
-                log("IDLE EVENT ERROR: {}", .{err});
+                std.debug.print("err: {}", .{err});
                 unreachable;
             },
             .time => |start_time| handleTime(start_time, &self.state, render_state) catch |err| {
-                log("TIME EVENT ERROR: {}", .{err});
+                std.debug.print("err: {}", .{err});
                 unreachable;
             },
         }

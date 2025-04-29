@@ -1,5 +1,4 @@
 const std = @import("std");
-const log = @import("util.zig").log;
 
 pub var wrkbuf: [4096]u8 = undefined;
 pub var wrkfba = std.heap.FixedBufferAllocator.init(&wrkbuf);

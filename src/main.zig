@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const time = std.time;
 
 const state = @import("state.zig");
@@ -12,7 +13,6 @@ const alloc = @import("allocators.zig");
 const algo = @import("algo.zig");
 
 const RenderState = render.RenderState;
-const log = util.log;
 const Event = state.Event;
 const App = state.App;
 const ArrayList = std.ArrayList;
@@ -35,8 +35,8 @@ const wrkbuf = &alloc.wrkbuf;
 pub fn main() !void {
     defer alloc.deinit();
 
-    try util.init();
-    defer util.deinit() catch {};
+    if (builtin.mode == .Debug) try util.loggerInit();
+    defer if (builtin.mode == .Debug) util.deinit() catch {};
 
     try mpd.connect(wrkbuf[0..64], .command, false);
     defer mpd.disconnect(.command);
@@ -54,10 +54,9 @@ pub fn main() !void {
     initial_song.init();
     try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &initial_song);
     try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &initial_song);
-    log("initial queue", .{});
     try mpd.getQueue(alloc.respAllocator, &initial_queue);
-    initial_queue.items = initial_queue.getItems();
     _ = alloc.respArena.reset(.free_all);
+    initial_queue.items = initial_queue.getItems();
 
     initial_typing.init();
 
@@ -70,7 +69,7 @@ pub fn main() !void {
         .first_render = true,
 
         .song = initial_song,
-        .isPlaying = true,
+        .isPlaying = try mpd.getPlayState(alloc.respAllocator),
         .last_second = 0,
         .last_elapsed = 0,
         .bar_init = true,

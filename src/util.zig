@@ -6,7 +6,7 @@ var logtty: fs.File = undefined;
 var logger: fs.File.Writer = undefined;
 //macos tty: /dev/ttys001
 
-pub fn init() !void {
+pub fn loggerInit() !void {
     logtty = try fs.cwd().openFile(
         "/dev/pts/1",
         .{ .mode = fs.File.OpenMode.write_only },
@@ -14,6 +14,7 @@ pub fn init() !void {
     logger = logtty.writer();
     try logger.writeAll("\x1B[2J");
     initErr() catch return error.StdErrInitFailed;
+    std.debug.print("HELLOOO", .{});
 }
 
 pub fn deinit() !void {
@@ -24,10 +25,6 @@ fn initErr() !void {
     const stderr_fd = std.io.getStdErr().handle;
     // Redirect stderr to the target terminal's file descriptor
     try std.posix.dup2(logtty.handle, stderr_fd);
-}
-
-pub fn log(comptime format: []const u8, args: anytype) void {
-    logger.print(format ++ "\n", args) catch {};
 }
 
 pub const CompareType = enum {

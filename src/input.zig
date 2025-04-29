@@ -7,11 +7,10 @@ const alloc = @import("allocators.zig");
 const window = @import("window.zig");
 const mem = std.mem;
 const time = std.time;
-const assert = std.debug.assert;
+const debug = std.debug;
 pub const RenderState = @import("render.zig").RenderState;
 
 const util = @import("util.zig");
-const log = util.log;
 const CompareType = util.CompareType;
 const findStringIndex = util.findStringIndex;
 const wrkallocator = alloc.wrkallocator;
@@ -68,7 +67,7 @@ pub const cursorDirection = enum {
 // ---- Core Input Handling ----
 
 pub fn checkInputEvent(buffer: []u8) !?state.Event {
-    assert(buffer.len == 1);
+    debug.assert(buffer.len == 1);
     const bytes_read: usize = try term.readBytes(buffer);
     if (bytes_read < 1) return null;
     return state.Event{ .input = buffer[0] };
@@ -194,13 +193,11 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_br
         '\r', '\n' => {
             const addUri = app.viewable_searchable.?[app.find_cursor_pos].uri;
             try mpd.addFromUri(wrkallocator, addUri);
-            log("added: {s}", .{addUri});
             onTypingExit(app, render_state);
             return;
         },
         else => {
             app.typing_buffer.append(char);
-            log("typed: {s}\n", .{app.typing_buffer.typed});
             const slice = try algo.suTopNranked(
                 &alloc.algoArena,
                 alloc.typingAllocator,
@@ -378,16 +375,14 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             } else if (mem.eql(u8, escBuffer[0..escRead], "[D")) {
                 if (debounce()) return;
                 try mpd.seekCur(false);
-            } else {
-                log("unknown escape sequence", .{});
-            }
+            } else {}
         },
         '\n', '\r' => {
             if (debounce()) return;
             try mpd.playByPos(wrkallocator, app.scroll_q.absolutePos());
             if (!app.isPlaying) app.isPlaying = true;
         },
-        else => log("input: {c}", .{char}),
+        else => {},
     }
 }
 
@@ -481,7 +476,6 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
             }
         },
         'l' => {
-            log("--L PRESS--", .{});
             if (!next_col_ready) return;
             const node = try node_buffer.getCurrentNode();
             const initial: *state.BrowseColumn = app.col_arr.getCurrent();
@@ -619,13 +613,7 @@ fn switchToTyping(curr_col: *state.BrowseColumn) !void {
 }
 
 fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
-    // if (modeSwitch) {
-    //     const current = app.col_arr.getCurrent();
-    //     current.pos = 0;
-    //     current.prev_pos = 0;
-    //     current.slice_inc = 0;
-    // }
-    util.log("first string: {s}", .{search_strings[0]});
+    debug.print("first string: {s}", .{search_strings[0]});
     switch (char) {
         '\x1B' => {
             var escBuffer: [8]u8 = undefined;
@@ -663,13 +651,10 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
 }
 
 fn moveToIndex(index: usize, col: *state.BrowseColumn, displaying: []const []const u8, ylen: usize) void {
-    log("index: {}", .{index});
     if (ylen >= displaying.len) {
-        log("moving cursor", .{});
         col.pos = @intCast(index);
         return;
     }
-    log("moving window", .{});
     col.setPos(0, index);
 }
 
@@ -725,7 +710,6 @@ fn browserHandleEnter(abs_pos: usize) !void {
 
 // Handle key release events specifically for the browser
 fn handleBrowseKeyRelease(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
-    log("--RELEASE--", .{});
     switch (char) {
         'j', 'k', 'g', 'G', 'd' & '\x1F', 'u' & '\x1F', '\n', '\r' => {
             const curr_node = try node_buffer.getCurrentNode();

@@ -1,7 +1,6 @@
 const std = @import("std");
 const mem = std.mem;
 
-const log = @import("util.zig").log;
 const fmt = std.fmt;
 const fs = std.fs;
 const os = std.os;
@@ -42,7 +41,6 @@ pub fn init() !void {
 
 fn getTty() !void {
     // Try to open terminal device
-    // On macOS, this is /dev/tty - avoid hardcoding ttys000
     tty = try fs.cwd().openFile(
         "/dev/tty",
         .{ .mode = .read_write },
@@ -88,10 +86,7 @@ fn setNonBlock() !void {
     const NONBLOCK = 0o4000;
     _ = try posix.fcntl(tty.handle, posix.F.SETFL, flags | NONBLOCK);
     const updated_flags = try posix.fcntl(tty.handle, posix.F.GETFL, 0);
-    log("setNonBlock: Set flags=0x{x}, expected NONBLOCK=0x{x}", .{ updated_flags, NONBLOCK });
-    if ((updated_flags & NONBLOCK) == 0) {
-        log("setNonBlock: Failed to set O_NONBLOCK", .{});
-    }
+    if ((updated_flags & NONBLOCK) == 0) return error.NonBlockError;
 }
 
 pub fn deinit() !void {
@@ -350,5 +345,4 @@ test "buffer write" {
         }
         buffer_pos -= n;
     }
-    log("count: {}", .{count});
 }
