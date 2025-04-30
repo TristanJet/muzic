@@ -3,11 +3,12 @@
 ## NEXT
 - [ ] ROBUST NONBLOCK flag handling for mac
 - [ ] backspace on type
+- [ ] utf handling
 
-**V1**
-
+## Bugs/fixes
+- [ ] utf handling
 - [ ] fix half up
-- [ ] deliberate number choice
+- [ ] deliberate integer size choice
 - [ ] More robust input debounce; I suspect, library size has an effect on mpd response speed.
 - [ ] Input mode scope variables
 - [ ] get rid of ALL UNNECESSARY public variables
@@ -43,7 +44,6 @@
 - [x] input debounce less
 - [x] NUMBER FIX - program will crash if queue longer than 256
 ## Features 
-**V1**
 
 - [ ] space bar -> replace queue with selected
 - [ ] moving around in queue, visual mode?

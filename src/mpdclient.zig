@@ -398,6 +398,7 @@ pub fn getPlayState(respAlloc: mem.Allocator) !bool {
             is_playing = switch (line[8]) {
                 'a' => false, // state: paused
                 'l' => true, // state: playing
+                't' => false, // state: stop
                 else => return error.BadStateRead,
             };
         }
