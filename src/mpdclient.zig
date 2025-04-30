@@ -11,8 +11,8 @@ const mem = std.mem;
 const fmt = std.fmt;
 const ArrayList = std.ArrayList;
 
-const host = "127.0.0.1";
-const port = 6600;
+var host: []const u8 = "127.0.0.1";
+var port: u16 = 6600;
 
 var cmdStream: std.net.Stream = undefined;
 var idleStream: std.net.Stream = undefined;
@@ -157,6 +157,11 @@ pub const CurrentSong = struct {
         }
     }
 };
+
+pub fn handleArgs(arg_host: ?[]const u8, arg_port: ?u16) void {
+    if (arg_host) |arg| host = arg;
+    if (arg_port) |arg| port = arg;
+}
 
 pub fn connect(buffer: []u8, stream_type: StreamType, nonblock: bool) !void {
     const peer = try net.Address.parseIp4(host, port);

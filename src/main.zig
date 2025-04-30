@@ -11,6 +11,7 @@ const util = @import("util.zig");
 const render = @import("render.zig");
 const alloc = @import("allocators.zig");
 const algo = @import("algo.zig");
+const proc = @import("proc.zig");
 
 const RenderState = render.RenderState;
 const Event = state.Event;
@@ -38,10 +39,14 @@ pub fn main() !void {
     if (builtin.mode == .Debug) try util.loggerInit();
     defer if (builtin.mode == .Debug) util.deinit() catch {};
 
-    try mpd.connect(wrkbuf[0..64], .command, false);
+    const args = proc.handleArgs(alloc.persistentAllocator) catch return error.InvalidArgument;
+    if (args.help) return;
+
+    mpd.handleArgs(args.host, args.port);
+    mpd.connect(wrkbuf[0..64], .command, false) catch return error.MpdConnectionFailed;
     defer mpd.disconnect(.command);
 
-    try mpd.connect(wrkbuf[0..64], .idle, true);
+    mpd.connect(wrkbuf[0..64], .idle, true) catch return error.MpdConnectionFailed;
     defer mpd.disconnect(.idle);
     try mpd.initIdle();
 
