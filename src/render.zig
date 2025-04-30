@@ -74,7 +74,7 @@ pub fn render(app: *state.State, render_state: *RenderState(n_browse_columns), p
     if (render_state.currentTrack) try currTrackRender(wrkallocator, panels.curr_song, app.song, &app.first_render, end_index);
     if (render_state.bar) try barRender(panels.curr_song, app.song, wrkallocator);
     if (render_state.queue) try queueRender(wrkallocator, panels.queue.validArea(), app.queue.items, app.scroll_q.slice_inc);
-    if (render_state.queueEffects) try queueEffectsRender(wrkallocator, panels.queue.validArea(), app.queue.items, app.scroll_q.absolutePos(), app.scroll_q.absolutePrevPos(), app.scroll_q.slice_inc, app.input_state, app.song.id);
+    if (render_state.queueEffects) try queueEffectsRender(wrkallocator, panels.queue.validArea(), app.queue.items, app.scroll_q.absolutePos(), app.scroll_q.absolutePrevPos(), app.scroll_q.slice_inc, app.input_state, app.song.id, app.prev_id);
     if (render_state.find) try findRender(panels.find);
     if (render_state.find_clear) try clear(panels.find.validArea());
     if (render_state.browse_col[0]) try browseColumn(panels.browse1.validArea(), app.col_arr.buf[0].displaying, app.col_arr.buf[0].slice_inc);
@@ -186,6 +186,7 @@ fn queueEffectsRender(
     inc: usize,
     input_state: Input_State,
     current_song_id: usize,
+    prev_song_id: usize,
 ) !void {
     var highlighted = false;
 
@@ -209,6 +210,11 @@ fn queueEffectsRender(
             try term.setColor(.cyan);
             try writeQueueLine(area, area.ymin + i, item, itemTime);
             try term.setColor(.white);
+        }
+        if ((prev_song_id != current_song_id) and (prev_song_id == item.id) and !highlighted) {
+            const itemTime: []const u8 = formatSeconds(allocator, item.time) catch "";
+            try term.setColor(.white);
+            try writeQueueLine(area, area.ymin + i, item, itemTime);
         }
         highlighted = false;
     }

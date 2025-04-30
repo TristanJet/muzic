@@ -29,6 +29,7 @@ pub const State = struct {
 
     queue: mpd.Queue,
     scroll_q: QueueScroll,
+    prev_id: usize,
 
     typing_buffer: TypingBuffer,
     find_cursor_pos: u8,
@@ -641,6 +642,7 @@ fn handleTime(time_: i64, app: *State, _render_state: *RenderState(n_browse_colu
 fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState(n_browse_columns)) !void {
     switch (idle_event) {
         .player => {
+            app.prev_id = app.song.id;
             _ = app.song.init();
             try mpd.getCurrentSong(wrkallocator, &alloc.wrkfba.end_index, &app.song);
             try mpd.getCurrentTrackTime(wrkallocator, &alloc.wrkfba.end_index, &app.song);
@@ -649,7 +651,6 @@ fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState(n_browse
             app.last_second = @divTrunc(time.milliTimestamp(), 1000);
             app.bar_init = true;
             render_state.bar = true;
-            render_state.queue = true;
             render_state.queueEffects = true;
             render_state.currentTrack = true;
         },

@@ -68,6 +68,7 @@ pub fn main() !void {
         .quit = false,
         .first_render = true,
 
+        .prev_id = 0,
         .song = initial_song,
         .isPlaying = try mpd.getPlayState(alloc.respAllocator),
         .last_second = 0,
