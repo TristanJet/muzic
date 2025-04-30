@@ -711,6 +711,7 @@ fn browserHandleEnter(abs_pos: usize) !void {
 fn handleBrowseKeyRelease(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
     switch (char) {
         'j', 'k', 'g', 'G', 'd' & '\x1F', 'u' & '\x1F', '\n', '\r' => {
+            if (node_buffer.index == 0) return;
             const curr_node = try node_buffer.getCurrentNode();
             const curr_col = app.col_arr.getCurrent();
             const displaying = curr_col.displaying orelse return;
