@@ -613,7 +613,6 @@ fn switchToTyping(curr_col: *state.BrowseColumn) !void {
 }
 
 fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
-    debug.print("first string: {s}", .{search_strings[0]});
     switch (char) {
         '\x1B' => {
             var escBuffer: [8]u8 = undefined;

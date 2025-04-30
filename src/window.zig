@@ -63,7 +63,7 @@ fn getWindow(tty: *const fs.File) !void {
     const is_macos = @import("builtin").os.tag == .macos;
     const ioctl_code = if (is_macos) 0x40087468 else TIOCGWINSZ;
 
-    const err = std.c.ioctl(tty.handle, ioctl_code, @intFromPtr(&win_size));
+    const err = std.os.linux.ioctl(tty.handle, ioctl_code, @intFromPtr(&win_size));
     if (err < 0) {
         return error.WindowSizeError;
     }

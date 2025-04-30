@@ -4,6 +4,7 @@ const state = @import("state.zig");
 const Idle = state.Idle;
 const Event = state.Event;
 const assert = std.debug.assert;
+const log = util.log;
 
 const net = std.net;
 const mem = std.mem;
@@ -171,20 +172,20 @@ pub fn connect(buffer: []u8, stream_type: StreamType, nonblock: bool) !void {
     const received_data = buffer[0..bytes_read];
 
     if (bytes_read < 2 or !mem.eql(u8, received_data[0..2], "OK")) {
-        std.debug.print("BAD! connection", .{});
+        log("BAD! connection", .{});
         return error.InvalidResponse;
     }
 
     if (nonblock) {
         const flags = std.posix.fcntl(stream.handle, std.posix.F.GETFL, 0) catch |err| {
-            std.debug.print("Error getting socket flags: {}", .{err});
+            log("Error getting socket flags: {}", .{err});
             return err;
         };
         // Use direct constant instead of NONBLOCK which may not be available on all platforms
         // const NONBLOCK = 0x0004; // This is O_NONBLOCK value for most systems including macOS
         const NONBLOCK = 0o4000;
         _ = std.posix.fcntl(stream.handle, std.posix.F.SETFL, flags | NONBLOCK) catch |err| {
-            std.debug.print("Error setting socket to nonblocking: {}", .{err});
+            log("Error setting socket to nonblocking: {}", .{err});
             return err;
         };
     }
@@ -192,7 +193,7 @@ pub fn connect(buffer: []u8, stream_type: StreamType, nonblock: bool) !void {
 
 pub fn checkConnection() !void {
     try sendCommand("ping\n");
-    std.debug.print("PINGED", .{});
+    log("PINGED", .{});
 }
 
 fn connSend(data: []const u8, stream: *std.net.Stream) !void {
@@ -264,6 +265,7 @@ pub fn prevSong() !void {
 }
 
 pub fn playByPos(allocator: mem.Allocator, pos: usize) !void {
+    log("PLAYING!", .{});
     const command = try fmt.allocPrint(allocator, "play {}\n", .{pos});
     try sendCommand(command);
 }
@@ -568,7 +570,7 @@ pub fn findAdd(song: *const Find_add_Song, allocator: mem.Allocator) !void {
     const album = if (song.album) |album| try fmt.allocPrint(allocator, " AND (Album == \\\"{s}\\\")", .{album}) else "";
 
     const command = try fmt.allocPrint(allocator, "findadd \"((Title == \\\"{s}\\\"){s}{s})\"\n", .{ song.title, album, artist });
-    std.debug.print("command: {s}", .{command});
+    log("command: {s}", .{command});
     try sendCommand(command);
 }
 
@@ -583,12 +585,12 @@ test "albumsFromArtist" {
 
     var wrkbuf: [16]u8 = undefined;
     _ = try connect(wrkbuf[0..16], .command, false);
-    std.debug.print("connected lal lala \n", .{});
+    log("connected lal lala \n", .{});
 
     const songs = try findAlbumsFromArtists("Playboi Carti", tempAllocator, heapAllocator);
     _ = tempArena.reset(.free_all);
     for (songs) |song| {
-        std.debug.print("{s}", .{song});
+        log("{s}", .{song});
     }
 }
 test "findTracks" {
@@ -602,7 +604,7 @@ test "findTracks" {
 
     var wrkbuf: [16]u8 = undefined;
     _ = try connect(wrkbuf[0..16], .command, false);
-    std.debug.print("connected\n", .{});
+    log("connected\n", .{});
 
     const filter = Filter_Songs{
         .artist = "Playboi Carti",
@@ -612,8 +614,8 @@ test "findTracks" {
     const songs = try findTracksFromAlbum(&filter, tempAllocator, heapAllocator);
     _ = tempArena.reset(.free_all);
     for (songs) |song| {
-        std.debug.print("Title: {s}", .{song.title});
-        std.debug.print("URI: {s}", .{song.uri});
+        log("Title: {s}", .{song.title});
+        log("URI: {s}", .{song.uri});
     }
 }
 
@@ -624,7 +626,7 @@ test "findAdd" {
 
     var wrkbuf: [16]u8 = undefined;
     _ = try connect(wrkbuf[0..16], .command, false);
-    std.debug.print("connected\n", .{});
+    log("connected\n", .{});
 
     const song = Find_add_Song{
         .artist = null,
@@ -645,27 +647,27 @@ test "getAllAlbums" {
 
     var wrkbuf: [16]u8 = undefined;
     _ = try connect(wrkbuf[0..16], .command, false);
-    std.debug.print("connected\n", .{});
+    log("connected\n", .{});
 
     const albums = try getAllAlbums(heapAllocator, respAllocator);
-    std.debug.print("resp end index: {}\n", .{respArena.state.end_index});
-    std.debug.print("arena end index: {}\n", .{heapArena.state.end_index});
+    log("resp end index: {}\n", .{respArena.state.end_index});
+    log("arena end index: {}\n", .{heapArena.state.end_index});
     _ = respArena.reset(.retain_capacity);
-    std.debug.print("album 1: {s}\n", .{albums[900]});
-    std.debug.print("n albums: {}\n", .{albums.len});
+    log("album 1: {s}\n", .{albums[900]});
+    log("n albums: {}\n", .{albums.len});
     const artists = try getAllArtists(heapAllocator, respAllocator);
-    std.debug.print("resp end index: {}\n", .{respArena.state.end_index});
-    std.debug.print("arena end index: {}\n", .{heapArena.state.end_index});
+    log("resp end index: {}\n", .{respArena.state.end_index});
+    log("arena end index: {}\n", .{heapArena.state.end_index});
     _ = respArena.reset(.retain_capacity);
-    std.debug.print("artist : {s}\n", .{artists[100]});
-    std.debug.print("n artists: {}\n", .{artists.len});
+    log("artist : {s}\n", .{artists[100]});
+    log("n artists: {}\n", .{artists.len});
     const songs = try getAllSongs(heapAllocator, respAllocator);
-    std.debug.print("resp end index: {}\n", .{respArena.state.end_index});
-    std.debug.print("arena end index: {}\n", .{heapArena.state.end_index});
+    log("resp end index: {}\n", .{respArena.state.end_index});
+    log("arena end index: {}\n", .{heapArena.state.end_index});
     _ = respArena.reset(.free_all);
-    std.debug.print("song : {s}\n", .{songs[100]});
-    std.debug.print("n songs: {}\n", .{songs.len});
-    std.debug.print("resp end index: {}\n", .{respArena.state.end_index});
+    log("song : {s}\n", .{songs[100]});
+    log("n songs: {}\n", .{songs.len});
+    log("resp end index: {}\n", .{respArena.state.end_index});
 }
 fn escapeMpdString(allocator: mem.Allocator, str: []const u8) ![]u8 {
     // Initialize a dynamic array to build the escaped string
@@ -837,7 +839,7 @@ test "do it work" {
 
     var wrkbuf: [16]u8 = undefined;
     _ = try connect(wrkbuf[0..16], &cmdStream, false);
-    std.debug.print("connected\n", .{});
+    log("connected\n", .{});
 
     const items = try getSongStringAndUri(heapAllocator, respAllocator);
     var max: []const u8 = "";
@@ -847,12 +849,12 @@ test "do it work" {
         }
     }
     const end = std.time.milliTimestamp() - start;
-    std.debug.print("end index: {}\n", .{respArena.state.end_index});
+    log("end index: {}\n", .{respArena.state.end_index});
     respArena.deinit();
-    std.debug.print("length: {}\n", .{items.len});
-    std.debug.print("string 1000: {s}\n", .{items[2315].string.?});
-    std.debug.print("end index: {}\n", .{heapArena.state.end_index});
-    std.debug.print("longest string: {s}\nlen:{}\n", .{ max, max.len });
-    std.debug.print("Time spent: {}\n", .{end});
+    log("length: {}\n", .{items.len});
+    log("string 1000: {s}\n", .{items[2315].string.?});
+    log("end index: {}\n", .{heapArena.state.end_index});
+    log("longest string: {s}\nlen:{}\n", .{ max, max.len });
+    log("Time spent: {}\n", .{end});
     try std.testing.expect(items.len == 2316);
 }

@@ -6,6 +6,7 @@ const RenderState = @import("render.zig").RenderState;
 const expect = std.testing.expect;
 const time = std.time;
 const mem = std.mem;
+const log = @import("util.zig").log;
 
 const alloc = @import("allocators.zig");
 const wrkallocator = alloc.wrkallocator;
@@ -562,11 +563,11 @@ pub const App = struct {
             .input => |char| input.handleInput(char, &self.state, render_state),
             .release => |char| input.handleRelease(char, &self.state, render_state),
             .idle => |idle_type| handleIdle(idle_type, &self.state, render_state) catch |err| {
-                std.debug.print("err: {}", .{err});
+                log("err: {}", .{err});
                 unreachable;
             },
             .time => |start_time| handleTime(start_time, &self.state, render_state) catch |err| {
-                std.debug.print("err: {}", .{err});
+                log("err: {}", .{err});
                 unreachable;
             },
         }

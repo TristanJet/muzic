@@ -1,6 +1,7 @@
 const std = @import("std");
 const mpd = @import("mpdclient.zig");
 const util = @import("util.zig");
+const log = util.log;
 const assert = std.debug.assert;
 
 pub var nRanked: usize = undefined;
@@ -253,7 +254,7 @@ test "string function" {
 
     var wrkbuf: [16]u8 = undefined;
     _ = try mpd.connect(wrkbuf[0..16], .command, false);
-    std.debug.print("connected\n", .{});
+    log("connected\n", .{});
 
     // const data = try mpd.listAllData(respAllocator);
     // const items = try mpd.getAllSongs(longallocator, data);
@@ -269,27 +270,27 @@ test "string function" {
     const input = "Revolver";
 
     // var songs: [][]const u8 = undefined;
-    // std.debug.print("Total set: {}\n", .{strings.len});
+    // log("Total set: {}\n", .{strings.len});
     // for (1..input.len + 1) |i| {
     //     const inputfr = input[0..i];
-    //     std.debug.print("Input: {s}\n", .{inputfr});
+    //     log("Input: {s}\n", .{inputfr});
     //     var strings_slice = strings;
     //     songs = try stringTopNranked(&arena, longallocator, inputfr, &strings_slice);
     //     for (songs, 0..) |song, j| {
-    //         std.debug.print("Best match: {} {s}\n", .{ j, song });
+    //         log("Best match: {} {s}\n", .{ j, song });
     //     }
-    //     std.debug.print("Total set: {}\n", .{strings.len});
+    //     log("Total set: {}\n", .{strings.len});
     // }
 
     var best_match: []const u8 = undefined;
-    std.debug.print("Total set: {}\n", .{strings.len});
+    log("Total set: {}\n", .{strings.len});
     for (1..input.len + 1) |i| {
         const inputfr = input[0..i];
-        std.debug.print("Input: {s}\n", .{inputfr});
+        log("Input: {s}\n", .{inputfr});
         var strings_slice = strings;
         best_match = try stringBestMatch(&arena, longallocator, inputfr, &strings_slice);
-        std.debug.print("best match: {s}\n", .{best_match});
-        std.debug.print("Total set: {}\n", .{strings.len});
+        log("best match: {s}\n", .{best_match});
+        log("Total set: {}\n", .{strings.len});
     }
 }
 
@@ -384,7 +385,7 @@ test "full function" {
 
     var wrkbuf: [16]u8 = undefined;
     _ = try mpd.connect(wrkbuf[0..16], .command, false);
-    std.debug.print("connected\n", .{});
+    log("connected\n", .{});
 
     const data = try mpd.listAllData(respAllocator);
     const items = try mpd.getSongStringAndUri(longallocator, data);
@@ -393,26 +394,26 @@ test "full function" {
     const input = "Beat It";
 
     // var songs: []mpd.SongStringAndUri = undefined;
-    // std.debug.print("Total set: {}\n", .{items.len});
+    // log("Total set: {}\n", .{items.len});
     // for (1..input.len + 1) |i| {
     //     const inputfr = input[0..i];
-    //     std.debug.print("Input: {s}\n", .{inputfr});
+    //     log("Input: {s}\n", .{inputfr});
     //     var items_slice = items;
     //     songs = try suTopNranked(&arena, longallocator, inputfr, &items_slice);
     //     for (songs, 0..) |song, j| {
-    //         std.debug.print("Best match: {} {s}\n", .{ j, song.string });
+    //         log("Best match: {} {s}\n", .{ j, song.string });
     //     }
-    //     std.debug.print("Total set: {}\n", .{items.len});
+    //     log("Total set: {}\n", .{items.len});
     // }
 
     var best_match: mpd.SongStringAndUri = undefined;
-    std.debug.print("Total set: {}\n", .{items.len});
+    log("Total set: {}\n", .{items.len});
     for (1..input.len + 1) |i| {
         const inputfr = input[0..i];
-        std.debug.print("Input: {s}\n", .{inputfr});
+        log("Input: {s}\n", .{inputfr});
         var items_slice = items;
         best_match = try suBestMatch(&arena, longallocator, inputfr, &items_slice);
-        std.debug.print("Best match: {s}\n", .{best_match.string});
-        std.debug.print("Total set: {}\n", .{items.len});
+        log("Best match: {s}\n", .{best_match.string});
+        log("Total set: {}\n", .{items.len});
     }
 }

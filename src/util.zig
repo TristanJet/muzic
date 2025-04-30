@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const fs = std.fs;
 const math = std.math;
 const mem = std.mem;
@@ -14,7 +15,6 @@ pub fn loggerInit() !void {
     logger = logtty.writer();
     try logger.writeAll("\x1B[2J");
     initErr() catch return error.StdErrInitFailed;
-    std.debug.print("HELLOOO", .{});
 }
 
 pub fn deinit() !void {
@@ -25,6 +25,10 @@ fn initErr() !void {
     const stderr_fd = std.io.getStdErr().handle;
     // Redirect stderr to the target terminal's file descriptor
     try std.posix.dup2(logtty.handle, stderr_fd);
+}
+
+pub fn log(comptime format: []const u8, args: anytype) void {
+    if (builtin.mode == .Debug) logger.print(format ++ "\n", args) catch return;
 }
 
 pub const CompareType = enum {
