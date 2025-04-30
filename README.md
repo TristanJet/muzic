@@ -9,9 +9,9 @@
  - Music browser for manual browsing
 
 ## Installation and Usage
-Muzig currently only works on linux.
+muzic currently only works on linux.
 
-To build muzic you need **Zig 0.13** installed
+To build muzic you need **Zig 0.13** installed, running the following command in the source directory will build to $source/zig-out/bin/out
 
 ```bash
 zig build -Doptimize=ReleaseFast
