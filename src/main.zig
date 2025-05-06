@@ -41,6 +41,7 @@ pub fn main() !void {
 
     const args = proc.handleArgs(alloc.persistentAllocator) catch return error.InvalidArgument;
     if (args.help) return;
+    if (args.version) return;
 
     mpd.handleArgs(args.host, args.port);
     mpd.connect(wrkbuf[0..64], .command, false) catch return error.MpdConnectionFailed;

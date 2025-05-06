@@ -11,7 +11,13 @@
 ## Installation and Usage
 muzic currently only works on linux.
 
-To build muzic you need **Zig 0.13** installed, running the following command in the source directory will build to $source/zig-out/bin/out
+muzic is available on the **AUR**
+
+```bash
+yay -S muzic
+```
+
+To build muzic from source you need **Zig 0.13** installed, running the following command in the source directory will build to $source/zig-out/bin/
 
 ```bash
 zig build -Doptimize=ReleaseFast

@@ -6,6 +6,8 @@
 - [ ] utf handling
 
 ## Bugs/fixes
+- [ ] escape codes stop working after quit - enter
+- [ ] flashing could be due to unexpected flush - add empty character after content
 - [ ] utf handling
 - [ ] fix half up
 - [ ] deliberate integer size choice
@@ -45,6 +47,7 @@
 - [x] NUMBER FIX - program will crash if queue longer than 256
 ## Features 
 
+- [ ] allow browse by files - (no tags set)
 - [ ] space bar -> replace queue with selected
 - [ ] moving around in queue, visual mode?
 - [ ] shift arrow to seek faster

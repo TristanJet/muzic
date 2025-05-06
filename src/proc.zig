@@ -10,19 +10,23 @@ const helpmsg: []const u8 =
     \\-H, --host <str>      MPD host (default: 127.0.0.1)
     \\-p, --port <u16>      MPD port (default: 6600)
     \\-h, --help            Print help
+    \\-v, --version         Print version
     \\
 ;
+const version = "0.9.2";
 
 pub const ArgumentValues = struct {
     host: ?[]const u8,
     port: ?u16,
     help: bool,
+    version: bool,
 };
 pub fn handleArgs(persAllocator: mem.Allocator) !ArgumentValues {
     var arg_val = ArgumentValues{
         .host = null,
         .port = null,
         .help = false,
+        .version = false,
     };
     var args = proc.args();
     var isFirst: bool = true;
@@ -42,15 +46,26 @@ pub fn handleArgs(persAllocator: mem.Allocator) !ArgumentValues {
             arg_val.host = host;
             log("host: {s}", .{val});
         } else if (mem.eql(u8, arg, "-h") or mem.eql(u8, arg, "--help")) {
-            // Try to open terminal device
-            const tty = try fs.cwd().openFile(
-                "/dev/tty",
-                .{ .mode = .read_write },
-            );
+            arg_val.help = true;
+            const tty = try getTty();
             try tty.writeAll(helpmsg);
             tty.close();
-            arg_val.help = true;
-        } else return error.InvalidArgument;
+        } else if (mem.eql(u8, arg, "-v") or mem.eql(u8, arg, "--version")) {
+            arg_val.version = true;
+            const tty = try getTty();
+            try tty.writeAll(version ++ "\n");
+            tty.close();
+        } else {
+            return error.InvalidArgument;
+        }
     }
     return arg_val;
+}
+
+fn getTty() !fs.File {
+    const file = try fs.cwd().openFile(
+        "/dev/tty",
+        .{ .mode = .write_only },
+    );
+    return file;
 }
