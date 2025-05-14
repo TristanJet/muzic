@@ -399,15 +399,17 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
         'j' => {
             const current: *state.BrowseColumn = app.col_arr.getCurrent();
             const next: ?*state.BrowseColumn = app.col_arr.getNext();
-            const reset = try browserScrollVertical(.down, current, next);
+            const scrolled = &app.current_scrolled;
+            const reset = try browserScrollVertical(.down, current, next, scrolled);
             if (reset) {
-                try resetBrowser(&app.col_arr, next);
+                try resetBrowser(next);
+                app.col_arr.clear(render_state);
                 for (1..app.col_arr.len) |i| {
                     app.col_arr.buf[i].render(render_state);
                 }
                 app.col_arr.buf[0].renderCursor(render_state);
             } else {
-                current.render(render_state);
+                if (scrolled.*) current.render(render_state);
                 current.renderCursor(render_state);
                 if (next) |col| col.render(render_state);
             }
@@ -415,15 +417,17 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
         'k' => {
             const current: *state.BrowseColumn = app.col_arr.getCurrent();
             const next: ?*state.BrowseColumn = app.col_arr.getNext();
-            const reset = try browserScrollVertical(.up, current, next);
+            const scrolled = &app.current_scrolled;
+            const reset = try browserScrollVertical(.up, current, next, scrolled);
             if (reset) {
-                try resetBrowser(&app.col_arr, next);
+                try resetBrowser(next);
+                app.col_arr.clear(render_state);
                 for (1..app.col_arr.len) |i| {
                     app.col_arr.buf[i].render(render_state);
                 }
                 app.col_arr.buf[0].renderCursor(render_state);
             } else {
-                current.render(render_state);
+                if (scrolled.*) current.render(render_state);
                 current.renderCursor(render_state);
                 if (next) |col| col.render(render_state);
             }
@@ -463,15 +467,16 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
             app.node_switched = true;
             const prev = prev_col orelse return error.NoPrev;
             if (col_switched) {
-                initial.render(render_state);
                 initial.clearCursor(render_state);
-                prev.render(render_state);
                 prev.renderCursor(render_state);
             } else {
+                initial.clear(render_state);
                 initial.render(render_state);
                 initial.renderCursor(render_state);
                 const next = next_col orelse return error.NoNext;
+                next.clear(render_state);
                 next.render(render_state);
+                prev.clear(render_state);
                 prev.render(render_state);
             }
         },
@@ -500,8 +505,11 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
                 next.renderCursor(render_state);
             } else {
                 const prev = prev_col orelse return error.NoPrev;
+                prev.clear(render_state);
                 prev.render(render_state);
+                initial.clear(render_state);
                 initial.render(render_state);
+                next.clear(render_state);
                 next.render(render_state);
                 initial.renderCursor(render_state);
             }
@@ -524,10 +532,9 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
     }
 }
 
-fn resetBrowser(col_arr: *state.ColumnArray(n_browse_col), next: ?*state.BrowseColumn) !void {
+fn resetBrowser(next: ?*state.BrowseColumn) !void {
     if (next) |col| col.setPos(0, 0);
     node_buffer = initial_browser;
-    col_arr.clear();
     var resp: bool = undefined;
     resp = alloc.browserArena.reset(.retain_capacity);
     if (!resp) return error.AllocatorError;
@@ -658,11 +665,11 @@ fn moveToIndex(index: usize, col: *state.BrowseColumn, displaying: []const []con
 }
 
 // Browser vertical scrolling - handles all three columns in one place
-fn browserScrollVertical(dir: cursorDirection, current: *state.BrowseColumn, next: ?*state.BrowseColumn) !bool {
+fn browserScrollVertical(dir: cursorDirection, current: *state.BrowseColumn, next: ?*state.BrowseColumn, scrolled: *bool) !bool {
     const displaying = current.displaying orelse return false;
     next_col_ready = false;
     const max: ?u8 = if (dir == .up) null else @intCast(@min(y_len, displaying.len));
-    current.scroll(dir, max, y_len);
+    scrolled.* = try current.scroll(dir, max, y_len);
 
     const curr_node = try node_buffer.getCurrentNode();
     if (curr_node.type == .Select) {
@@ -727,13 +734,20 @@ fn handleBrowseKeyRelease(char: u8, app: *state.State, render_state: *RenderStat
             const resp = try node_buffer.setNodes(&app.col_arr, alloc.respAllocator, alloc.browserAllocator);
             if (!resp) return;
             const next_col = app.col_arr.getNext();
-            if (next_col) |next| next.render(render_state);
+            if (next_col) |next| {
+                util.log("next display: {s}", .{next.displaying.?});
+                next.clear(render_state);
+                next.render(render_state);
+            }
         },
         'l' => {
             const resp = try node_buffer.setNodes(&app.col_arr, alloc.respAllocator, alloc.browserAllocator);
             if (!resp) return;
             const next_col = app.col_arr.getNext();
-            if (next_col) |next| next.render(render_state);
+            if (next_col) |next| {
+                next.clear(render_state);
+                next.render(render_state);
+            }
         },
         else => return,
     }

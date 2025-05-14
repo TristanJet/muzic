@@ -37,6 +37,7 @@ pub const State = struct {
 
     col_arr: ColumnArray(n_browse_columns),
     node_switched: bool,
+    current_scrolled: bool,
 
     input_state: input.Input_State,
 };
@@ -385,9 +386,10 @@ pub fn ColumnArray(n_col: u8) type {
             }
         }
 
-        pub fn clear(self: *Self) void {
+        pub fn clear(self: *Self, render_state: *RenderState(n_browse_columns)) void {
             for (2..self.len) |i| {
                 self.buf[i].displaying = null;
+                self.buf[i].clear(render_state);
             }
         }
 
@@ -423,7 +425,7 @@ pub const BrowseColumn = struct {
         return self.pos + self.slice_inc;
     }
 
-    pub fn scroll(self: *BrowseColumn, direction: input.cursorDirection, max: ?u8, area_height: usize) void {
+    pub fn scroll(self: *BrowseColumn, direction: input.cursorDirection, max: ?u8, area_height: usize) !bool {
         self.prev_pos = self.pos;
         //do this earlier and once
         const scroll_threshold: f32 = 0.8;
@@ -433,22 +435,29 @@ pub const BrowseColumn = struct {
             .up => {
                 if (self.pos > 0) {
                     self.pos -= 1;
+                    return false;
                 } else if (self.slice_inc > 0) {
                     self.slice_inc -= 1;
+                    return true;
                 }
+                return false;
             },
             .down => {
-                const displaying = self.displaying orelse return;
+                const displaying = self.displaying orelse return error.NoDisplaying;
                 if (self.pos < max.? - 1 and max.? > 0) {
                     self.pos += 1;
                     // If cursor position exceeds threshold (80% of visible area)
                     if (self.pos >= threshold_pos and self.slice_inc + area_height < displaying.len) {
                         self.slice_inc += 1;
                         self.pos -= 1;
+                        return true;
                     }
+                    return false;
                 } else if (self.slice_inc + area_height < displaying.len) {
                     self.slice_inc += 1;
+                    return true;
                 }
+                return false;
             },
         }
     }
@@ -465,9 +474,8 @@ pub const BrowseColumn = struct {
         render_state.browse_clear_cursor[self.index] = true;
     }
 
-    pub fn clear(self: *BrowseColumn, render_state: *RenderState(n_browse_columns)) !void {
-        if (self.index == 0) return error.NoClear;
-        render_state.browse_clear[self.index - 1] = true;
+    pub fn clear(self: *BrowseColumn, render_state: *RenderState(n_browse_columns)) void {
+        render_state.browse_clear[self.index] = true;
     }
 };
 

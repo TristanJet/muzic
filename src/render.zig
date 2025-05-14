@@ -17,7 +17,6 @@ const wrkallocator = alloc.wrkallocator;
 var current: state.State = undefined;
 
 pub fn RenderState(n_col: comptime_int) type {
-    const minus_one: comptime_int = n_col - 1;
     return struct {
         const Self = @This();
         borders: bool = false,
@@ -30,7 +29,7 @@ pub fn RenderState(n_col: comptime_int) type {
         browse_col: [n_col]bool = .{false} ** n_col,
         browse_cursor: [n_col]bool = .{false} ** n_col,
         browse_clear_cursor: [n_col]bool = .{false} ** n_col,
-        browse_clear: [minus_one]bool = .{false} ** minus_one,
+        browse_clear: [n_col]bool = .{false} ** n_col,
 
         pub fn init() Self {
             return Self{
@@ -44,7 +43,7 @@ pub fn RenderState(n_col: comptime_int) type {
                 .browse_col = .{false} ** n_col,
                 .browse_cursor = .{false} ** n_col,
                 .browse_clear_cursor = .{false} ** n_col,
-                .browse_clear = .{false} ** minus_one,
+                .browse_clear = .{false} ** n_col,
             };
         }
 
@@ -59,7 +58,7 @@ pub fn RenderState(n_col: comptime_int) type {
             self.browse_col = .{false} ** n_col;
             self.browse_cursor = .{false} ** n_col;
             self.browse_clear_cursor = .{false} ** n_col;
-            self.browse_clear = .{false} ** minus_one;
+            self.browse_clear = .{false} ** n_col;
         }
     };
 }
@@ -77,6 +76,9 @@ pub fn render(app: *state.State, render_state: *RenderState(n_browse_columns), p
     if (render_state.queueEffects) try queueEffectsRender(wrkallocator, panels.queue.validArea(), app.queue.items, app.scroll_q.absolutePos(), app.scroll_q.absolutePrevPos(), app.scroll_q.slice_inc, app.input_state, app.song.id, app.prev_id);
     if (render_state.find) try findRender(panels.find);
     if (render_state.find_clear) try clear(panels.find.validArea());
+    if (render_state.browse_clear[0]) try clear(panels.browse1.validArea());
+    if (render_state.browse_clear[1]) try clear(panels.browse2.validArea());
+    if (render_state.browse_clear[2]) try clear(panels.browse3.validArea());
     if (render_state.browse_col[0]) try browseColumn(panels.browse1.validArea(), app.col_arr.buf[0].displaying, app.col_arr.buf[0].slice_inc);
     if (render_state.browse_col[1]) try browseColumn(panels.browse2.validArea(), app.col_arr.buf[1].displaying, app.col_arr.buf[1].slice_inc);
     if (render_state.browse_col[2]) try browseColumn(panels.browse3.validArea(), app.col_arr.buf[2].displaying, app.col_arr.buf[2].slice_inc);
@@ -86,8 +88,6 @@ pub fn render(app: *state.State, render_state: *RenderState(n_browse_columns), p
     if (render_state.browse_clear_cursor[0]) try clearCursor(panels.browse1.validArea(), current.col_arr.buf[0].displaying, current.col_arr.buf[0].pos, current.col_arr.buf[0].slice_inc);
     if (render_state.browse_clear_cursor[1]) try clearCursor(panels.browse2.validArea(), current.col_arr.buf[1].displaying, current.col_arr.buf[1].pos, current.col_arr.buf[1].slice_inc);
     if (render_state.browse_clear_cursor[2]) try clearCursor(panels.browse3.validArea(), current.col_arr.buf[2].displaying, current.col_arr.buf[2].pos, current.col_arr.buf[2].slice_inc);
-    if (render_state.browse_clear[0]) try clear(panels.browse2.validArea());
-    if (render_state.browse_clear[1]) try clear(panels.browse3.validArea());
 
     term.flushBuffer() catch |err| if (err != error.WouldBlock) return err;
 }
@@ -356,12 +356,7 @@ fn barRender(panel: window.Panel, song: mpd.CurrentSong, allocator: std.mem.Allo
 }
 
 fn browseColumn(area: window.Area, strings_opt: ?[]const []const u8, inc: usize) !void {
-    // Clear the display area
-    for (0..area.ylen) |i| {
-        try term.moveCursor(area.ymin + i, area.xmin);
-        try term.writeByteNTimes(' ', area.xlen);
-    }
-
+    //separate function for clear and render
     const strings = strings_opt orelse return;
     // Display only visible items based on slice_inc
     for (0..area.ylen) |i| {
@@ -369,9 +364,16 @@ fn browseColumn(area: window.Area, strings_opt: ?[]const []const u8, inc: usize)
         if (item_index >= strings.len) break;
 
         const string = strings[item_index];
-        const xmax = if (area.xlen > string.len) string.len else area.xlen;
-        try term.moveCursor(area.ymin + i, area.xmin);
-        try term.writeAll(string[0..xmax]);
+
+        if (area.xlen > string.len) {
+            try term.moveCursor(area.ymin + i, area.xmin);
+            try term.writeAll(string[0..string.len]);
+            const nSpace = area.xlen - string.len;
+            try term.writeByteNTimes(' ', nSpace);
+        } else {
+            try term.moveCursor(area.ymin + i, area.xmin);
+            try term.writeAll(string[0..area.xlen]);
+        }
     }
 }
 

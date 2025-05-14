@@ -100,6 +100,7 @@ pub fn main() !void {
 
         .col_arr = state.ColumnArray(state.n_browse_columns).init(data.albums),
         .node_switched = false,
+        .current_scrolled = false,
 
         .input_state = .normal_queue,
     };
