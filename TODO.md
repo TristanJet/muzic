@@ -1,15 +1,15 @@
 # muzic
 
-## NEXT
-- [ ] ROBUST NONBLOCK flag handling for mac
+## TO 1.0 !!!!!!!!!!
+- [ ] render highlight granular on typing find
 - [ ] backspace on type
 - [ ] utf handling
-- [ ] state save when return to first node
+- [ ] ROBUST NONBLOCK flag handling for mac
+- [ ] don't break escape codes after quit
 
 ## Bugs/fixes
-- [ ] state save when return to first node
+- [ ] render highlight granular on typing find
 - [ ] escape codes stop working after quit - enter
-- [ ] utf handling
 - [ ] fix half up
 - [ ] deliberate integer size choice
 - [ ] More robust input debounce; I suspect, library size has an effect on mpd response speed.
@@ -19,9 +19,9 @@
 - [ ] algoirthm fix, EXETER failing best match
 - [ ] display full album content, regardless of artist
 - [ ] carefully track persistentallocator use
-- [ ] handle utf-16 when rendering highlight
 - [ ] Batch HOLD events on release - seeking, skipping through songs
 - [ ] store only visible strings in queue
+- [x] state save when return to first node
 - [x] flashing could be due to unexpected flush - add empty character after content
     - A rendering layer could be added that keeps track of the lengths of the displaying to only clear what is needed.
 - [x] outofbounds error in browser
@@ -50,7 +50,7 @@
 - [x] NUMBER FIX - program will crash if queue longer than 256
 ## Features 
 
-- [ ] allow browse by files - (no tags set)
+- [ ] allow browse by files and directories - (no tags set)
 - [ ] space bar -> replace queue with selected
 - [ ] moving around in queue, visual mode?
 - [ ] shift arrow to seek faster

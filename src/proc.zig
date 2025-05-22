@@ -6,7 +6,7 @@ const fmt = std.fmt;
 const proc = std.process;
 const fs = std.fs;
 
-const helpmsg: []const u8 =
+const helpmsg =
     \\-H, --host <str>      MPD host (default: 127.0.0.1)
     \\-p, --port <u16>      MPD port (default: 6600)
     \\-h, --help            Print help
@@ -48,7 +48,7 @@ pub fn handleArgs(persAllocator: mem.Allocator) !ArgumentValues {
         } else if (mem.eql(u8, arg, "-h") or mem.eql(u8, arg, "--help")) {
             arg_val.help = true;
             const tty = try getTty();
-            try tty.writeAll(helpmsg);
+            try tty.writeAll(helpmsg[0..]);
             tty.close();
         } else if (mem.eql(u8, arg, "-v") or mem.eql(u8, arg, "--version")) {
             arg_val.version = true;
