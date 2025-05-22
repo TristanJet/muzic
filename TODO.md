@@ -4,10 +4,11 @@
 - [ ] ROBUST NONBLOCK flag handling for mac
 - [ ] backspace on type
 - [ ] utf handling
+- [ ] state save when return to first node
 
 ## Bugs/fixes
+- [ ] state save when return to first node
 - [ ] escape codes stop working after quit - enter
-- [ ] flashing could be due to unexpected flush - add empty character after content
 - [ ] utf handling
 - [ ] fix half up
 - [ ] deliberate integer size choice
@@ -21,6 +22,8 @@
 - [ ] handle utf-16 when rendering highlight
 - [ ] Batch HOLD events on release - seeking, skipping through songs
 - [ ] store only visible strings in queue
+- [x] flashing could be due to unexpected flush - add empty character after content
+    - A rendering layer could be added that keeps track of the lengths of the displaying to only clear what is needed.
 - [x] outofbounds error in browser
 - [x] next_col_ready reimplement
 - [x] I think search strings has to be fixed

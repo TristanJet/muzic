@@ -492,7 +492,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
                     2 => .Tracks,
                     else => unreachable,
                 };
-                node_buffer = state.Browser.init(selected, data);
+                if (node_buffer.apex == .UNSET) node_buffer = state.Browser.init(selected, data);
             }
             if (node_buffer.index == node_buffer.len - 1) return;
             const next_col = app.col_arr.getNext();
