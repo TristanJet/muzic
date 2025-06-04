@@ -19,6 +19,9 @@ pub const typingAllocator = typingArena.allocator();
 pub var browserArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 pub const browserAllocator = browserArena.allocator();
 
+pub var songData = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+pub const songDataAllocator = songData.allocator();
+
 pub fn deinit() void {
     persistentArena.deinit();
     algoArena.deinit();

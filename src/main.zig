@@ -35,6 +35,8 @@ const wrkbuf = &alloc.wrkbuf;
 
 pub fn main() !void {
     defer alloc.deinit();
+    var first = true;
+    const start = time.milliTimestamp();
 
     if (builtin.mode == .Debug) try util.loggerInit();
     defer if (builtin.mode == .Debug) util.deinit() catch {};
@@ -66,9 +68,17 @@ pub fn main() !void {
 
     initial_typing.init();
 
-    // change to const eventually ???
-    var data = try state.Data.init();
-    input.data = data;
+    var mpd_data = state.Data{
+        .artists = undefined,
+        .artists_init = false,
+        .albums = undefined,
+        .albums_init = false,
+        .searchable = undefined,
+        .searchable_init = false,
+        .songs = undefined,
+        .song_titles = undefined,
+        .songs_init = false,
+    };
 
     const initial_state = state.State{
         .quit = false,
@@ -98,14 +108,14 @@ pub fn main() !void {
         .find_cursor_pos = 0,
         .viewable_searchable = null,
 
-        .col_arr = state.ColumnArray(state.n_browse_columns).init(data.albums),
+        .col_arr = state.ColumnArray(state.n_browse_columns).init(mpd_data.albums),
         .node_switched = false,
         .current_scrolled = false,
 
         .input_state = .normal_queue,
     };
 
-    var app = App.init(initial_state, &data);
+    var app = App.init(initial_state, &mpd_data);
 
     var render_state = RenderState(state.n_browse_columns).init();
 
@@ -124,8 +134,13 @@ pub fn main() !void {
         if (idle_event[1]) |event| app.appendEvent(event);
         app.appendEvent(time_event);
 
-        app.updateState(&render_state);
+        app.updateState(&render_state, &mpd_data);
         try render.render(&app.state, &render_state, window.panels, &wrkfba.end_index);
+        if (first) {
+            first = false;
+            const first_loop = time.milliTimestamp() - start;
+            util.log("FIRST RENDER TIME: {}", .{first_loop});
+        }
         render_state.reset();
 
         // Calculate remaining time in frame and sleep if necessary

@@ -6,6 +6,7 @@ const RenderState = @import("render.zig").RenderState;
 const expect = std.testing.expect;
 const time = std.time;
 const mem = std.mem;
+const debug = std.debug;
 const log = @import("util.zig").log;
 
 const alloc = @import("allocators.zig");
@@ -43,17 +44,60 @@ pub const State = struct {
 };
 
 pub const Data = struct {
-    searchable: []mpd.SongStringAndUri,
-    albums: [][]const u8,
-    artists: [][]const u8,
-    song_titles: [][]const u8,
-    songs: []mpd.SongStringAndUri,
+    var song_data: ?[]u8 = null;
 
-    pub fn init() !Data {
-        const data = try mpd.listAllData(alloc.respAllocator);
-        const searchable = try mpd.getSongStringAndUri(alloc.persistentAllocator, data);
-        const songs_unsorted = try mpd.getAllSongs(alloc.persistentAllocator, data);
-        _ = alloc.respArena.reset(.retain_capacity);
+    searchable: ?[]mpd.SongStringAndUri,
+    searchable_init: bool,
+    albums: ?[][]const u8,
+    albums_init: bool,
+    artists: ?[][]const u8,
+    artists_init: bool,
+    song_titles: ?[][]const u8,
+    songs: ?[]mpd.SongStringAndUri,
+    songs_init: bool,
+
+    pub fn init(self: *Data, D: enum { searchable, songs, albums, artists }) !void {
+        switch (D) {
+            .searchable => {
+                if (self.searchable_init) return;
+                try self.initSearchable();
+                self.searchable_init = true;
+                log("init searchable", .{});
+            },
+            .songs => {
+                if (self.songs_init) return;
+                try self.initSongs();
+                self.songs_init = true;
+                log("init songs", .{});
+            },
+            .albums => {
+                if (self.albums_init) return;
+                try self.initAlbums();
+                self.albums_init = true;
+                log("init albums", .{});
+            },
+            .artists => {
+                if (self.artists_init) return;
+                try self.initArtists();
+                self.artists_init = true;
+                log("init artists", .{});
+            },
+        }
+    }
+
+    fn initSearchable(self: *Data) !void {
+        if (song_data == null) song_data = try mpd.listAllData(alloc.songDataAllocator);
+        self.searchable = try mpd.getSongStringAndUri(alloc.persistentAllocator, song_data.?);
+
+        if (self.songs_init) {
+            alloc.songData.deinit();
+            song_data = null;
+        }
+    }
+
+    fn initSongs(self: *Data) !void {
+        if (song_data == null) song_data = try mpd.listAllData(alloc.songDataAllocator);
+        const songs_unsorted = try mpd.getAllSongs(alloc.persistentAllocator, song_data.?);
 
         // Sort songs alphabetically
         const songs = try sortSongStringsAndUris(songs_unsorted);
@@ -63,42 +107,138 @@ pub const Data = struct {
             titles[i] = song.string;
         }
 
-        const albums = try mpd.getAllAlbums(alloc.persistentAllocator, alloc.respAllocator);
-        _ = alloc.respArena.reset(.retain_capacity);
-        const artists = try mpd.getAllArtists(alloc.persistentAllocator, alloc.respAllocator);
-        _ = alloc.respArena.reset(.retain_capacity);
-        return .{
-            .searchable = searchable,
-            .albums = albums,
-            .artists = artists,
-            .song_titles = titles,
-            .songs = songs,
-        };
+        self.songs = songs;
+        self.song_titles = titles;
+
+        if (self.searchable_init) {
+            alloc.songData.deinit();
+            song_data = null;
+        }
     }
 
-    // Helper function to sort songs alphabetically
-    fn sortSongStringsAndUris(songs_param: []mpd.SongStringAndUri) ![]mpd.SongStringAndUri {
-        // Create a sorted copy
-        var sorted = try alloc.persistentAllocator.alloc(mpd.SongStringAndUri, songs_param.len);
-
-        // Copy the songs
-        for (songs_param, 0..) |song, i| {
-            sorted[i] = song;
+    fn initAlbums(self: *Data) !void {
+        self.albums = try mpd.getAllAlbums(alloc.persistentAllocator, alloc.respAllocator);
+        if (self.artists_init) {
+            _ = alloc.respArena.reset(.free_all);
+        } else {
+            _ = alloc.respArena.reset(.retain_capacity);
         }
+    }
 
-        // Define a custom context for sorting based on song titles
-        const SortContext = struct {
-            pub fn lessThan(_: @This(), a: mpd.SongStringAndUri, b: mpd.SongStringAndUri) bool {
-                return std.mem.lessThan(u8, a.string, b.string);
-            }
-        };
-
-        // Sort songs using block sort
-        std.sort.block(mpd.SongStringAndUri, sorted, SortContext{}, SortContext.lessThan);
-
-        return sorted;
+    fn initArtists(self: *Data) !void {
+        self.artists = try mpd.getAllArtists(alloc.persistentAllocator, alloc.respAllocator);
+        if (self.albums_init) {
+            _ = alloc.respArena.reset(.free_all);
+        } else {
+            _ = alloc.respArena.reset(.retain_capacity);
+        }
     }
 };
+
+// Helper function to sort songs alphabetically
+fn sortSongStringsAndUris(songs_param: []mpd.SongStringAndUri) ![]mpd.SongStringAndUri {
+    // Create a sorted copy
+    var sorted = try alloc.persistentAllocator.alloc(mpd.SongStringAndUri, songs_param.len);
+
+    // Copy the songs
+    for (songs_param, 0..) |song, i| {
+        sorted[i] = song;
+    }
+
+    // Define a custom context for sorting based on song titles
+    const SortContext = struct {
+        pub fn lessThan(_: @This(), a: mpd.SongStringAndUri, b: mpd.SongStringAndUri) bool {
+            return std.mem.lessThan(u8, a.string, b.string);
+        }
+    };
+
+    // Sort songs using block sort
+    std.sort.block(mpd.SongStringAndUri, sorted, SortContext{}, SortContext.lessThan);
+
+    return sorted;
+}
+
+test "getMpdData" {
+    defer alloc.deinit();
+
+    var wrkbuf: [64]u8 = undefined;
+    mpd.connect(wrkbuf[0..64], .command, false) catch return error.MpdConnectionFailed;
+    defer mpd.disconnect(.command);
+
+    var start: i128 = time.milliTimestamp();
+    const data = try mpd.listAllData(alloc.respAllocator);
+    const data_time = time.milliTimestamp() - start;
+
+    start = time.milliTimestamp();
+    const searchable = try mpd.getSongStringAndUri(alloc.persistentAllocator, data);
+    _ = searchable;
+    const searchable_time = time.milliTimestamp() - start;
+
+    start = time.milliTimestamp();
+    const songs_unsorted = try mpd.getAllSongs(alloc.persistentAllocator, data);
+    _ = alloc.respArena.reset(.retain_capacity);
+
+    // Sort songs alphabetically
+    const songs = try sortSongStringsAndUris(songs_unsorted);
+
+    var titles = try alloc.persistentAllocator.alloc([]const u8, songs.len);
+    for (songs, 0..) |song, i| {
+        titles[i] = song.string;
+    }
+    const songs_time = time.milliTimestamp() - start;
+
+    start = time.milliTimestamp();
+    const albums = try mpd.getAllAlbums(alloc.persistentAllocator, alloc.respAllocator);
+    _ = albums;
+    _ = alloc.respArena.reset(.retain_capacity);
+    const albums_time = time.milliTimestamp() - start;
+
+    start = time.milliTimestamp();
+    const artists = try mpd.getAllArtists(alloc.persistentAllocator, alloc.respAllocator);
+    _ = artists;
+    _ = alloc.respArena.reset(.retain_capacity);
+    const artists_time = time.milliTimestamp() - start;
+
+    debug.print("---TIME---\nsongdata: {}\nsearchable: {}\nsongs: {}\nalbums: {}\nartists: {}\n", .{
+        data_time,
+        searchable_time,
+        songs_time,
+        albums_time,
+        artists_time,
+    });
+}
+
+test "codepointcount" {
+    var wrkbuf: [64]u8 = undefined;
+    mpd.connect(wrkbuf[0..64], .command, false) catch return error.MpdConnectionFailed;
+    defer mpd.disconnect(.command);
+
+    mpd.connect(wrkbuf[0..64], .idle, true) catch return error.MpdConnectionFailed;
+    defer mpd.disconnect(.idle);
+    try mpd.initIdle();
+    const data = try Data.init();
+    const start = std.time.milliTimestamp();
+    for (data.artists) |artist| {
+        const count: usize = try std.unicode.utf8CountCodepoints(artist);
+        // std.debug.print("{s}", .{artist});
+        // std.debug.print(": {}\n", .{count});
+        _ = count;
+    }
+    for (data.song_titles) |song| {
+        const count: usize = try std.unicode.utf8CountCodepoints(song);
+        // std.debug.print("{s}", .{artist});
+        // std.debug.print(": {}\n", .{count});
+        _ = count;
+    }
+    for (data.albums) |albums| {
+        const count: usize = try std.unicode.utf8CountCodepoints(albums);
+        // std.debug.print("{s}", .{artist});
+        // std.debug.print(": {}\n", .{count});
+        _ = count;
+    }
+    const timespent = std.time.milliTimestamp() - start;
+    std.debug.print("{}\n", .{timespent});
+}
 
 pub const Column_Type = enum {
     Select,
@@ -186,57 +326,60 @@ pub const Browser = struct {
     tracks: ?[]mpd.SongStringAndUri,
     find_filter: mpd.Filter_Songs,
 
-    pub fn init(selected: Column_Type, data: Data) Browser {
-        return switch (selected) {
-            .Albums => Browser{
-                .buf = .{
-                    .{ .pos = 1, .slice_inc = 0, .displaying = &browse_types, .callback_type = null, .type = .Select },
-                    .{ .pos = 0, .slice_inc = 0, .displaying = data.albums, .callback_type = null, .type = .Albums },
-                    .{ .pos = 0, .slice_inc = 0, .displaying = null, .callback_type = .TitlesFromTracks, .type = .Tracks },
-                    null,
-                },
-                .apex = .Albums,
-                .index = 0,
-                .len = 3,
-                .tracks = null,
-                .find_filter = .{
-                    .artist = null,
-                    .album = data.albums[0],
-                },
+    pub fn apexAlbums(data_str: [][]const u8) Browser {
+        return Browser{
+            .buf = .{
+                .{ .pos = 1, .slice_inc = 0, .displaying = &browse_types, .callback_type = null, .type = .Select },
+                .{ .pos = 0, .slice_inc = 0, .displaying = data_str, .callback_type = null, .type = .Albums },
+                .{ .pos = 0, .slice_inc = 0, .displaying = null, .callback_type = .TitlesFromTracks, .type = .Tracks },
+                null,
             },
-            .Artists => Browser{
-                .buf = .{
-                    .{ .pos = 2, .slice_inc = 0, .displaying = &browse_types, .callback_type = null, .type = .Select },
-                    .{ .pos = 0, .slice_inc = 0, .displaying = data.artists, .callback_type = null, .type = .Artists },
-                    .{ .pos = 0, .slice_inc = 0, .displaying = null, .callback_type = .AlbumsFromArtist, .type = .Albums },
-                    .{ .pos = 0, .slice_inc = 0, .displaying = null, .callback_type = .TitlesFromTracks, .type = .Tracks },
-                },
-                .apex = .Artists,
-                .index = 0,
-                .len = 4,
-                .tracks = null,
-                .find_filter = .{
-                    .artist = data.artists[0],
-                    .album = null,
-                },
+            .apex = .Albums,
+            .index = 0,
+            .len = 3,
+            .tracks = null,
+            .find_filter = .{
+                .artist = null,
+                .album = data_str[0],
             },
-            .Tracks => Browser{
-                .buf = .{
-                    .{ .pos = 3, .slice_inc = 0, .displaying = &browse_types, .callback_type = null, .type = .Select },
-                    .{ .pos = 0, .slice_inc = 0, .displaying = data.song_titles, .callback_type = null, .type = .Tracks },
-                    null,
-                    null,
-                },
-                .apex = .Tracks,
-                .index = 0,
-                .len = 2,
-                .tracks = data.songs,
-                .find_filter = .{
-                    .artist = null,
-                    .album = null,
-                },
+        };
+    }
+
+    pub fn apexArtists(data_str: [][]const u8) Browser {
+        return Browser{
+            .buf = .{
+                .{ .pos = 2, .slice_inc = 0, .displaying = &browse_types, .callback_type = null, .type = .Select },
+                .{ .pos = 0, .slice_inc = 0, .displaying = data_str, .callback_type = null, .type = .Artists },
+                .{ .pos = 0, .slice_inc = 0, .displaying = null, .callback_type = .AlbumsFromArtist, .type = .Albums },
+                .{ .pos = 0, .slice_inc = 0, .displaying = null, .callback_type = .TitlesFromTracks, .type = .Tracks },
             },
-            else => unreachable,
+            .apex = .Artists,
+            .index = 0,
+            .len = 4,
+            .tracks = null,
+            .find_filter = .{
+                .artist = data_str[0],
+                .album = null,
+            },
+        };
+    }
+
+    pub fn apexTracks(songs: []mpd.SongStringAndUri, song_titles: [][]const u8) Browser {
+        return Browser{
+            .buf = .{
+                .{ .pos = 3, .slice_inc = 0, .displaying = &browse_types, .callback_type = null, .type = .Select },
+                .{ .pos = 0, .slice_inc = 0, .displaying = song_titles, .callback_type = null, .type = .Tracks },
+                null,
+                null,
+            },
+            .apex = .Tracks,
+            .index = 0,
+            .len = 2,
+            .tracks = songs,
+            .find_filter = .{
+                .artist = null,
+                .album = null,
+            },
         };
     }
 
@@ -355,7 +498,7 @@ pub fn ColumnArray(n_col: u8) type {
         inc: u8,
         len: u8,
 
-        pub fn init(first_strings: []const []const u8) Self {
+        pub fn init(first_strings: ?[]const []const u8) Self {
             var i: u8 = 0;
             var buf: [n_col]BrowseColumn = undefined;
             while (i < n_col) : (i += 1) {
@@ -555,31 +698,23 @@ pub const App = struct {
         self.event_buffer.buffer[self.event_buffer.len] = event;
         self.event_buffer.len += 1;
     }
-    // Update function that processes events
-    pub fn updateState(self: *App, render_state: *RenderState(n_browse_columns)) void {
-        // Process all events in the buffer
+    pub fn updateState(self: *App, render_state: *RenderState(n_browse_columns), mpd_data: *Data) void {
         var i: u8 = 0;
         while (i < self.event_buffer.len) : (i += 1) {
-            self.handleEvent(self.event_buffer.buffer[i], render_state);
+            switch (self.event_buffer.buffer[i]) {
+                .input => |char| input.handleInput(char, &self.state, render_state, mpd_data),
+                .release => |char| input.handleRelease(char, &self.state, render_state),
+                .idle => |idle_type| handleIdle(idle_type, &self.state, render_state) catch |err| {
+                    log("err: {}", .{err});
+                    unreachable;
+                },
+                .time => |start_time| handleTime(start_time, &self.state, render_state) catch |err| {
+                    log("err: {}", .{err});
+                    unreachable;
+                },
+            }
         }
-        // Clear the buffer after processing
         self.event_buffer.len = 0;
-    }
-
-    // Handle individual events
-    fn handleEvent(self: *App, event: Event, render_state: *RenderState(n_browse_columns)) void {
-        switch (event) {
-            .input => |char| input.handleInput(char, &self.state, render_state),
-            .release => |char| input.handleRelease(char, &self.state, render_state),
-            .idle => |idle_type| handleIdle(idle_type, &self.state, render_state) catch |err| {
-                log("err: {}", .{err});
-                unreachable;
-            },
-            .time => |start_time| handleTime(start_time, &self.state, render_state) catch |err| {
-                log("err: {}", .{err});
-                unreachable;
-            },
-        }
     }
 };
 

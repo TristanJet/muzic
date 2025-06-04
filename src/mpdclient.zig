@@ -3,12 +3,12 @@ const util = @import("util.zig");
 const state = @import("state.zig");
 const Idle = state.Idle;
 const Event = state.Event;
-const assert = std.debug.assert;
 const log = util.log;
 
 const net = std.net;
 const mem = std.mem;
 const fmt = std.fmt;
+const debug = std.debug;
 const ArrayList = std.ArrayList;
 
 var host: []const u8 = "127.0.0.1";
@@ -22,12 +22,14 @@ const StreamType = enum {
     idle,
 };
 
-const MpdError = error{
+pub const MpdError = error{
+    StreamReadError,
+    StreamWriteError,
     InvalidResponse,
     ConnectionError,
-    CommandFailed,
-    MpdError,
+    AllocatorError,
     EndOfStream,
+    OutOfMemory,
     TooLong,
     NoSongs,
 };
@@ -68,7 +70,7 @@ fn processResponse(
         var line = try reader.readUntilDelimiterAlloc(allocator, '\n', 1024);
 
         if (mem.eql(u8, line, "OK")) break;
-        if (mem.startsWith(u8, line, "ACK")) return error.MpdError;
+        if (mem.startsWith(u8, line, "ACK")) return MpdError.InvalidResponse;
 
         if (mem.indexOf(u8, line, ": ")) |separator_index| {
             const key = line[0..separator_index];
@@ -153,7 +155,7 @@ pub const CurrentSong = struct {
                 self.time.elapsed = try fmt.parseInt(u16, elapsedSlice, 10);
                 const durationSlice = value[index + 1 ..];
                 self.time.duration = try fmt.parseInt(u16, durationSlice, 10);
-            } else return error.MpdError;
+            } else return MpdError.InvalidResponse;
         }
     }
 };
@@ -222,7 +224,7 @@ pub fn initIdle() !void {
 }
 
 pub fn checkIdle(buffer: []u8) ![2]?Event {
-    assert(buffer.len == 18);
+    debug.assert(buffer.len == 18);
     var reader = idleStream.reader();
     var event: [2]?Event = .{ null, null };
     while (true) {
@@ -232,7 +234,7 @@ pub fn checkIdle(buffer: []u8) ![2]?Event {
             else => return err,
         };
         if (mem.eql(u8, line, "OK")) break;
-        if (mem.startsWith(u8, line, "ACK")) return error.MpdError;
+        if (mem.startsWith(u8, line, "ACK")) return MpdError.InvalidResponse;
 
         if (mem.indexOf(u8, line, ": ")) |separator_index| {
             const value = line[separator_index + 2 ..];
@@ -410,8 +412,8 @@ pub fn getPlayState(respAlloc: mem.Allocator) !bool {
 /// - tempAllocator: Used for the raw response data (should be freed after processing)
 /// - command: The MPD command to send
 /// Returns the complete raw response with trailing "OK\n"
-pub fn readLargeResponse(tempAllocator: mem.Allocator, command: []const u8) ![]u8 {
-    try connSend(command, &cmdStream);
+pub fn readLargeResponse(tempAllocator: mem.Allocator, command: []const u8) MpdError![]u8 {
+    connSend(command, &cmdStream) catch return MpdError.StreamWriteError;
 
     var list = std.ArrayList(u8).init(tempAllocator);
     errdefer list.deinit();
@@ -420,24 +422,30 @@ pub fn readLargeResponse(tempAllocator: mem.Allocator, command: []const u8) ![]u
     while (true) {
         const bytes_read = cmdStream.read(buf[0..]) catch |err| switch (err) {
             error.WouldBlock => continue,
-            else => |e| return e,
+            else => return MpdError.StreamReadError,
         };
 
-        if (bytes_read == 0) continue;
+        if (bytes_read == 0) {
+            if (mem.endsWith(u8, list.items, "OK\n")) {
+                break;
+            } else {
+                return MpdError.InvalidResponse;
+            }
+        }
 
-        try list.appendSlice(buf[0..bytes_read]);
+        list.appendSlice(buf[0..bytes_read]) catch return MpdError.AllocatorError;
 
-        if (bytes_read >= 3 and mem.endsWith(u8, list.items, "OK\n")) {
+        if (mem.endsWith(u8, list.items, "OK\n")) {
             break;
         }
     }
 
-    return list.toOwnedSlice();
+    return try list.toOwnedSlice();
 }
 
-fn processLargeResponse(data: []const u8) !mem.SplitIterator(u8, .scalar) {
-    if (mem.startsWith(u8, data, "ACK")) return error.MpdError;
-    if (mem.startsWith(u8, data, "OK")) return error.NoSongs;
+fn processLargeResponse(data: []const u8) MpdError!mem.SplitIterator(u8, .scalar) {
+    if (mem.startsWith(u8, data, "ACK")) return MpdError.InvalidResponse;
+    if (mem.startsWith(u8, data, "OK")) return MpdError.NoSongs;
     return mem.splitScalar(u8, data, '\n');
 }
 
@@ -643,38 +651,6 @@ test "findAdd" {
     try findAdd(&song, heapAllocator);
 }
 
-test "getAllAlbums" {
-    var respArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    const respAllocator = respArena.allocator();
-
-    var heapArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer heapArena.deinit();
-    const heapAllocator = heapArena.allocator();
-
-    var wrkbuf: [16]u8 = undefined;
-    _ = try connect(wrkbuf[0..16], .command, false);
-    log("connected\n", .{});
-
-    const albums = try getAllAlbums(heapAllocator, respAllocator);
-    log("resp end index: {}\n", .{respArena.state.end_index});
-    log("arena end index: {}\n", .{heapArena.state.end_index});
-    _ = respArena.reset(.retain_capacity);
-    log("album 1: {s}\n", .{albums[900]});
-    log("n albums: {}\n", .{albums.len});
-    const artists = try getAllArtists(heapAllocator, respAllocator);
-    log("resp end index: {}\n", .{respArena.state.end_index});
-    log("arena end index: {}\n", .{heapArena.state.end_index});
-    _ = respArena.reset(.retain_capacity);
-    log("artist : {s}\n", .{artists[100]});
-    log("n artists: {}\n", .{artists.len});
-    const songs = try getAllSongs(heapAllocator, respAllocator);
-    log("resp end index: {}\n", .{respArena.state.end_index});
-    log("arena end index: {}\n", .{heapArena.state.end_index});
-    _ = respArena.reset(.free_all);
-    log("song : {s}\n", .{songs[100]});
-    log("n songs: {}\n", .{songs.len});
-    log("resp end index: {}\n", .{respArena.state.end_index});
-}
 fn escapeMpdString(allocator: mem.Allocator, str: []const u8) ![]u8 {
     // Initialize a dynamic array to build the escaped string
     var result = ArrayList(u8).init(allocator);
@@ -832,35 +808,4 @@ pub fn rmRangeFromPos(allocator: mem.Allocator, pos: usize) !void {
 
 pub fn clearQueue() !void {
     try sendCommand("clear\n");
-}
-
-test "do it work" {
-    const start = std.time.milliTimestamp();
-    var respArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    const respAllocator = respArena.allocator();
-
-    var heapArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer heapArena.deinit();
-    const heapAllocator = heapArena.allocator();
-
-    var wrkbuf: [16]u8 = undefined;
-    _ = try connect(wrkbuf[0..16], &cmdStream, false);
-    log("connected\n", .{});
-
-    const items = try getSongStringAndUri(heapAllocator, respAllocator);
-    var max: []const u8 = "";
-    for (items) |item| {
-        if (item.string.?.len > max.len) {
-            max = item.string.?[0..];
-        }
-    }
-    const end = std.time.milliTimestamp() - start;
-    log("end index: {}\n", .{respArena.state.end_index});
-    respArena.deinit();
-    log("length: {}\n", .{items.len});
-    log("string 1000: {s}\n", .{items[2315].string.?});
-    log("end index: {}\n", .{heapArena.state.end_index});
-    log("longest string: {s}\nlen:{}\n", .{ max, max.len });
-    log("Time spent: {}\n", .{end});
-    try std.testing.expect(items.len == 2316);
 }

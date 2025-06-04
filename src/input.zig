@@ -16,8 +16,6 @@ const findStringIndex = util.findStringIndex;
 const wrkallocator = alloc.wrkallocator;
 const n_browse_col = state.n_browse_columns;
 
-pub var data: state.Data = undefined;
-
 var last_input: i64 = 0;
 const release_threshold: u8 = 15;
 var nloops: u8 = 0;
@@ -28,7 +26,7 @@ var key_down: ?u8 = null;
 
 var select_pos: u8 = 0;
 
-var searchable_items: []mpd.SongStringAndUri = undefined;
+var searchable_items: ?[]mpd.SongStringAndUri = undefined;
 var search_strings: [][]const u8 = undefined;
 
 var modeSwitch: bool = false;
@@ -104,12 +102,12 @@ pub fn checkReleaseEvent(input_event: ?state.Event) !?state.Event {
     }
 }
 
-pub fn handleInput(char: u8, app_state: *state.State, render_state: *RenderState(state.n_browse_columns)) void {
+pub fn handleInput(char: u8, app_state: *state.State, render_state: *RenderState(state.n_browse_columns), mpd_data: *state.Data) void {
     const initial_state = app_state.input_state;
     switch (initial_state) {
-        .normal_queue => normalQueue(char, app_state, render_state) catch unreachable,
-        .typing_find => typingFind(char, app_state, render_state) catch unreachable,
-        .normal_browse => handleNormalBrowse(char, app_state, render_state) catch unreachable,
+        .normal_queue => normalQueue(char, app_state, render_state, mpd_data) catch unreachable,
+        .typing_find => typingFind(char, app_state, render_state, mpd_data) catch unreachable,
+        .normal_browse => handleNormalBrowse(char, app_state, render_state, mpd_data) catch unreachable,
         .typing_browse => typingBrowse(char, app_state, render_state) catch unreachable,
     }
     if (app_state.input_state != initial_state) {
@@ -173,8 +171,8 @@ fn onBrowseExit(app: *state.State, render_state: *RenderState(state.n_browse_col
 
 // ---- Input Mode Handlers ----
 
-fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
-    if (modeSwitch) searchable_items = data.searchable;
+fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns), mpd_data: *const state.Data) !void {
+    if (modeSwitch) searchable_items = mpd_data.searchable;
     switch (char) {
         '\x1B' => {
             var escBuffer: [8]u8 = undefined;
@@ -198,20 +196,21 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_br
         },
         else => {
             app.typing_buffer.append(char);
-            const slice = try algo.suTopNranked(
-                &alloc.algoArena,
-                alloc.typingAllocator,
-                app.typing_buffer.typed,
-                &searchable_items,
-            );
-            app.viewable_searchable = slice[0..];
+
+            if (searchable_items) |_| {
+                app.viewable_searchable = try algo.suTopNranked(
+                    &alloc.algoArena,
+                    alloc.typingAllocator,
+                    app.typing_buffer.typed,
+                    &searchable_items.?,
+                );
+            }
             render_state.find = true;
-            return;
         },
     }
 }
 
-fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
+fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns), mpd_data: *state.Data) !void {
     switch (char) {
         'q' => app.quit = true,
         'j' => {
@@ -318,11 +317,16 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             try mpd.prevSong();
         },
         'f' => {
+            try mpd_data.init(.searchable);
             app.input_state = .typing_find;
             render_state.find = true;
             render_state.queue = true;
         },
         'b' => {
+            try mpd_data.init(.albums);
+            if (app.col_arr.getNext()) |next| {
+                next.displaying = mpd_data.albums;
+            }
             app.input_state = .normal_browse;
             app.node_switched = true;
             render_state.browse_cursor[app.col_arr.index] = true;
@@ -387,7 +391,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
 }
 
 // ---- Browser Module ----
-fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
+fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns), mpd_data: *state.Data) !void {
     switch (char) {
         'q' => app.quit = true,
         '\x1B' => {
@@ -400,7 +404,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
             const current: *state.BrowseColumn = app.col_arr.getCurrent();
             const next: ?*state.BrowseColumn = app.col_arr.getNext();
             const scrolled = &app.current_scrolled;
-            const reset = try browserScrollVertical(.down, current, next, scrolled);
+            const reset = try browserScrollVertical(.down, current, next, scrolled, mpd_data);
             if (reset) {
                 try resetBrowser(next);
                 app.col_arr.clear(render_state);
@@ -418,7 +422,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
             const current: *state.BrowseColumn = app.col_arr.getCurrent();
             const next: ?*state.BrowseColumn = app.col_arr.getNext();
             const scrolled = &app.current_scrolled;
-            const reset = try browserScrollVertical(.up, current, next, scrolled);
+            const reset = try browserScrollVertical(.up, current, next, scrolled, mpd_data);
             if (reset) {
                 try resetBrowser(next);
                 app.col_arr.clear(render_state);
@@ -485,14 +489,23 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
             const node = try node_buffer.getCurrentNode();
             const initial: *state.BrowseColumn = app.col_arr.getCurrent();
 
-            if (node.type == .Select) {
-                const selected: state.Column_Type = switch (initial.pos) {
-                    0 => .Albums,
-                    1 => .Artists,
-                    2 => .Tracks,
+            if (node.type == .Select and node_buffer.apex == .UNSET) {
+                switch (initial.pos) {
+                    0 => {
+                        const albums = mpd_data.albums orelse return;
+                        node_buffer = state.Browser.apexAlbums(albums);
+                    },
+                    1 => {
+                        const artists = mpd_data.artists orelse return;
+                        node_buffer = state.Browser.apexArtists(artists);
+                    },
+                    2 => {
+                        const titles = mpd_data.song_titles orelse return;
+                        const songs = mpd_data.songs orelse return;
+                        node_buffer = state.Browser.apexTracks(songs, titles);
+                    },
                     else => unreachable,
-                };
-                if (node_buffer.apex == .UNSET) node_buffer = state.Browser.init(selected, data);
+                }
             }
             if (node_buffer.index == node_buffer.len - 1) return;
             const next_col = app.col_arr.getNext();
@@ -526,7 +539,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
         },
         '\n', '\r' => {
             const curr_col = app.col_arr.getCurrent();
-            try browserHandleEnter(curr_col.absolutePos());
+            try browserHandleEnter(curr_col.absolutePos(), mpd_data);
         },
         else => return,
     }
@@ -665,7 +678,7 @@ fn moveToIndex(index: usize, col: *state.BrowseColumn, displaying: []const []con
 }
 
 // Browser vertical scrolling - handles all three columns in one place
-fn browserScrollVertical(dir: cursorDirection, current: *state.BrowseColumn, next: ?*state.BrowseColumn, scrolled: *bool) !bool {
+fn browserScrollVertical(dir: cursorDirection, current: *state.BrowseColumn, next: ?*state.BrowseColumn, scrolled: *bool, mpd_data: *state.Data) !bool {
     const displaying = current.displaying orelse return false;
     next_col_ready = false;
     const max: ?u8 = if (dir == .up) null else @intCast(@min(y_len, displaying.len));
@@ -674,12 +687,20 @@ fn browserScrollVertical(dir: cursorDirection, current: *state.BrowseColumn, nex
     const curr_node = try node_buffer.getCurrentNode();
     if (curr_node.type == .Select) {
         if (next) |col| {
-            col.displaying = switch (current.pos) {
-                0 => data.albums,
-                1 => data.artists,
-                2 => data.song_titles,
-                else => return error.ScrollOverflow,
-            };
+            switch (current.pos) {
+                0 => {
+                    col.displaying = mpd_data.albums;
+                },
+                1 => {
+                    try mpd_data.init(.artists);
+                    col.displaying = mpd_data.artists;
+                },
+                2 => {
+                    try mpd_data.init(.songs);
+                    col.displaying = mpd_data.song_titles;
+                },
+                else => unreachable,
+            }
         }
         if (node_buffer.apex != .UNSET) return true;
     }
@@ -689,13 +710,14 @@ fn browserScrollVertical(dir: cursorDirection, current: *state.BrowseColumn, nex
 
 // Handle Enter key press in browser mode
 // dependency only needed in one branch
-fn browserHandleEnter(abs_pos: usize) !void {
+fn browserHandleEnter(abs_pos: usize, mpd_data: *const state.Data) !void {
     const curr_node = try node_buffer.getCurrentNode();
     switch (curr_node.type) {
         .Tracks => {
             if (node_buffer.apex == .Tracks) {
-                if (abs_pos < data.songs.len) {
-                    const uri = data.songs[abs_pos].uri;
+                const songs = mpd_data.songs orelse return error.NoSongs;
+                if (abs_pos < songs.len) {
+                    const uri = songs[abs_pos].uri;
                     mpd.addFromUri(alloc.typingAllocator, uri) catch return error.CommandFailed;
                     return;
                 } else return error.OutOfBounds;

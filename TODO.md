@@ -3,9 +3,21 @@
 ## TO 1.0 !!!!!!!!!!
 - [ ] render highlight granular on typing find
 - [ ] backspace on type
-- [ ] utf handling
+- [ ] utf handling 
+    -lazily do utf8, albums on initial browser press
+    -could even load the mpd response lazily
+    ---TIME---
+    songdata: 5
+    searchable: 14
+    songs: 14   -> init songdata, searchable on f, songs on b -> songs
+    albums: 42
+    artists: 43
 - [ ] ROBUST NONBLOCK flag handling for mac
 - [ ] don't break escape codes after quit
+- [ ] return to original state, whatever was printed before running goes back to being visible
+
+- [ ] space bar -> replace queue with selected
+- [ ] shift arrow to seek faster
 
 ## Bugs/fixes
 - [ ] render highlight granular on typing find
@@ -51,11 +63,8 @@
 ## Features 
 
 - [ ] allow browse by files and directories - (no tags set)
-- [ ] space bar -> replace queue with selected
 - [ ] moving around in queue, visual mode?
-- [ ] shift arrow to seek faster
-- [ ] return to original state, whatever was printed before running goes back to being visible
-- [ ] schedule interface to release?
+- [x] lazy load strings
 - [x] True color
 - [x] X -> clear queue
 - [x] browser typing
