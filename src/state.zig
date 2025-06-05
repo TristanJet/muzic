@@ -97,10 +97,10 @@ pub const Data = struct {
 
     fn initSongs(self: *Data) !void {
         if (song_data == null) song_data = try mpd.listAllData(alloc.songDataAllocator);
-        const songs_unsorted = try mpd.getAllSongs(alloc.persistentAllocator, song_data.?);
+        const songs = try mpd.getAllSongs(alloc.persistentAllocator, song_data.?);
 
         // Sort songs alphabetically
-        const songs = try sortSongStringsAndUris(songs_unsorted);
+        try sortSongsLex(songs);
 
         var titles = try alloc.persistentAllocator.alloc([]const u8, songs.len);
         for (songs, 0..) |song, i| {
@@ -136,15 +136,7 @@ pub const Data = struct {
 };
 
 // Helper function to sort songs alphabetically
-fn sortSongStringsAndUris(songs_param: []mpd.SongStringAndUri) ![]mpd.SongStringAndUri {
-    // Create a sorted copy
-    var sorted = try alloc.persistentAllocator.alloc(mpd.SongStringAndUri, songs_param.len);
-
-    // Copy the songs
-    for (songs_param, 0..) |song, i| {
-        sorted[i] = song;
-    }
-
+fn sortSongsLex(songs: []mpd.SongStringAndUri) !void {
     // Define a custom context for sorting based on song titles
     const SortContext = struct {
         pub fn lessThan(_: @This(), a: mpd.SongStringAndUri, b: mpd.SongStringAndUri) bool {
@@ -153,59 +145,7 @@ fn sortSongStringsAndUris(songs_param: []mpd.SongStringAndUri) ![]mpd.SongString
     };
 
     // Sort songs using block sort
-    std.sort.block(mpd.SongStringAndUri, sorted, SortContext{}, SortContext.lessThan);
-
-    return sorted;
-}
-
-test "getMpdData" {
-    defer alloc.deinit();
-
-    var wrkbuf: [64]u8 = undefined;
-    mpd.connect(wrkbuf[0..64], .command, false) catch return error.MpdConnectionFailed;
-    defer mpd.disconnect(.command);
-
-    var start: i128 = time.milliTimestamp();
-    const data = try mpd.listAllData(alloc.respAllocator);
-    const data_time = time.milliTimestamp() - start;
-
-    start = time.milliTimestamp();
-    const searchable = try mpd.getSongStringAndUri(alloc.persistentAllocator, data);
-    _ = searchable;
-    const searchable_time = time.milliTimestamp() - start;
-
-    start = time.milliTimestamp();
-    const songs_unsorted = try mpd.getAllSongs(alloc.persistentAllocator, data);
-    _ = alloc.respArena.reset(.retain_capacity);
-
-    // Sort songs alphabetically
-    const songs = try sortSongStringsAndUris(songs_unsorted);
-
-    var titles = try alloc.persistentAllocator.alloc([]const u8, songs.len);
-    for (songs, 0..) |song, i| {
-        titles[i] = song.string;
-    }
-    const songs_time = time.milliTimestamp() - start;
-
-    start = time.milliTimestamp();
-    const albums = try mpd.getAllAlbums(alloc.persistentAllocator, alloc.respAllocator);
-    _ = albums;
-    _ = alloc.respArena.reset(.retain_capacity);
-    const albums_time = time.milliTimestamp() - start;
-
-    start = time.milliTimestamp();
-    const artists = try mpd.getAllArtists(alloc.persistentAllocator, alloc.respAllocator);
-    _ = artists;
-    _ = alloc.respArena.reset(.retain_capacity);
-    const artists_time = time.milliTimestamp() - start;
-
-    debug.print("---TIME---\nsongdata: {}\nsearchable: {}\nsongs: {}\nalbums: {}\nartists: {}\n", .{
-        data_time,
-        searchable_time,
-        songs_time,
-        albums_time,
-        artists_time,
-    });
+    std.sort.block(mpd.SongStringAndUri, songs, SortContext{}, SortContext.lessThan);
 }
 
 test "codepointcount" {
