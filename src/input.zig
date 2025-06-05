@@ -317,15 +317,15 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             try mpd.prevSong();
         },
         'f' => {
-            try mpd_data.init(.searchable);
+            _ = try mpd_data.init(.searchable);
             app.input_state = .typing_find;
             render_state.find = true;
             render_state.queue = true;
         },
         'b' => {
-            try mpd_data.init(.albums);
-            if (app.col_arr.getNext()) |next| {
-                next.displaying = mpd_data.albums;
+            const data_init = try mpd_data.init(.albums);
+            if (data_init) {
+                if (app.col_arr.getNext()) |next| next.displaying = mpd_data.albums;
             }
             app.input_state = .normal_browse;
             app.node_switched = true;
@@ -692,11 +692,11 @@ fn browserScrollVertical(dir: cursorDirection, current: *state.BrowseColumn, nex
                     col.displaying = mpd_data.albums;
                 },
                 1 => {
-                    try mpd_data.init(.artists);
+                    _ = try mpd_data.init(.artists);
                     col.displaying = mpd_data.artists;
                 },
                 2 => {
-                    try mpd_data.init(.songs);
+                    _ = try mpd_data.init(.songs);
                     col.displaying = mpd_data.song_titles;
                 },
                 else => unreachable,

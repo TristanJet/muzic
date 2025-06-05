@@ -56,33 +56,34 @@ pub const Data = struct {
     songs: ?[]mpd.SongStringAndUri,
     songs_init: bool,
 
-    pub fn init(self: *Data, D: enum { searchable, songs, albums, artists }) !void {
+    pub fn init(self: *Data, D: enum { searchable, songs, albums, artists }) !bool {
         switch (D) {
             .searchable => {
-                if (self.searchable_init) return;
+                if (self.searchable_init) return false;
                 try self.initSearchable();
                 self.searchable_init = true;
                 log("init searchable", .{});
             },
             .songs => {
-                if (self.songs_init) return;
+                if (self.songs_init) return false;
                 try self.initSongs();
                 self.songs_init = true;
                 log("init songs", .{});
             },
             .albums => {
-                if (self.albums_init) return;
+                if (self.albums_init) return false;
                 try self.initAlbums();
                 self.albums_init = true;
                 log("init albums", .{});
             },
             .artists => {
-                if (self.artists_init) return;
+                if (self.artists_init) return false;
                 try self.initArtists();
                 self.artists_init = true;
                 log("init artists", .{});
             },
         }
+        return true;
     }
 
     fn initSearchable(self: *Data) !void {
