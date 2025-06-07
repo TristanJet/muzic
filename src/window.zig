@@ -70,11 +70,11 @@ fn getWindow(tty: *const fs.File) !void {
 
     window = .{
         .xmin = 0,
-        .xmax = win_size.ws_col - 1, // Columns (width) minus 1 for zero-based indexing
+        .xmax = win_size.col - 1, // Columns (width) minus 1 for zero-based indexing
         .ymin = 0,
-        .ymax = win_size.ws_row - 1, // Rows (height) minus 1 for zero-based indexing
-        .xlen = win_size.ws_col,
-        .ylen = win_size.ws_row,
+        .ymax = win_size.row - 1, // Rows (height) minus 1 for zero-based indexing
+        .xlen = win_size.col,
+        .ylen = win_size.row,
     };
 }
 

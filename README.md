@@ -17,7 +17,7 @@ muzic is available on the **AUR**
 yay -S muzic
 ```
 
-To build muzic from source you need **Zig 0.13** installed, running the following command in the source directory will build to $source/zig-out/bin/
+To build muzic from source you need **Zig 0.14** installed, running the following command in the source directory will build to $source/zig-out/bin/
 
 ```bash
 zig build -Doptimize=ReleaseFast

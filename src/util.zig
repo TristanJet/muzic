@@ -43,8 +43,7 @@ fn linearFind(key: []const u8, items: []const []const u8) ?usize {
     return null;
 }
 const S = struct {
-    fn compareStrings(context: void, key: []const u8, mid_item: []const u8) math.Order {
-        _ = context;
+    fn compareStrings(key: []const u8, mid_item: []const u8) math.Order {
         return std.mem.order(u8, key, mid_item);
     }
 };
@@ -56,7 +55,7 @@ pub fn findStringIndex(
     compare_type: CompareType,
 ) ?usize {
     return switch (compare_type) {
-        .binary => std.sort.binarySearch([]const u8, key, items, {}, S.compareStrings),
+        .binary => std.sort.binarySearch([]const u8, items, key, S.compareStrings),
         .linear => linearFind(key, items),
     };
 }

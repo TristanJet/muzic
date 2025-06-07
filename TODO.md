@@ -33,6 +33,7 @@
 - [ ] carefully track persistentallocator use
 - [ ] Batch HOLD events on release - seeking, skipping through songs
 - [ ] store only visible strings in queue
+- [x] migrate to zig 0.14
 - [x] state save when return to first node
 - [x] flashing could be due to unexpected flush - add empty character after content
     - A rendering layer could be added that keeps track of the lengths of the displaying to only clear what is needed.

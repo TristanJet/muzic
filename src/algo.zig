@@ -325,7 +325,7 @@ fn calculateScore(input: []const u8, string: []const u8, allocator: std.mem.Allo
     const inputLower: []const u8 = try std.ascii.allocLowerString(allocator, input);
     const stringLower: []const u8 = try std.ascii.allocLowerString(allocator, string);
     var exact_score: u16 = 0;
-    var input_words = std.mem.split(u8, inputLower, " ");
+    var input_words = std.mem.splitSequence(u8, inputLower, " ");
     while (input_words.next()) |word| {
         // Skip very short words (like "the", "a", etc.)
         if (word.len <= 2 or word.len >= 255) continue;
