@@ -1,3 +1,5 @@
+const DisplayWidth = @import("DisplayWidth");
+
 const std = @import("std");
 const util = @import("util.zig");
 const window = @import("window.zig");
@@ -375,6 +377,14 @@ fn browseColumn(area: window.Area, strings_opt: ?[]const []const u8, inc: usize)
             try term.writeAll(string[0..area.xlen]);
         }
     }
+}
+
+test "display width" {
+    const dw: DisplayWidth = try DisplayWidth.init(alloc.persistentAllocator);
+    const string = "작은 것들을 위한 시 (Boy With Luv)";
+    const width = dw.strWidth(string);
+    const zeroes = [_]u8{'0'} ** 1024;
+    util.log("Width: {}\nString:\n{s}\n{s}", .{ width, string, zeroes[0..width] });
 }
 
 fn clear(area: window.Area) !void {
