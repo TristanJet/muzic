@@ -14,6 +14,8 @@ pub fn build(b: *std.Build) void {
     });
 
     exe.root_module.addImport("DisplayWidth", zg.module("DisplayWidth"));
+    exe.root_module.addImport("code_point", zg.module("code_point"));
+    exe.root_module.addImport("ascii", zg.module("ascii"));
 
     b.installArtifact(exe);
 
@@ -26,4 +28,12 @@ pub fn build(b: *std.Build) void {
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
+
+    const test_step = b.step("test", "Build and run tests using imported modules");
+    const dw_test = b.addTest(.{ .root_source_file = b.path("src/render.zig") });
+    dw_test.root_module.addImport("DisplayWidth", zg.module("DisplayWidth"));
+    dw_test.root_module.addImport("code_point", zg.module("code_point"));
+    dw_test.root_module.addImport("ascii", zg.module("ascii"));
+    const run_unit_tests = b.addRunArtifact(dw_test);
+    test_step.dependOn(&run_unit_tests.step);
 }
