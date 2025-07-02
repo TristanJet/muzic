@@ -763,7 +763,16 @@ fn handleBrowseKeyRelease(char: u8, app: *state.State, render_state: *RenderStat
             }
         },
         'l' => {
-            const resp = try node_buffer.setNodes(&app.col_arr, alloc.respAllocator, alloc.browserAllocator);
+            const resp = node_buffer.setNodes(&app.col_arr, alloc.respAllocator, alloc.browserAllocator) catch |e| {
+                switch (e) {
+                    // error.UnsetApex => {
+                    //     util.log("uset apex!!!", .{});
+                    //     return;
+                    // },
+                    error.UnsetApex => return,
+                    else => return error.NodeError,
+                }
+            };
             if (!resp) return;
             const next_col = app.col_arr.getNext();
             if (next_col) |next| {
