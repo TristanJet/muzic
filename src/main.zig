@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const DisplayWidth = @import("DisplayWidth");
 const time = std.time;
 
 const state = @import("state.zig");
@@ -58,6 +59,9 @@ pub fn main() !void {
 
     try window.init();
     algo.nRanked = window.panels.find.validArea().ylen;
+
+    const dw: DisplayWidth = try DisplayWidth.init(alloc.persistentAllocator);
+    defer dw.deinit(alloc.persistentAllocator);
 
     initial_song.init();
     try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &initial_song);
@@ -135,7 +139,7 @@ pub fn main() !void {
         app.appendEvent(time_event);
 
         app.updateState(&render_state, &mpd_data);
-        try render.render(&app.state, &render_state, window.panels, &wrkfba.end_index);
+        try render.render(&app.state, &render_state, window.panels, dw, &wrkfba.end_index);
         if (first) {
             first = false;
             const first_loop = time.milliTimestamp() - start;

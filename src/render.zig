@@ -1,8 +1,5 @@
-const DisplayWidth = @import("DisplayWidth");
-const CodePointIterator = @import("code_point").Iterator;
-const ascii = @import("ascii");
-
 const std = @import("std");
+const DisplayWidth = @import("DisplayWidth");
 const util = @import("util.zig");
 const window = @import("window.zig");
 const term = @import("terminal.zig");
@@ -10,6 +7,7 @@ const state = @import("state.zig");
 const alloc = @import("allocators.zig");
 const sym = @import("symbols.zig");
 const mpd = @import("mpdclient.zig");
+const uc = @import("unicode.zig");
 const Input_State = @import("input.zig").Input_State;
 const io = std.io;
 const fs = std.fs;
@@ -67,7 +65,7 @@ pub fn RenderState(n_col: comptime_int) type {
     };
 }
 
-pub fn render(app: *state.State, render_state: *RenderState(n_browse_columns), panels: window.Panels, end_index: *usize) !void {
+pub fn render(app: *state.State, render_state: *RenderState(n_browse_columns), panels: window.Panels, dw: DisplayWidth, end_index: *usize) !void {
     current = app.*;
     if (render_state.borders) try drawBorders(panels.curr_song.area);
     if (render_state.borders) try drawBorders(panels.queue.area);
@@ -83,9 +81,9 @@ pub fn render(app: *state.State, render_state: *RenderState(n_browse_columns), p
     if (render_state.browse_clear[0]) try clear(panels.browse1.validArea());
     if (render_state.browse_clear[1]) try clear(panels.browse2.validArea());
     if (render_state.browse_clear[2]) try clear(panels.browse3.validArea());
-    if (render_state.browse_col[0]) try browseColumn(panels.browse1.validArea(), app.col_arr.buf[0].displaying, app.col_arr.buf[0].slice_inc);
-    if (render_state.browse_col[1]) try browseColumn(panels.browse2.validArea(), app.col_arr.buf[1].displaying, app.col_arr.buf[1].slice_inc);
-    if (render_state.browse_col[2]) try browseColumn(panels.browse3.validArea(), app.col_arr.buf[2].displaying, app.col_arr.buf[2].slice_inc);
+    if (render_state.browse_col[0]) try browseColumn(panels.browse1.validArea(), app.col_arr.buf[0].displaying, app.col_arr.buf[0].slice_inc, dw);
+    if (render_state.browse_col[1]) try browseColumn(panels.browse2.validArea(), app.col_arr.buf[1].displaying, app.col_arr.buf[1].slice_inc, dw);
+    if (render_state.browse_col[2]) try browseColumn(panels.browse3.validArea(), app.col_arr.buf[2].displaying, app.col_arr.buf[2].slice_inc, dw);
     if (render_state.browse_cursor[0]) try browseCursorRender(panels.browse1.validArea(), app.col_arr.buf[0].displaying, app.col_arr.buf[0].prev_pos, app.col_arr.buf[0].pos, app.col_arr.buf[0].slice_inc, &app.node_switched);
     if (render_state.browse_cursor[1]) try browseCursorRender(panels.browse2.validArea(), app.col_arr.buf[1].displaying, app.col_arr.buf[1].prev_pos, app.col_arr.buf[1].pos, app.col_arr.buf[1].slice_inc, &app.node_switched);
     if (render_state.browse_cursor[2]) try browseCursorRender(panels.browse3.validArea(), app.col_arr.buf[2].displaying, app.col_arr.buf[2].prev_pos, app.col_arr.buf[2].pos, app.col_arr.buf[2].slice_inc, &app.node_switched);
@@ -359,108 +357,23 @@ fn barRender(panel: window.Panel, song: mpd.CurrentSong, allocator: std.mem.Allo
     current.currently_filled = filled;
 }
 
-fn browseColumn(area: window.Area, strings_opt: ?[]const []const u8, inc: usize) !void {
+fn browseColumn(area: window.Area, strings_opt: ?[]const []const u8, inc: usize, dw: DisplayWidth) !void {
     //separate function for clear and render
     const strings = strings_opt orelse return;
     // Display only visible items based on slice_inc
+
     for (0..area.ylen) |i| {
         const item_index = i + inc;
         if (item_index >= strings.len) break;
 
         const string = strings[item_index];
+        const str_w: uc.StringWidth = uc.fittingBytes(dw, area.xlen, string);
 
-        if (area.xlen > string.len) {
-            try term.moveCursor(area.ymin + i, area.xmin);
-            try term.writeAll(string[0..string.len]);
-            const nSpace = area.xlen - string.len;
-            try term.writeByteNTimes(' ', nSpace);
-        } else {
-            try term.moveCursor(area.ymin + i, area.xmin);
-            try term.writeAll(string[0..area.xlen]);
-        }
+        try term.moveCursor(area.ymin + i, area.xmin);
+        try term.writeAll(string[0..str_w.byte_offset]);
+        const nSpace = area.xlen - str_w.width;
+        if (nSpace > 0) try term.writeByteNTimes(' ', nSpace);
     }
-}
-
-pub fn fittingBytes(dw: DisplayWidth, max: usize, str: []const u8) struct { usize, usize } {
-    var width_total: isize = 0;
-
-    // ASCII fast path
-    if (ascii.isAsciiOnly(str)) {
-        if (str.len < max) {
-            return .{ str.len, str.len };
-        }
-        return .{ max, max };
-    }
-
-    var giter = dw.graphemes.iterator(str);
-    var offset: usize = 0;
-    while (giter.next()) |gc| {
-        var cp_iter = CodePointIterator{ .bytes = gc.bytes(str) };
-        var gc_total: isize = 0;
-
-        while (cp_iter.next()) |cp| {
-            var w = dw.codePointWidth(cp.code);
-
-            if (w != 0) {
-                // Handle text emoji sequence.
-                if (cp_iter.next()) |ncp| {
-                    // emoji text sequence.
-                    if (ncp.code == 0xFE0E) w = 1;
-                    if (ncp.code == 0xFE0F) w = 2;
-                }
-
-                // Only adding width of first non-zero-width code point.
-                if (gc_total == 0) {
-                    gc_total = w;
-                    break;
-                }
-            }
-        }
-
-        util.log("width: {}", .{width_total + gc_total});
-        util.log("string offset: {s}", .{str[0..(gc.offset + gc.len)]});
-        util.log("offset: {}", .{gc.offset + gc.len});
-        util.log("-----------------", .{});
-        if (width_total + gc_total > max) return .{
-            offset,
-            @intCast(@max(0, width_total)),
-        };
-
-        width_total += gc_total;
-        offset = gc.offset + gc.len;
-    }
-
-    return .{
-        offset,
-        @intCast(@max(0, width_total)),
-    };
-}
-
-test "display width" {
-    try util.loggerInit();
-    // defer util.deinit() catch {};
-
-    const dw: DisplayWidth = try DisplayWidth.init(alloc.persistentAllocator);
-    const string = "작은 것들을 위한 시 (Boy With Luv)";
-    // const string = "ペルソナ3 オリジナル･サウンドトラック";
-    const width = dw.strWidth(string);
-    const zeroes = [_]u8{'0'} ** 1024;
-    util.log("", .{});
-    util.log("Width: {}\nString:\n{s}\n{s}", .{ width, string, zeroes[0..width] });
-}
-
-test "fitting bytes" {
-    // try util.loggerInit();
-    defer util.deinit() catch {};
-
-    const dw: DisplayWidth = try DisplayWidth.init(alloc.persistentAllocator);
-    const string = "작은 것들을 위한 시 (Boy With Luv)";
-    // const string = "ペルソナ3 オリジナル･サウンドトラック";
-    const zeroes = [_]u8{'0'} ** 1024;
-    const s = fittingBytes(dw, 11, string);
-    const offset = s[0];
-    util.log("Max: 11\nString:\n{s}\n{s}", .{ string[0..offset], zeroes[0..11] });
-    util.log("display width: {}", .{s[1]});
 }
 
 fn clear(area: window.Area) !void {

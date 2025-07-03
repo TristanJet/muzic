@@ -5,8 +5,9 @@
 - [ ] render highlight granular on typing find
 - [ ] backspace on type
 - [ ] utf handling 
-    -lazily do utf8, albums on initial browser press
     - [x] fitting bytes function
+    - [x] fitting the text
+    - [ ] highlight correctly
 - [ ] ROBUST NONBLOCK flag handling for mac
 - [ ] don't break escape codes after quit
 - [ ] return to original state, whatever was printed before running goes back to being visible
@@ -15,6 +16,7 @@
 - [ ] shift arrow to seek faster
 
 ## Bugs/fixes
+- [ ] do the utf correctly do it once and store it - does it require String data structure refactor?
 - [ ] render highlight granular on typing find
 - [ ] escape codes stop working after quit - enter
 - [ ] fix half up
