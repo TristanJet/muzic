@@ -17,6 +17,8 @@ var port: u16 = 6600;
 var cmdStream: std.net.Stream = undefined;
 var idleStream: std.net.Stream = undefined;
 
+var cmdBuf: [128]u8 = undefined;
+
 const StreamType = enum {
     command,
     idle,
@@ -47,9 +49,16 @@ fn setStringValue(buffer: []u8, value: []const u8, max_len: usize) ![]const u8 {
 /// Sends an MPD command and checks for OK response
 fn sendCommand(command: []const u8) !void {
     try connSend(command, &cmdStream);
-    var buf: [3]u8 = undefined;
-    _ = try cmdStream.read(&buf);
-    if (!mem.eql(u8, buf[0..3], "OK\n")) return error.CommandFailed;
+    _ = try cmdStream.read(&cmdBuf);
+    if (mem.eql(u8, cmdBuf[0..3], "OK\n")) return;
+    if (mem.eql(u8, cmdBuf[0..3], "ACK")) {
+        const mpd_err = cmdBuf[5..9];
+        util.log("{s}", .{mpd_err});
+        if (mem.eql(u8, mpd_err, "55@0")) return error.MpdNotPlaying;
+        if (mem.eql(u8, mpd_err[0..3], "2@0")) return error.MpdBadIndex;
+        return error.MpdError;
+    }
+    return error.ReadError;
 }
 
 /// Creates a buffered reader and processes MPD response line by line
@@ -165,7 +174,7 @@ pub fn handleArgs(arg_host: ?[]const u8, arg_port: ?u16) void {
     if (arg_port) |arg| port = arg;
 }
 
-pub fn connect(buffer: []u8, stream_type: StreamType, nonblock: bool) !void {
+pub fn connect(stream_type: StreamType, nonblock: bool) !void {
     const peer = try net.Address.parseIp4(host, port);
     // Connect to peer
     const stream = switch (stream_type) {
@@ -175,8 +184,8 @@ pub fn connect(buffer: []u8, stream_type: StreamType, nonblock: bool) !void {
 
     stream.* = try net.tcpConnectToAddress(peer);
 
-    const bytes_read = try stream.read(buffer);
-    const received_data = buffer[0..bytes_read];
+    const bytes_read = try stream.read(&cmdBuf);
+    const received_data = cmdBuf[0..bytes_read];
 
     if (bytes_read < 2 or !mem.eql(u8, received_data[0..2], "OK")) {
         log("BAD! connection", .{});
@@ -223,12 +232,11 @@ pub fn initIdle() !void {
     try connSend("idle player playlist\n", &idleStream);
 }
 
-pub fn checkIdle(buffer: []u8) ![2]?Event {
-    debug.assert(buffer.len == 18);
+pub fn checkIdle() ![2]?Event {
     var reader = idleStream.reader();
     var event: [2]?Event = .{ null, null };
     while (true) {
-        const line = reader.readUntilDelimiter(buffer, '\n') catch |err| switch (err) {
+        const line = reader.readUntilDelimiter(&cmdBuf, '\n') catch |err| switch (err) {
             error.WouldBlock => return .{ null, null }, // No data available
             error.EndOfStream => return error.IdleConnectionClosed,
             else => return err,
@@ -257,18 +265,23 @@ pub fn togglePlaystate(isPlaying: bool) !bool {
 }
 
 pub fn seekCur(isForward: bool) !void {
-    var buf: [12]u8 = undefined;
     const dir = if (isForward) "+5" else "-5";
-    const command = try fmt.bufPrint(&buf, "seekcur {s}\n", .{dir});
+    const command = try fmt.bufPrint(&cmdBuf, "seekcur {s}\n", .{dir});
     try sendCommand(command);
 }
 
 pub fn nextSong() !void {
-    try sendCommand("next\n");
+    sendCommand("next\n") catch |e| switch (e) {
+        error.MpdNotPlaying => return,
+        else => return e,
+    };
 }
 
 pub fn prevSong() !void {
-    try sendCommand("previous\n");
+    sendCommand("previous\n") catch |e| switch (e) {
+        error.MpdNotPlaying => return,
+        else => return e,
+    };
 }
 
 pub fn playByPos(allocator: mem.Allocator, pos: usize) !void {
@@ -798,7 +811,10 @@ pub fn addList(allocator: mem.Allocator, list: []SongStringAndUri) !void {
 
 pub fn rmFromPos(allocator: mem.Allocator, pos: usize) !void {
     const command = try fmt.allocPrint(allocator, "delete {}\n", .{pos});
-    try sendCommand(command);
+    sendCommand(command) catch |e| switch (e) {
+        error.MpdNotPlaying => return e,
+        else => return e,
+    };
 }
 
 pub fn rmRangeFromPos(allocator: mem.Allocator, pos: usize) !void {

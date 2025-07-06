@@ -64,9 +64,10 @@ pub const cursorDirection = enum {
 
 // ---- Core Input Handling ----
 
-pub fn checkInputEvent(buffer: []u8) !?state.Event {
-    debug.assert(buffer.len == 1);
-    const bytes_read: usize = try term.readBytes(buffer);
+// Should this be the way it is??? WHy am I only reading one byte at a time??????
+pub fn checkInputEvent() !?state.Event {
+    var buffer: [1]u8 = undefined;
+    const bytes_read: usize = try term.readBytes(&buffer);
     if (bytes_read < 1) return null;
     return state.Event{ .input = buffer[0] };
 }
@@ -310,11 +311,21 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         },
         'l' => {
             if (debounce()) return;
-            try mpd.nextSong();
+            mpd.nextSong() catch |e| {
+                switch (e) {
+                    error.MpdError => return,
+                    else => return e,
+                }
+            };
         },
         'h' => {
             if (debounce()) return;
-            try mpd.prevSong();
+            mpd.prevSong() catch |e| {
+                switch (e) {
+                    error.MpdError => return,
+                    else => return e,
+                }
+            };
         },
         'f' => {
             _ = try mpd_data.init(.searchable);
@@ -338,8 +349,16 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         },
         'x' => {
             if (debounce()) return;
-            try mpd.rmFromPos(wrkallocator, app.scroll_q.absolutePos());
+            mpd.rmFromPos(wrkallocator, app.scroll_q.absolutePos()) catch |e| switch (e) {
+                error.MpdNotPlaying => return,
+                error.MpdBadIndex => {
+                    if (app.queue.items.len == 0) return;
+                    return error.MpdError;
+                },
+                else => return e,
+            };
             // If we're deleting the last item in the queue, move cursor up
+            if (app.queue.items.len == 0) return;
             if (app.scroll_q.absolutePos() >= app.queue.items.len - 1 and app.scroll_q.pos > 0) {
                 if (app.scroll_q.slice_inc > 0)
                     app.scroll_q.slice_inc -= 1
@@ -362,7 +381,11 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
 
             render_state.queueEffects = true;
         },
-        'X' => try mpd.clearQueue(),
+        'X' => {
+            try mpd.clearQueue();
+            app.scroll_q.slice_inc = 0;
+            app.scroll_q.pos = 0;
+        },
         '\x1B' => {
             var escBuffer: [8]u8 = undefined;
             const escRead = try term.readEscapeCode(&escBuffer);
@@ -383,7 +406,13 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         },
         '\n', '\r' => {
             if (debounce()) return;
-            try mpd.playByPos(wrkallocator, app.scroll_q.absolutePos());
+            mpd.playByPos(wrkallocator, app.scroll_q.absolutePos()) catch |e| switch (e) {
+                error.MpdBadIndex => {
+                    if (app.queue.items.len == 0) return;
+                    return error.MpdError;
+                },
+                else => return e,
+            };
             if (!app.isPlaying) app.isPlaying = true;
         },
         else => {},

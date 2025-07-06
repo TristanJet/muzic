@@ -16,6 +16,7 @@
 - [ ] shift arrow to seek faster
 
 ## Bugs/fixes
+- [ ] check reading terminal input, why do I read one byte at a time??
 - [ ] do the utf correctly do it once and store it - does it require String data structure refactor?
 - [ ] render highlight granular on typing find
 - [ ] escape codes stop working after quit - enter

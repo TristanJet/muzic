@@ -48,10 +48,10 @@ pub fn main() !void {
     if (args.version) return;
 
     mpd.handleArgs(args.host, args.port);
-    mpd.connect(wrkbuf[0..64], .command, false) catch return error.MpdConnectionFailed;
+    mpd.connect(.command, false) catch return error.MpdConnectionFailed;
     defer mpd.disconnect(.command);
 
-    mpd.connect(wrkbuf[0..64], .idle, true) catch return error.MpdConnectionFailed;
+    mpd.connect(.idle, true) catch return error.MpdConnectionFailed;
     defer mpd.disconnect(.idle);
     try mpd.initIdle();
 
@@ -128,9 +128,9 @@ pub fn main() !void {
         defer wrkfba.reset();
         const loop_start_time = time.milliTimestamp();
 
-        const input_event: ?Event = try input.checkInputEvent(wrkbuf[wrkfba.end_index .. wrkfba.end_index + 1]);
+        const input_event: ?Event = try input.checkInputEvent();
         const released_event: ?Event = try input.checkReleaseEvent(input_event);
-        const idle_event: [2]?Event = try mpd.checkIdle(wrkbuf[wrkfba.end_index .. wrkfba.end_index + 18]);
+        const idle_event: [2]?Event = try mpd.checkIdle();
         const time_event: Event = Event{ .time = loop_start_time };
 
         if (input_event) |event| app.appendEvent(event);
