@@ -1,16 +1,27 @@
+const Allocator = @import("std").mem.Allocator;
 const DisplayWidth = @import("DisplayWidth");
 const CodePointIterator = @import("code_point").Iterator;
 const ascii = @import("ascii");
 
 const util = @import("util.zig");
-const alloc = @import("allocators.zig");
+const pers_alloc = @import("allocators.zig").persistentAllocator;
 
-pub const StringWidth = struct {
+var dw: DisplayWidth = undefined;
+
+pub const Width = struct {
     byte_offset: usize,
     width: usize,
 };
 
-pub fn fittingBytes(dw: DisplayWidth, max: usize, str: []const u8) StringWidth {
+pub fn init(alloc: Allocator) !void {
+    dw = try DisplayWidth.init(alloc);
+}
+
+pub fn deinit(alloc: Allocator) void {
+    dw.deinit(alloc);
+}
+
+pub fn fittingBytes(max: usize, str: []const u8) Width {
     var width_total: isize = 0;
 
     // ASCII fast path
@@ -73,9 +84,9 @@ pub fn fittingBytes(dw: DisplayWidth, max: usize, str: []const u8) StringWidth {
 
 test "display width" {
     try util.loggerInit();
+    try init(pers_alloc);
     // defer util.deinit() catch {};
 
-    const dw: DisplayWidth = try DisplayWidth.init(alloc.persistentAllocator);
     const string = "작은 것들을 위한 시 (Boy With Luv)";
     // const string = "ペルソナ3 オリジナル･サウンドトラック";
     const width = dw.strWidth(string);
@@ -86,9 +97,9 @@ test "display width" {
 
 test "fitting bytes" {
     // try util.loggerInit();
-    defer util.deinit() catch {};
+    // defer util.deinit() catch {};
+    try init(pers_alloc);
 
-    const dw: DisplayWidth = try DisplayWidth.init(alloc.persistentAllocator);
     const string = "작은 것들을 위한 시 (Boy With Luv)";
     // const string = "ペルソナ3 オリジナル･サウンドトラック";
     const zeroes = [_]u8{'0'} ** 1024;

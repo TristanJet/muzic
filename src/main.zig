@@ -13,6 +13,7 @@ const render = @import("render.zig");
 const alloc = @import("allocators.zig");
 const algo = @import("algo.zig");
 const proc = @import("proc.zig");
+const uc = @import("unicode.zig");
 
 const RenderState = render.RenderState;
 const Event = state.Event;
@@ -60,8 +61,8 @@ pub fn main() !void {
     try window.init();
     algo.nRanked = window.panels.find.validArea().ylen;
 
-    const dw: DisplayWidth = try DisplayWidth.init(alloc.persistentAllocator);
-    defer dw.deinit(alloc.persistentAllocator);
+    try uc.init(alloc.persistentAllocator);
+    defer uc.deinit(alloc.persistentAllocator);
 
     initial_song.init();
     try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &initial_song);
@@ -139,7 +140,7 @@ pub fn main() !void {
         app.appendEvent(time_event);
 
         app.updateState(&render_state, &mpd_data);
-        try render.render(&app.state, &render_state, window.panels, dw, &wrkfba.end_index);
+        try render.render(&app.state, &render_state, window.panels, &wrkfba.end_index);
         if (first) {
             first = false;
             const first_loop = time.milliTimestamp() - start;

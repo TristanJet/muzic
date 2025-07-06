@@ -65,7 +65,7 @@ pub fn RenderState(n_col: comptime_int) type {
     };
 }
 
-pub fn render(app: *state.State, render_state: *RenderState(n_browse_columns), panels: window.Panels, dw: DisplayWidth, end_index: *usize) !void {
+pub fn render(app: *state.State, render_state: *RenderState(n_browse_columns), panels: window.Panels, end_index: *usize) !void {
     current = app.*;
     if (render_state.borders) try drawBorders(panels.curr_song.area);
     if (render_state.borders) try drawBorders(panels.queue.area);
@@ -81,9 +81,9 @@ pub fn render(app: *state.State, render_state: *RenderState(n_browse_columns), p
     if (render_state.browse_clear[0]) try clear(panels.browse1.validArea());
     if (render_state.browse_clear[1]) try clear(panels.browse2.validArea());
     if (render_state.browse_clear[2]) try clear(panels.browse3.validArea());
-    if (render_state.browse_col[0]) try browseColumn(panels.browse1.validArea(), app.col_arr.buf[0].displaying, app.col_arr.buf[0].slice_inc, dw);
-    if (render_state.browse_col[1]) try browseColumn(panels.browse2.validArea(), app.col_arr.buf[1].displaying, app.col_arr.buf[1].slice_inc, dw);
-    if (render_state.browse_col[2]) try browseColumn(panels.browse3.validArea(), app.col_arr.buf[2].displaying, app.col_arr.buf[2].slice_inc, dw);
+    if (render_state.browse_col[0]) try browseColumn(panels.browse1.validArea(), app.col_arr.buf[0].displaying, app.col_arr.buf[0].slice_inc);
+    if (render_state.browse_col[1]) try browseColumn(panels.browse2.validArea(), app.col_arr.buf[1].displaying, app.col_arr.buf[1].slice_inc);
+    if (render_state.browse_col[2]) try browseColumn(panels.browse3.validArea(), app.col_arr.buf[2].displaying, app.col_arr.buf[2].slice_inc);
     if (render_state.browse_cursor[0]) try browseCursorRender(panels.browse1.validArea(), app.col_arr.buf[0].displaying, app.col_arr.buf[0].prev_pos, app.col_arr.buf[0].pos, app.col_arr.buf[0].slice_inc, &app.node_switched);
     if (render_state.browse_cursor[1]) try browseCursorRender(panels.browse2.validArea(), app.col_arr.buf[1].displaying, app.col_arr.buf[1].prev_pos, app.col_arr.buf[1].pos, app.col_arr.buf[1].slice_inc, &app.node_switched);
     if (render_state.browse_cursor[2]) try browseCursorRender(panels.browse3.validArea(), app.col_arr.buf[2].displaying, app.col_arr.buf[2].prev_pos, app.col_arr.buf[2].pos, app.col_arr.buf[2].slice_inc, &app.node_switched);
@@ -357,7 +357,7 @@ fn barRender(panel: window.Panel, song: mpd.CurrentSong, allocator: std.mem.Allo
     current.currently_filled = filled;
 }
 
-fn browseColumn(area: window.Area, strings_opt: ?[]const []const u8, inc: usize, dw: DisplayWidth) !void {
+fn browseColumn(area: window.Area, strings_opt: ?[]const []const u8, inc: usize) !void {
     //separate function for clear and render
     const strings = strings_opt orelse return;
     // Display only visible items based on slice_inc
@@ -367,7 +367,7 @@ fn browseColumn(area: window.Area, strings_opt: ?[]const []const u8, inc: usize,
         if (item_index >= strings.len) break;
 
         const string = strings[item_index];
-        const str_w: uc.StringWidth = uc.fittingBytes(dw, area.xlen, string);
+        const str_w: uc.Width = uc.fittingBytes(area.xlen, string);
 
         try term.moveCursor(area.ymin + i, area.xmin);
         try term.writeAll(string[0..str_w.byte_offset]);
