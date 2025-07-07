@@ -392,39 +392,32 @@ fn clear(area: window.Area) !void {
 fn browseCursorRender(area: window.Area, strings_opt: ?[]const []const u8, prev_pos: u8, pos: u8, slice_inc: usize, switched: *bool) !void {
     const strings = strings_opt orelse return;
     if (strings.len == 0) return;
-    var xmax = area.xlen;
     var nSpace: usize = 0;
+    var dw: uc.Width = undefined;
     if (!switched.*) {
         if (prev_pos >= area.ylen) return error.OutOfBounds;
         if (prev_pos + slice_inc >= strings.len) return error.OutOfBounds;
+
         const prev = strings[prev_pos + slice_inc];
-        // Un-highlight the previous cursor position
-        if (prev.len < area.xlen) {
-            nSpace = area.xlen - prev.len;
-            xmax = prev.len;
-        }
+        dw = uc.fittingBytes(area.xlen, prev);
+        nSpace = area.xlen - dw.width;
+
         try term.moveCursor(area.ymin + prev_pos, area.xmin);
         try term.attributeReset();
-        try term.writeAll(prev[0..xmax]);
-        if (nSpace > 0) try term.writeByteNTimes(' ', nSpace);
+        try term.writeAll(prev[0..dw.byte_offset]);
+        try term.writeByteNTimes(' ', nSpace);
     } else switched.* = false;
     if (pos >= area.ylen) return error.OutOfBounds;
     if (pos + slice_inc >= strings.len) return error.OutOfBounds;
 
     const curr = strings[pos + slice_inc];
+    dw = uc.fittingBytes(area.xlen, curr);
+    nSpace = area.xlen - dw.width;
 
-    // Highlight the current cursor position
-    if (curr.len < area.xlen) {
-        nSpace = area.xlen - curr.len;
-        xmax = curr.len;
-    } else {
-        nSpace = 0;
-        xmax = area.xlen;
-    }
     try term.moveCursor(area.ymin + pos, area.xmin);
     try term.highlight();
-    try term.writeAll(curr[0..xmax]);
-    if (nSpace > 0) try term.writeByteNTimes(' ', nSpace);
+    try term.writeAll(curr[0..dw.byte_offset]);
+    try term.writeByteNTimes(' ', nSpace);
     try term.attributeReset();
 }
 
