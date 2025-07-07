@@ -280,6 +280,7 @@ pub fn writeByte(byte: u8) !void {
 }
 
 pub fn writeByteNTimes(byte: u8, n: usize) !void {
+    if (n == 0) return;
     for (0..n) |_| {
         try writeByteToBuffer(byte);
 
@@ -297,14 +298,6 @@ pub fn moveCursor(row: usize, col: usize) !void {
 
 pub fn clear() !void {
     try writeToBuffer("\x1B[2J");
-}
-
-// Higher-level rendering functions
-pub fn writeLine(txt: []const u8, y: usize, xmin: usize, xmax: usize) !void {
-    const panel_width = xmax - xmin;
-    const x_pos = xmin + (panel_width - txt.len) / 2;
-    try moveCursor(y, x_pos);
-    try writeAll(txt);
 }
 
 pub fn clearLine(y: usize, xmin: usize, xmax: usize) !void {

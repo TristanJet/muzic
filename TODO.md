@@ -11,6 +11,9 @@
 - [ ] ROBUST NONBLOCK flag handling for mac
 - [ ] don't break escape codes after quit
 - [ ] return to original state, whatever was printed before running goes back to being visible
+- [ ] fix search
+    - [ ] algoirthm fix, EXETER failing best match
+    - [ ] capitalisation in browser search
 
 - [ ] space bar -> replace queue with selected
 - [ ] shift arrow to seek faster
@@ -26,7 +29,6 @@
 - [ ] Input mode scope variables
 - [ ] get rid of ALL UNNECESSARY public variables
 - [ ] algorithm tweak, prioritize matches at the start of the string, for best match functions e.g. Tyler, The Creator
-- [ ] algoirthm fix, EXETER failing best match
 - [ ] display full album content, regardless of artist
 - [ ] carefully track persistentallocator use
 - [ ] Batch HOLD events on release - seeking, skipping through songs

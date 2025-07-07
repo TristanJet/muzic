@@ -228,10 +228,9 @@ fn writeQueueLine(area: window.Area, row: usize, song: mpd.QSong, itemTime: []co
     const no_title = "NO TITLE";
     try term.moveCursor(row, area.xmin);
     if (song.title) |title| {
-        if (n > title.len) {
-            try term.writeAll(title);
-            try term.writeByteNTimes(' ', n - title.len);
-        } else try term.writeAll(title[0..n]);
+        const dw = uc.fittingBytes(n, title);
+        try term.writeAll(title[0..dw.byte_offset]);
+        try term.writeByteNTimes(' ', n - dw.width);
     } else {
         if (n > no_title.len) {
             try term.writeAll(no_title);
@@ -240,16 +239,23 @@ fn writeQueueLine(area: window.Area, row: usize, song: mpd.QSong, itemTime: []co
     }
     try term.writeByteNTimes(' ', gapcol);
     if (song.artist) |artist| {
-        if (n > artist.len) {
-            try term.writeAll(artist);
-            try term.writeByteNTimes(' ', n - artist.len);
-        } else try term.writeAll(artist[0..n]);
+        const dw = uc.fittingBytes(n, artist);
+        try term.writeAll(artist[0..dw.byte_offset]);
+        try term.writeByteNTimes(' ', n - dw.width);
     } else try term.writeByteNTimes(' ', n);
     try term.writeByteNTimes(' ', area.xlen - 4 - gapcol - 2 * n);
     try term.moveCursor(row, area.xmax - 4);
     try term.writeAll(itemTime);
 }
 
+// Higher-level rendering functions
+pub fn writeLineCenter(str: []const u8, y: usize, xmin: usize, xmax: usize) !void {
+    const panel_width = xmax - xmin;
+    const dw = uc.fittingBytes(panel_width, str).width;
+    const x_pos = xmin + (panel_width - dw) / 2;
+    try term.moveCursor(y, x_pos);
+    try term.writeAll(str);
+}
 // fn scrollQ() !void {}
 fn currTrackRender(
     allocator: std.mem.Allocator,
@@ -284,10 +290,10 @@ fn currTrackRender(
         try term.clearLine(ycent - 2, xmin, xmax);
     }
     try term.setColor(.magenta);
-    try term.writeLine(artist_alb, ycent, xmin, xmax);
+    try writeLineCenter(artist_alb, ycent, xmin, xmax);
     try term.setColor(.cyan);
     try term.setBold();
-    try term.writeLine(s.title, ycent - 2, xmin, xmax);
+    try writeLineCenter(s.title, ycent - 2, xmin, xmax);
     try term.attributeReset();
     if (fr.*) fr.* = false;
 }
