@@ -7,7 +7,7 @@ const state = @import("state.zig");
 const alloc = @import("allocators.zig");
 const sym = @import("symbols.zig");
 const mpd = @import("mpdclient.zig");
-const uc = @import("unicode.zig");
+const dw = @import("display_width.zig");
 const Input_State = @import("input.zig").Input_State;
 const io = std.io;
 const fs = std.fs;
@@ -65,6 +65,23 @@ pub fn RenderState(n_col: comptime_int) type {
     };
 }
 
+pub const FixedString = struct {
+    pub const MAX_LEN: u8 = 64;
+    buffer: [MAX_LEN]u8 = undefined,
+    slice: []const u8 = undefined,
+
+    pub fn set(self: *FixedString, str: []const u8) []const u8 {
+        if (str.len > MAX_LEN) {
+            mem.copyForwards(u8, &self.buffer, str[0..MAX_LEN]);
+            self.slice = self.buffer[0..MAX_LEN];
+        } else {
+            mem.copyForwards(u8, &self.buffer, str);
+            self.slice = self.buffer[0..str.len];
+        }
+        return self.slice;
+    }
+};
+
 pub fn render(app: *state.State, render_state: *RenderState(n_browse_columns), panels: window.Panels, end_index: *usize) !void {
     current = app.*;
     if (render_state.borders) try drawBorders(panels.curr_song.area);
@@ -81,12 +98,12 @@ pub fn render(app: *state.State, render_state: *RenderState(n_browse_columns), p
     if (render_state.browse_clear[0]) try clear(panels.browse1.validArea());
     if (render_state.browse_clear[1]) try clear(panels.browse2.validArea());
     if (render_state.browse_clear[2]) try clear(panels.browse3.validArea());
-    if (render_state.browse_col[0]) try browseColumn(panels.browse1.validArea(), app.col_arr.buf[0].displaying, app.col_arr.buf[0].slice_inc);
-    if (render_state.browse_col[1]) try browseColumn(panels.browse2.validArea(), app.col_arr.buf[1].displaying, app.col_arr.buf[1].slice_inc);
-    if (render_state.browse_col[2]) try browseColumn(panels.browse3.validArea(), app.col_arr.buf[2].displaying, app.col_arr.buf[2].slice_inc);
-    if (render_state.browse_cursor[0]) try browseCursorRender(panels.browse1.validArea(), app.col_arr.buf[0].displaying, app.col_arr.buf[0].prev_pos, app.col_arr.buf[0].pos, app.col_arr.buf[0].slice_inc, &app.node_switched);
-    if (render_state.browse_cursor[1]) try browseCursorRender(panels.browse2.validArea(), app.col_arr.buf[1].displaying, app.col_arr.buf[1].prev_pos, app.col_arr.buf[1].pos, app.col_arr.buf[1].slice_inc, &app.node_switched);
-    if (render_state.browse_cursor[2]) try browseCursorRender(panels.browse3.validArea(), app.col_arr.buf[2].displaying, app.col_arr.buf[2].prev_pos, app.col_arr.buf[2].pos, app.col_arr.buf[2].slice_inc, &app.node_switched);
+    if (render_state.browse_col[0]) try browseColumn(panels.browse1.validArea(), app.col_arr.buf[0].displaying, app.col_arr.buf[0].slice_inc, 1);
+    if (render_state.browse_col[1]) try browseColumn(panels.browse2.validArea(), app.col_arr.buf[1].displaying, app.col_arr.buf[1].slice_inc, 2);
+    if (render_state.browse_col[2]) try browseColumn(panels.browse3.validArea(), app.col_arr.buf[2].displaying, app.col_arr.buf[2].slice_inc, 3);
+    if (render_state.browse_cursor[0]) try browseCursorRender(panels.browse1.validArea(), app.col_arr.buf[0].displaying, app.col_arr.buf[0].prev_pos, app.col_arr.buf[0].pos, app.col_arr.buf[0].slice_inc, &app.node_switched, 1);
+    if (render_state.browse_cursor[1]) try browseCursorRender(panels.browse2.validArea(), app.col_arr.buf[1].displaying, app.col_arr.buf[1].prev_pos, app.col_arr.buf[1].pos, app.col_arr.buf[1].slice_inc, &app.node_switched, 2);
+    if (render_state.browse_cursor[2]) try browseCursorRender(panels.browse3.validArea(), app.col_arr.buf[2].displaying, app.col_arr.buf[2].prev_pos, app.col_arr.buf[2].pos, app.col_arr.buf[2].slice_inc, &app.node_switched, 3);
     if (render_state.browse_clear_cursor[0]) try clearCursor(panels.browse1.validArea(), current.col_arr.buf[0].displaying, current.col_arr.buf[0].pos, current.col_arr.buf[0].slice_inc);
     if (render_state.browse_clear_cursor[1]) try clearCursor(panels.browse2.validArea(), current.col_arr.buf[1].displaying, current.col_arr.buf[1].pos, current.col_arr.buf[1].slice_inc);
     if (render_state.browse_clear_cursor[2]) try clearCursor(panels.browse3.validArea(), current.col_arr.buf[2].displaying, current.col_arr.buf[2].pos, current.col_arr.buf[2].slice_inc);
@@ -228,9 +245,9 @@ fn writeQueueLine(area: window.Area, row: usize, song: mpd.QSong, itemTime: []co
     const no_title = "NO TITLE";
     try term.moveCursor(row, area.xmin);
     if (song.title) |title| {
-        const dw = uc.fittingBytes(n, title);
-        try term.writeAll(title[0..dw.byte_offset]);
-        try term.writeByteNTimes(' ', n - dw.width);
+        const width = try dw.getDisplayWidth(title, .queue);
+        try term.writeAll(title[0..width.byte_offset]);
+        try term.writeByteNTimes(' ', n - width.cells);
     } else {
         if (n > no_title.len) {
             try term.writeAll(no_title);
@@ -239,9 +256,9 @@ fn writeQueueLine(area: window.Area, row: usize, song: mpd.QSong, itemTime: []co
     }
     try term.writeByteNTimes(' ', gapcol);
     if (song.artist) |artist| {
-        const dw = uc.fittingBytes(n, artist);
-        try term.writeAll(artist[0..dw.byte_offset]);
-        try term.writeByteNTimes(' ', n - dw.width);
+        const width = try dw.getDisplayWidth(artist, .queue);
+        try term.writeAll(artist[0..width.byte_offset]);
+        try term.writeByteNTimes(' ', n - width.cells);
     } else try term.writeByteNTimes(' ', n);
     try term.writeByteNTimes(' ', area.xlen - 4 - gapcol - 2 * n);
     try term.moveCursor(row, area.xmax - 4);
@@ -251,8 +268,8 @@ fn writeQueueLine(area: window.Area, row: usize, song: mpd.QSong, itemTime: []co
 // Higher-level rendering functions
 pub fn writeLineCenter(str: []const u8, y: usize, xmin: usize, xmax: usize) !void {
     const panel_width = xmax - xmin;
-    const dw = uc.fittingBytes(panel_width, str).width;
-    const x_pos = xmin + (panel_width - dw) / 2;
+    const width = try dw.getDisplayWidth(str, .playing);
+    const x_pos = xmin + (panel_width - width.cells) / 2;
     try term.moveCursor(y, x_pos);
     try term.writeAll(str);
 }
@@ -363,8 +380,7 @@ fn barRender(panel: window.Panel, song: mpd.CurrentSong, allocator: std.mem.Allo
     current.currently_filled = filled;
 }
 
-fn browseColumn(area: window.Area, strings_opt: ?[]const []const u8, inc: usize) !void {
-    //separate function for clear and render
+fn browseColumn(area: window.Area, strings_opt: ?[]const []const u8, inc: usize, col: u2) !void {
     const strings = strings_opt orelse return;
     // Display only visible items based on slice_inc
 
@@ -373,11 +389,11 @@ fn browseColumn(area: window.Area, strings_opt: ?[]const []const u8, inc: usize)
         if (item_index >= strings.len) break;
 
         const string = strings[item_index];
-        const str_w: uc.Width = uc.fittingBytes(area.xlen, string);
+        const str_w: dw.Width = try dw.getDisplayWidth(string, @enumFromInt(col));
 
         try term.moveCursor(area.ymin + i, area.xmin);
         try term.writeAll(string[0..str_w.byte_offset]);
-        const nSpace = area.xlen - str_w.width;
+        const nSpace = area.xlen - str_w.cells;
         if (nSpace > 0) try term.writeByteNTimes(' ', nSpace);
     }
 }
@@ -389,34 +405,34 @@ fn clear(area: window.Area) !void {
     }
 }
 
-fn browseCursorRender(area: window.Area, strings_opt: ?[]const []const u8, prev_pos: u8, pos: u8, slice_inc: usize, switched: *bool) !void {
+fn browseCursorRender(area: window.Area, strings_opt: ?[]const []const u8, prev_pos: u8, pos: u8, slice_inc: usize, switched: *bool, col: u2) !void {
     const strings = strings_opt orelse return;
     if (strings.len == 0) return;
     var nSpace: usize = 0;
-    var dw: uc.Width = undefined;
+    var width: dw.Width = undefined;
     if (!switched.*) {
         if (prev_pos >= area.ylen) return error.OutOfBounds;
         if (prev_pos + slice_inc >= strings.len) return error.OutOfBounds;
 
         const prev = strings[prev_pos + slice_inc];
-        dw = uc.fittingBytes(area.xlen, prev);
-        nSpace = area.xlen - dw.width;
+        width = try dw.getDisplayWidth(prev, @enumFromInt(col));
+        nSpace = area.xlen - width.cells;
 
         try term.moveCursor(area.ymin + prev_pos, area.xmin);
         try term.attributeReset();
-        try term.writeAll(prev[0..dw.byte_offset]);
+        try term.writeAll(prev[0..width.byte_offset]);
         try term.writeByteNTimes(' ', nSpace);
     } else switched.* = false;
     if (pos >= area.ylen) return error.OutOfBounds;
     if (pos + slice_inc >= strings.len) return error.OutOfBounds;
 
     const curr = strings[pos + slice_inc];
-    dw = uc.fittingBytes(area.xlen, curr);
-    nSpace = area.xlen - dw.width;
+    width = try dw.getDisplayWidth(curr, @enumFromInt(col));
+    nSpace = area.xlen - width.cells;
 
     try term.moveCursor(area.ymin + pos, area.xmin);
     try term.highlight();
-    try term.writeAll(curr[0..dw.byte_offset]);
+    try term.writeAll(curr[0..width.byte_offset]);
     try term.writeByteNTimes(' ', nSpace);
     try term.attributeReset();
 }

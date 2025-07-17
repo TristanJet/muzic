@@ -1,19 +1,14 @@
 # muzic
 
 ## TO 1.0 !!!!!!!!!!
-- [x] unset apex error on col switch [PATCHED]
 - [ ] render highlight granular on typing find
-- [ ] backspace on type
-- [ ] utf handling - lazy
-    - [x] fitting bytes function
-    - [x] fitting the text
-    - [ ] highlight correctly browser
-- [ ] ROBUST NONBLOCK flag handling for mac
-- [ ] don't break escape codes after quit
-- [ ] return to original state, whatever was printed before running goes back to being visible
 - [ ] fix search
     - [ ] algoirthm fix, EXETER failing best match
     - [ ] capitalisation in browser search
+- [ ] backspace on type
+- [ ] ROBUST NONBLOCK flag handling for mac
+- [ ] return to original state, whatever was printed before running goes back to being visible
+- [ ] g, and G rendereffect only
 
 - [ ] space bar -> replace queue with selected
 - [ ] shift arrow to seek faster
@@ -34,6 +29,12 @@
 - [ ] Batch HOLD events on release - seeking, skipping through songs
 - [ ] store only visible strings in queue
 - [ ] unset apex problem on col switch l 768 in input
+- [x] utf handling
+    - [x] fitting bytes function
+    - [x] fitting the text
+    - [x] highlight correctly browser
+    - [x] data structure implementation
+- [x] unset apex error on col switch [PATCHED]
 - [x] migrate to zig 0.14
 - [x] state save when return to first node
 - [x] flashing could be due to unexpected flush - add empty character after content
