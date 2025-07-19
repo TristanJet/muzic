@@ -56,7 +56,6 @@ const Cache = struct {
     }
 };
 
-var counter: usize = 0;
 fn getWidthFromCache(
     comptime capacity: usize,
     hash_queue: *HashQueue(capacity),
@@ -64,8 +63,6 @@ fn getWidthFromCache(
     str: []const u8,
 ) !Width {
     if (hash_queue.contains(str)) return hash_queue.get(str) orelse return error.CacheError;
-    counter += 1;
-    util.log("CACHE MISS!!!! {}", .{counter});
     const w: Width = lookupWidth(max_width, str);
     try hash_queue.put(str, w);
     return w;

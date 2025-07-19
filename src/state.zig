@@ -34,6 +34,7 @@ pub const State = struct {
 
     typing_buffer: TypingBuffer,
     find_cursor_pos: u8,
+    find_cursor_prev: u8,
     viewable_searchable: ?[]mpd.SongStringAndUri,
 
     col_arr: ColumnArray(n_browse_columns),

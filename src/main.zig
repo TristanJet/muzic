@@ -111,6 +111,7 @@ pub fn main() !void {
 
         .typing_buffer = initial_typing,
         .find_cursor_pos = 0,
+        .find_cursor_prev = 0,
         .viewable_searchable = null,
 
         .col_arr = state.ColumnArray(state.n_browse_columns).init(mpd_data.albums),

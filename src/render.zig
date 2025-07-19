@@ -27,6 +27,7 @@ pub fn RenderState(n_col: comptime_int) type {
         queue: bool = false,
         queueEffects: bool = false,
         find: bool = false,
+        find_cursor: bool = false,
         find_clear: bool = false,
         browse_col: [n_col]bool = .{false} ** n_col,
         browse_cursor: [n_col]bool = .{false} ** n_col,
@@ -41,6 +42,7 @@ pub fn RenderState(n_col: comptime_int) type {
                 .queue = true,
                 .queueEffects = true,
                 .find = true,
+                .find_cursor = false,
                 .find_clear = false,
                 .browse_col = .{false} ** n_col,
                 .browse_cursor = .{false} ** n_col,
@@ -56,6 +58,7 @@ pub fn RenderState(n_col: comptime_int) type {
             self.queue = false;
             self.queueEffects = false;
             self.find = false;
+            self.find_cursor = false;
             self.find_clear = false;
             self.browse_col = .{false} ** n_col;
             self.browse_cursor = .{false} ** n_col;
@@ -93,7 +96,8 @@ pub fn render(app: *state.State, render_state: *RenderState(n_browse_columns), p
     if (render_state.bar) try barRender(panels.curr_song, app.song, wrkallocator);
     if (render_state.queue) try queueRender(wrkallocator, panels.queue.validArea(), app.queue.items, app.scroll_q.slice_inc);
     if (render_state.queueEffects) try queueEffectsRender(wrkallocator, panels.queue.validArea(), app.queue.items, app.scroll_q.absolutePos(), app.scroll_q.absolutePrevPos(), app.scroll_q.slice_inc, app.input_state, app.song.id, app.prev_id);
-    if (render_state.find) try findRender(panels.find);
+    if (render_state.find) try findRender(panels.find.validArea());
+    if (render_state.find_cursor) try findCursor(panels.find.validArea());
     if (render_state.find_clear) try clear(panels.find.validArea());
     if (render_state.browse_clear[0]) try clear(panels.browse1.validArea());
     if (render_state.browse_clear[1]) try clear(panels.browse2.validArea());
@@ -456,9 +460,7 @@ fn clearCursor(area: window.Area, strings_opt: ?[]const []const u8, pos: u8, inc
     if (nSpace > 0) try term.writeByteNTimes(' ', nSpace);
 }
 
-fn findRender(panel: window.Panel) !void {
-    const area = panel.validArea();
-
+fn findRender(area: window.Area) !void {
     switch (current.input_state) {
         .typing_find => {
             if (current.viewable_searchable) |viewable| {
@@ -468,10 +470,8 @@ fn findRender(panel: window.Panel) !void {
                 }
                 for (viewable, 0..) |song, j| {
                     const len = if (song.string.len > area.xlen) area.xlen else song.string.len;
-                    if (j == current.find_cursor_pos) try term.highlight();
                     try term.moveCursor(area.ymin + j, area.xmin);
                     try term.writeAll(song.string[0..len]);
-                    if (j == current.find_cursor_pos) try term.attributeReset();
                 }
             } else {
                 for (0..area.ylen) |i| {
@@ -487,6 +487,19 @@ fn findRender(panel: window.Panel) !void {
             }
         },
         else => {},
+    }
+}
+
+fn findCursor(area: window.Area) !void {
+    if (current.viewable_searchable) |viewable| {
+        for (viewable, 0..) |song, j| {
+            if (j != current.find_cursor_pos and j != current.find_cursor_prev) continue;
+            const len = if (song.string.len > area.xlen) area.xlen else song.string.len;
+            if (j == current.find_cursor_pos) try term.highlight();
+            try term.moveCursor(area.ymin + j, area.xmin);
+            try term.writeAll(song.string[0..len]);
+            if (j == current.find_cursor_pos) try term.attributeReset();
+        }
     }
 }
 

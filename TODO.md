@@ -1,8 +1,6 @@
 # muzic
 
 ## TO 1.0 !!!!!!!!!!
-- [x] g, and G rendereffect only
-- [ ] render highlight granular on typing find
 - [ ] fix search
     - [ ] algoirthm fix, EXETER failing best match
     - [ ] capitalisation in browser search
@@ -33,6 +31,8 @@
 - [ ] Batch HOLD events on release - seeking, skipping through songs
 - [ ] store only visible strings in queue
 - [ ] unset apex problem on col switch l 768 in input
+- [x] render highlight granular on typing find
+- [x] g, and G rendereffect only
 - [x] utf handling
     - [x] fitting bytes function
     - [x] fitting the text

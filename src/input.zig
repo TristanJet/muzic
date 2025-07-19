@@ -182,12 +182,12 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_br
             if (escRead == 0) onTypingExit(app, render_state);
         },
         'n' & '\x1F' => {
-            scroll(&app.find_cursor_pos, app.viewable_searchable.?.len - 1, .down);
-            render_state.find = true;
+            scroll(&app.find_cursor_pos, &app.find_cursor_prev, app.viewable_searchable.?.len - 1, .down);
+            render_state.find_cursor = true;
         },
         'p' & '\x1F' => {
-            scroll(&app.find_cursor_pos, null, .up);
-            render_state.find = true;
+            scroll(&app.find_cursor_pos, &app.find_cursor_prev, null, .up);
+            render_state.find_cursor = true;
         },
         '\r', '\n' => {
             const addUri = app.viewable_searchable.?[app.find_cursor_pos].uri;
@@ -206,6 +206,7 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_br
                     &searchable_items.?,
                 );
             }
+            render_state.find_cursor = true;
             render_state.find = true;
         },
     }
@@ -822,7 +823,8 @@ fn debounce() bool {
     return false;
 }
 
-fn scroll(cursor_pos: *u8, max: ?usize, dir: cursorDirection) void {
+fn scroll(cursor_pos: *u8, cursor_prev: *u8, max: ?usize, dir: cursorDirection) void {
+    cursor_prev.* = cursor_pos.*;
     switch (dir) {
         .up => {
             if (cursor_pos.* > 0) {
