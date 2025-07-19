@@ -11,7 +11,7 @@ const fmt = std.fmt;
 const debug = std.debug;
 const ArrayList = std.ArrayList;
 
-var host: []const u8 = "127.0.0.1";
+var host: [4]u8 = .{ 127, 0, 0, 1 };
 var port: u16 = 6600;
 
 var cmdStream: std.net.Stream = undefined;
@@ -169,13 +169,13 @@ pub const CurrentSong = struct {
     }
 };
 
-pub fn handleArgs(arg_host: ?[]const u8, arg_port: ?u16) void {
+pub fn handleArgs(arg_host: ?[4]u8, arg_port: ?u16) void {
     if (arg_host) |arg| host = arg;
     if (arg_port) |arg| port = arg;
 }
 
 pub fn connect(stream_type: StreamType, nonblock: bool) !void {
-    const peer = net.Address.parseIp4(host, port) catch return error.InvalidAddress;
+    const peer = net.Address.initIp4(host, port);
     // Connect to peer
     const stream = switch (stream_type) {
         .idle => &idleStream,

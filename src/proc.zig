@@ -5,6 +5,7 @@ const mem = std.mem;
 const fmt = std.fmt;
 const proc = std.process;
 const fs = std.fs;
+const net = std.net;
 
 const helpmsg =
     \\-H, --host <str>      MPD host (default: 127.0.0.1)
@@ -15,7 +16,7 @@ const helpmsg =
 ;
 
 const no_mpd_msg: []const u8 =
-    \\error:    No MPD server found at "{s}:{}"
+    \\error:    No MPD server found at "{}.{}.{}.{}:{}"
     \\info:     You can pass in a host and port using the "--host" and "--port" cli options
     \\info:     You can use the -h argument to print the help message
     \\
@@ -28,16 +29,23 @@ const inv_arg_msg: []const u8 =
     \\
 ;
 
+const inv_ipv4_msg: []const u8 =
+    \\error:    Invalid {s}
+    \\info:     You can use the -h argument to print the help message
+    \\
+;
+
 const version = "0.9.2";
 
-pub const ArgumentValues = struct {
-    host: ?[]const u8,
+pub const OptionValues = struct {
+    host: ?[4]u8,
     port: ?u16,
     help: bool,
     version: bool,
 };
-pub fn handleArgs(persAllocator: mem.Allocator) !ArgumentValues {
-    var arg_val = ArgumentValues{
+
+pub fn handleArgs() !OptionValues {
+    var arg_val = OptionValues{
         .host = null,
         .port = null,
         .help = false,
@@ -51,14 +59,13 @@ pub fn handleArgs(persAllocator: mem.Allocator) !ArgumentValues {
             continue;
         }
         if (mem.eql(u8, arg, "-p") or mem.eql(u8, arg, "--port")) {
-            const val = args.next() orelse return error.InvalidArgument;
-            const port = try fmt.parseUnsigned(u16, val, 10);
+            const val = args.next() orelse return error.InvalidOption;
+            const port = fmt.parseUnsigned(u16, val, 10) catch return InvalidIPv4Error.InvalidPort;
             arg_val.port = port;
             log("port: {}", .{port});
         } else if (mem.eql(u8, arg, "-H") or mem.eql(u8, arg, "--host")) {
-            const val = args.next() orelse return error.InvalidArgument;
-            const host = try persAllocator.dupe(u8, val);
-            arg_val.host = host;
+            const val = args.next() orelse return error.InvalidOption;
+            arg_val.host = validIpv4(val) catch return InvalidIPv4Error.InvalidHost;
             log("host: {s}", .{val});
         } else if (mem.eql(u8, arg, "-h") or mem.eql(u8, arg, "--help")) {
             arg_val.help = true;
@@ -71,18 +78,53 @@ pub fn handleArgs(persAllocator: mem.Allocator) !ArgumentValues {
             try tty.writeAll(version ++ "\n");
             tty.close();
         } else {
-            return error.InvalidArgument;
+            return error.InvalidOption;
         }
     }
     return arg_val;
 }
 
-pub fn printMpdFail(allocator: mem.Allocator, host: ?[]const u8, port: ?u16) !void {
+pub const InvalidIPv4Error = error{
+    InvalidHost,
+    InvalidPort,
+};
+
+fn validIpv4(sl: []const u8) ![4]u8 {
+    var iter = mem.splitScalar(u8, sl, '.');
+    var addr: [4]u8 = undefined;
+    var counter: u8 = 0;
+    while (iter.next()) |i| : (counter += 1) {
+        if (counter > 3) return error.Overflow;
+        addr[counter] = try fmt.parseInt(u8, i, 10);
+    }
+    return addr;
+}
+
+test "validIp" {
+    const str: []const u8 = "127.0.0.1";
+    const addy = try validIpv4(str);
+    try std.testing.expect(addy[0] == 127);
+    try std.testing.expect(addy[3] == 1);
+}
+
+pub fn printMpdFail(allocator: mem.Allocator, host: ?[4]u8, port: ?u16) !void {
     const tty = try getTty();
-    const msg: []const u8 = try fmt.allocPrint(allocator, no_mpd_msg, .{
-        host orelse "127.0.0.1",
-        port orelse 6600,
-    });
+    const msg: []const u8 = if (host) |arr|
+        try fmt.allocPrint(allocator, no_mpd_msg, .{
+            arr[0],
+            arr[1],
+            arr[2],
+            arr[3],
+            port orelse 6600,
+        })
+    else
+        try fmt.allocPrint(allocator, no_mpd_msg, .{
+            127,
+            0,
+            0,
+            1,
+            port orelse 6600,
+        });
     try tty.writeAll(msg);
     tty.close();
 }
@@ -90,6 +132,17 @@ pub fn printMpdFail(allocator: mem.Allocator, host: ?[]const u8, port: ?u16) !vo
 pub fn printInvArg() !void {
     const tty = try getTty();
     try tty.writeAll(inv_arg_msg);
+    tty.close();
+}
+
+pub fn printInvIp4(allocator: mem.Allocator, e: InvalidIPv4Error) !void {
+    const tty = try getTty();
+    const arg: []const u8 = switch (e) {
+        InvalidIPv4Error.InvalidHost => "host",
+        InvalidIPv4Error.InvalidPort => "port",
+    };
+    const msg: []const u8 = try fmt.allocPrint(allocator, inv_ipv4_msg, .{arg});
+    try tty.writeAll(msg);
     tty.close();
 }
 

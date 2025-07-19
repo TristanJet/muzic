@@ -43,9 +43,16 @@ pub fn main() !void {
     if (builtin.mode == .Debug) try util.loggerInit();
     defer if (builtin.mode == .Debug) util.deinit() catch {};
 
-    const args = proc.handleArgs(alloc.persistentAllocator) catch {
-        try proc.printInvArg();
-        return;
+    const args = proc.handleArgs() catch |e| switch (e) {
+        error.InvalidOption => {
+            try proc.printInvArg();
+            return;
+        },
+        proc.InvalidIPv4Error.InvalidHost, proc.InvalidIPv4Error.InvalidPort => |err| {
+            try proc.printInvIp4(wrkallocator, err);
+            return;
+        },
+        else => return,
     };
     if (args.help) return;
     if (args.version) return;
