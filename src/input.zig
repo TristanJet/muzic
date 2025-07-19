@@ -558,12 +558,12 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
         },
         '\n', '\r' => {
             const curr_col = app.col_arr.getCurrent();
-            try browserHandleEnter(curr_col.absolutePos(), mpd_data);
+            try browserHandleEnter(alloc.typingAllocator, curr_col.absolutePos(), mpd_data);
         },
         ' ' => {
             util.log("SPACE PRESSED !!", .{});
             const curr_col = app.col_arr.getCurrent();
-            try browserHandleSpace(curr_col.absolutePos(), mpd_data);
+            try browserHandleSpace(alloc.typingAllocator, curr_col.absolutePos(), mpd_data);
         },
         else => return,
     }
@@ -734,7 +734,7 @@ fn browserScrollVertical(dir: cursorDirection, current: *state.BrowseColumn, nex
 
 // Handle Enter key press in browser mode
 // dependency only needed in one branch
-fn browserHandleEnter(abs_pos: usize, mpd_data: *const state.Data) !void {
+fn browserHandleEnter(allocator: mem.Allocator, abs_pos: usize, mpd_data: *const state.Data) !void {
     const curr_node = try node_buffer.getCurrentNode();
     switch (curr_node.type) {
         .Tracks => {
@@ -742,25 +742,29 @@ fn browserHandleEnter(abs_pos: usize, mpd_data: *const state.Data) !void {
                 const songs = mpd_data.songs orelse return error.NoSongs;
                 if (abs_pos < songs.len) {
                     const uri = songs[abs_pos].uri;
-                    mpd.addFromUri(alloc.typingAllocator, uri) catch return error.CommandFailed;
+                    mpd.addFromUri(allocator, uri) catch return error.CommandFailed;
                     return;
                 } else return error.OutOfBounds;
             }
             const tracks = node_buffer.tracks orelse return error.NoTracks;
             if (abs_pos < tracks.len) {
                 const uri = tracks[abs_pos].uri;
-                mpd.addFromUri(alloc.typingAllocator, uri) catch return error.CommandFailed;
+                mpd.addFromUri(allocator, uri) catch return error.CommandFailed;
             } else return error.OutOfBounds;
         },
         .Albums => {
             const tracks = node_buffer.tracks orelse return error.NoTracks;
-            if (next_col_ready) mpd.addList(alloc.typingAllocator, tracks) catch return error.CommandFailed;
+            if (next_col_ready) mpd.addList(allocator, tracks) catch return error.CommandFailed;
+        },
+        .Artists => {
+            const artist = mpd_data.artists.?[abs_pos];
+            try mpd.addAllFromArtist(allocator, artist);
         },
         else => return,
     }
 }
 
-fn browserHandleSpace(abs_pos: usize, mpd_data: *const state.Data) !void {
+fn browserHandleSpace(allocator: mem.Allocator, abs_pos: usize, mpd_data: *const state.Data) !void {
     const curr_node = try node_buffer.getCurrentNode();
     switch (curr_node.type) {
         .Tracks => {
@@ -769,8 +773,8 @@ fn browserHandleSpace(abs_pos: usize, mpd_data: *const state.Data) !void {
                 if (abs_pos < songs.len) {
                     const uri = songs[abs_pos].uri;
                     mpd.clearQueue() catch return error.CommandFailed;
-                    mpd.addFromUri(alloc.typingAllocator, uri) catch return error.CommandFailed;
-                    try mpd.playByPos(alloc.typingAllocator, 0);
+                    mpd.addFromUri(allocator, uri) catch return error.CommandFailed;
+                    try mpd.playByPos(allocator, 0);
                     return;
                 } else return error.OutOfBounds;
             }
@@ -778,17 +782,23 @@ fn browserHandleSpace(abs_pos: usize, mpd_data: *const state.Data) !void {
             if (abs_pos < tracks.len) {
                 const uri = tracks[abs_pos].uri;
                 mpd.clearQueue() catch return error.CommandFailed;
-                mpd.addFromUri(alloc.typingAllocator, uri) catch return error.CommandFailed;
-                try mpd.playByPos(alloc.typingAllocator, 0);
+                mpd.addFromUri(allocator, uri) catch return error.CommandFailed;
+                try mpd.playByPos(allocator, 0);
             } else return error.OutOfBounds;
         },
         .Albums => {
             const tracks = node_buffer.tracks orelse return error.NoTracks;
             if (next_col_ready) {
                 mpd.clearQueue() catch return error.CommandFailed;
-                mpd.addList(alloc.typingAllocator, tracks) catch return error.CommandFailed;
-                try mpd.playByPos(alloc.typingAllocator, 0);
+                mpd.addList(allocator, tracks) catch return error.CommandFailed;
+                try mpd.playByPos(allocator, 0);
             }
+        },
+        .Artists => {
+            mpd.clearQueue() catch return error.CommandFailed;
+            const artist = mpd_data.artists.?[abs_pos];
+            mpd.addAllFromArtist(allocator, artist) catch return error.CommandFailed;
+            try mpd.playByPos(allocator, 0);
         },
         else => return,
     }

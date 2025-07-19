@@ -601,6 +601,22 @@ pub fn findAdd(song: *const Find_add_Song, allocator: mem.Allocator) !void {
     try sendCommand(command);
 }
 
+pub fn addAllFromArtist(allocator: mem.Allocator, artist: []const u8) !void {
+    const cmd = try fmt.allocPrint(allocator, "findadd \"(Artist == \\\"{s}\\\")\"\n", .{artist});
+    try sendCommand(cmd);
+}
+
+test "addFromArtist" {
+    var heapArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer heapArena.deinit();
+    const heapAllocator = heapArena.allocator();
+
+    _ = try connect(.command, false);
+
+    const artist = "Playboi Carti";
+    try addAllFromArtist(heapAllocator, artist);
+}
+
 test "albumsFromArtist" {
     var heapArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer heapArena.deinit();

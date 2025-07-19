@@ -4,16 +4,12 @@
 - [ ] fix search
     - [ ] algoirthm fix, EXETER failing best match
     - [ ] capitalisation in browser search
-- [ ] backspace on type
 - [ ] ROBUST NONBLOCK flag handling for mac
 - [ ] return to original state, whatever was printed before running goes back to being visible
 - [ ] add a EMPTY QUEUE screen
-- [x] print error message if fails to connect to MPD
-- [ ] invalid argument error message
-- [ ] parse address before mpd
 
-- [ ] play all of an artists catalogue
 - [ ] shift arrow to seek faster
+- [ ] backspace on type
 
 ## Semi important
 - [ ] fallback if TTY mode
@@ -35,6 +31,9 @@
 - [ ] Batch HOLD events on release - seeking, skipping through songs
 - [ ] store only visible strings in queue
 - [ ] unset apex problem on col switch l 768 in input
+- [x] print error message if fails to connect to MPD
+- [x] invalid argument error message
+- [x] parse address before mpd
 - [x] render highlight granular on typing find
 - [x] g, and G rendereffect only
 - [x] utf handling
@@ -75,6 +74,7 @@
 
 - [ ] allow browse by files and directories - (no tags set)
 - [ ] moving around in queue, visual mode?
+- [x] play all of an artists catalogue
 - [x] space bar -> replace queue with selected
 - [x] lazy load strings
 - [x] True color
