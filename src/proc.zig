@@ -13,6 +13,21 @@ const helpmsg =
     \\-v, --version         Print version
     \\
 ;
+
+const no_mpd_msg: []const u8 =
+    \\error:    No MPD server found at "{s}:{}"
+    \\info:     You can pass in a host and port using the "--host" and "--port" cli options
+    \\info:     You can use the -h argument to print the help message
+    \\
+;
+
+const inv_arg_msg: []const u8 =
+    \\error:    Invalid argument
+    \\info:     Usage: muzi [options]
+    \\info:     You can use the -h argument to print the help message
+    \\
+;
+
 const version = "0.9.2";
 
 pub const ArgumentValues = struct {
@@ -60,6 +75,22 @@ pub fn handleArgs(persAllocator: mem.Allocator) !ArgumentValues {
         }
     }
     return arg_val;
+}
+
+pub fn printMpdFail(allocator: mem.Allocator, host: ?[]const u8, port: ?u16) !void {
+    const tty = try getTty();
+    const msg: []const u8 = try fmt.allocPrint(allocator, no_mpd_msg, .{
+        host orelse "127.0.0.1",
+        port orelse 6600,
+    });
+    try tty.writeAll(msg);
+    tty.close();
+}
+
+pub fn printInvArg() !void {
+    const tty = try getTty();
+    try tty.writeAll(inv_arg_msg);
+    tty.close();
 }
 
 fn getTty() !fs.File {

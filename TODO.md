@@ -7,12 +7,15 @@
 - [ ] backspace on type
 - [ ] ROBUST NONBLOCK flag handling for mac
 - [ ] return to original state, whatever was printed before running goes back to being visible
+- [ ] add a EMPTY QUEUE screen
+- [x] print error message if fails to connect to MPD
+- [ ] invalid argument error message
+- [ ] parse address before mpd
 
 - [ ] play all of an artists catalogue
 - [ ] shift arrow to seek faster
 
 ## Semi important
-- [ ] add a EMPTY QUEUE screen
 - [ ] fallback if TTY mode
 - [ ] remove indefinite dynamic allocation in queue (memory leak)
 

@@ -43,15 +43,33 @@ pub fn main() !void {
     if (builtin.mode == .Debug) try util.loggerInit();
     defer if (builtin.mode == .Debug) util.deinit() catch {};
 
-    const args = proc.handleArgs(alloc.persistentAllocator) catch return error.InvalidArgument;
+    const args = proc.handleArgs(alloc.persistentAllocator) catch {
+        try proc.printInvArg();
+        return;
+    };
     if (args.help) return;
     if (args.version) return;
 
     mpd.handleArgs(args.host, args.port);
-    mpd.connect(.command, false) catch return error.MpdConnectionFailed;
+    mpd.connect(.command, false) catch |e| switch (e) {
+        error.NoMpd => {
+            try proc.printMpdFail(wrkallocator, args.host, args.port);
+            return;
+        },
+        else => return error.MpdConnectionFailed,
+    };
     defer mpd.disconnect(.command);
 
-    mpd.connect(.idle, true) catch return error.MpdConnectionFailed;
+    mpd.connect(.idle, true) catch |e| switch (e) {
+        error.NoMpd => {
+            try proc.printMpdFail(wrkallocator, args.host, args.port);
+            return;
+        },
+        else => {
+            util.log("connection error: {}", .{e});
+            return error.MpdConnectionFailed;
+        },
+    };
     defer mpd.disconnect(.idle);
     try mpd.initIdle();
 
