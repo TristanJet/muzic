@@ -8,10 +8,11 @@
 - [ ] ROBUST NONBLOCK flag handling for mac
 - [ ] return to original state, whatever was printed before running goes back to being visible
 
-- [ ] space bar -> replace queue with selected
+- [ ] play all of an artists catalogue
 - [ ] shift arrow to seek faster
 
 ## Semi important
+- [ ] add a EMPTY QUEUE screen
 - [ ] fallback if TTY mode
 - [ ] remove indefinite dynamic allocation in queue (memory leak)
 
@@ -71,6 +72,7 @@
 
 - [ ] allow browse by files and directories - (no tags set)
 - [ ] moving around in queue, visual mode?
+- [x] space bar -> replace queue with selected
 - [x] lazy load strings
 - [x] True color
 - [x] X -> clear queue

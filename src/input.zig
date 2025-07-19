@@ -560,6 +560,11 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
             const curr_col = app.col_arr.getCurrent();
             try browserHandleEnter(curr_col.absolutePos(), mpd_data);
         },
+        ' ' => {
+            util.log("SPACE PRESSED !!", .{});
+            const curr_col = app.col_arr.getCurrent();
+            try browserHandleSpace(curr_col.absolutePos(), mpd_data);
+        },
         else => return,
     }
 }
@@ -750,6 +755,40 @@ fn browserHandleEnter(abs_pos: usize, mpd_data: *const state.Data) !void {
         .Albums => {
             const tracks = node_buffer.tracks orelse return error.NoTracks;
             if (next_col_ready) mpd.addList(alloc.typingAllocator, tracks) catch return error.CommandFailed;
+        },
+        else => return,
+    }
+}
+
+fn browserHandleSpace(abs_pos: usize, mpd_data: *const state.Data) !void {
+    const curr_node = try node_buffer.getCurrentNode();
+    switch (curr_node.type) {
+        .Tracks => {
+            if (node_buffer.apex == .Tracks) {
+                const songs = mpd_data.songs orelse return error.NoSongs;
+                if (abs_pos < songs.len) {
+                    const uri = songs[abs_pos].uri;
+                    mpd.clearQueue() catch return error.CommandFailed;
+                    mpd.addFromUri(alloc.typingAllocator, uri) catch return error.CommandFailed;
+                    try mpd.playByPos(alloc.typingAllocator, 0);
+                    return;
+                } else return error.OutOfBounds;
+            }
+            const tracks = node_buffer.tracks orelse return error.NoTracks;
+            if (abs_pos < tracks.len) {
+                const uri = tracks[abs_pos].uri;
+                mpd.clearQueue() catch return error.CommandFailed;
+                mpd.addFromUri(alloc.typingAllocator, uri) catch return error.CommandFailed;
+                try mpd.playByPos(alloc.typingAllocator, 0);
+            } else return error.OutOfBounds;
+        },
+        .Albums => {
+            const tracks = node_buffer.tracks orelse return error.NoTracks;
+            if (next_col_ready) {
+                mpd.clearQueue() catch return error.CommandFailed;
+                mpd.addList(alloc.typingAllocator, tracks) catch return error.CommandFailed;
+                try mpd.playByPos(alloc.typingAllocator, 0);
+            }
         },
         else => return,
     }

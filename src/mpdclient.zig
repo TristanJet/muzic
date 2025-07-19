@@ -175,14 +175,14 @@ pub fn handleArgs(arg_host: ?[]const u8, arg_port: ?u16) void {
 }
 
 pub fn connect(stream_type: StreamType, nonblock: bool) !void {
-    const peer = try net.Address.parseIp4(host, port);
+    const peer = net.Address.parseIp4(host, port) catch return error.InvalidAddress;
     // Connect to peer
     const stream = switch (stream_type) {
         .idle => &idleStream,
         .command => &cmdStream,
     };
 
-    stream.* = try net.tcpConnectToAddress(peer);
+    stream.* = net.tcpConnectToAddress(peer) catch return error.NoMpd;
 
     const bytes_read = try stream.read(&cmdBuf);
     const received_data = cmdBuf[0..bytes_read];
