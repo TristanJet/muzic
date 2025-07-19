@@ -225,25 +225,14 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             render_state.queueEffects = true;
         },
         'g' => {
-            // Go to top of queue
-            app.scroll_q.pos = 0;
-            app.scroll_q.slice_inc = 0;
-            render_state.queue = true;
+            const inc_changed = app.scroll_q.jumpTop();
+            if (inc_changed) render_state.queue = true;
             render_state.queueEffects = true;
         },
         'G' => {
-            // Go to bottom of queue
-            if (app.queue.items.len > 0) {
-                if (app.queue.items.len > app.scroll_q.area_height) {
-                    app.scroll_q.slice_inc = app.queue.items.len - app.scroll_q.area_height;
-                    app.scroll_q.pos = @intCast(app.scroll_q.area_height - 1);
-                } else {
-                    app.scroll_q.slice_inc = 0;
-                    app.scroll_q.pos = @intCast(app.queue.items.len - 1);
-                }
-                render_state.queue = true;
-                render_state.queueEffects = true;
-            }
+            const inc_changed = app.scroll_q.jumpBottom(app.queue.items.len);
+            if (inc_changed) render_state.queue = true;
+            render_state.queueEffects = true;
         },
         'd' & '\x1F' => {
             // Ctrl-d: Move down half a page (like vim)

@@ -144,7 +144,7 @@ pub fn main() !void {
         if (first) {
             first = false;
             const first_loop = time.milliTimestamp() - start;
-            util.log("FIRST RENDER TIME: {}", .{first_loop});
+            util.log("FIRST RENDER TIME: {} milliseconds", .{first_loop});
         }
         render_state.reset();
 

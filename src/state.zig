@@ -611,6 +611,33 @@ pub const QueueScroll = struct {
         return inc_changed;
     }
 
+    pub fn jumpTop(self: *QueueScroll) bool {
+        var inc_changed = false;
+        if (self.slice_inc > 0) {
+            self.slice_inc = 0;
+            inc_changed = true;
+        }
+        self.prev_pos = self.pos;
+        self.pos = 0;
+        return inc_changed;
+    }
+
+    pub fn jumpBottom(self: *QueueScroll, qlen: usize) bool {
+        var inc_changed = false;
+        self.prev_pos = self.pos;
+        if (qlen > 0) {
+            if (qlen > self.area_height) {
+                const prev_inc = self.slice_inc;
+                self.slice_inc = qlen - self.area_height;
+                if (self.slice_inc != prev_inc) inc_changed = true;
+                self.pos = @intCast(self.area_height - 1);
+            } else {
+                self.pos = @intCast(qlen - 1);
+            }
+        }
+        return inc_changed;
+    }
+
     fn getMax(self: *const QueueScroll, queue_len: usize) usize {
         return @min(queue_len, self.area_height);
     }

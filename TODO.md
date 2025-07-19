@@ -1,6 +1,7 @@
 # muzic
 
 ## TO 1.0 !!!!!!!!!!
+- [x] g, and G rendereffect only
 - [ ] render highlight granular on typing find
 - [ ] fix search
     - [ ] algoirthm fix, EXETER failing best match
@@ -8,14 +9,17 @@
 - [ ] backspace on type
 - [ ] ROBUST NONBLOCK flag handling for mac
 - [ ] return to original state, whatever was printed before running goes back to being visible
-- [ ] g, and G rendereffect only
 
 - [ ] space bar -> replace queue with selected
 - [ ] shift arrow to seek faster
 
+## Semi important
+- [ ] fallback if TTY mode
+- [ ] remove indefinite dynamic allocation in queue (memory leak)
+
 ## Bugs/fixes
+- [ ] flashing in queue
 - [ ] check reading terminal input, why do I read one byte at a time??
-- [ ] do the utf correctly do it once and store it - does it require String data structure refactor?
 - [ ] render highlight granular on typing find
 - [ ] escape codes stop working after quit - enter
 - [ ] fix half up
