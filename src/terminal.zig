@@ -91,22 +91,22 @@ fn setNonBlock() !void {
 
 pub fn deinit() !void {
     try flushBuffer();
-
-    cooked = try posix.tcgetattr(tty.handle);
-    errdefer cook() catch {};
-
-    raw = cooked;
-    // Use portable flags from posix
-    inline for (.{ "ECHO", "ICANON", "ISIG", "IEXTEN" }) |flag| {
-        @field(raw.lflag, flag) = false;
-    }
-    inline for (.{ "IXON", "ICRNL", "BRKINT", "INPCK", "ISTRIP" }) |flag| {
-        @field(raw.iflag, flag) = false;
-    }
-    raw.cc[@intFromEnum(posix.V.TIME)] = 0;
-    raw.cc[@intFromEnum(posix.V.MIN)] = 1;
-    try posix.tcsetattr(tty.handle, .FLUSH, raw);
-
+    //
+    // cooked = try posix.tcgetattr(tty.handle);
+    // errdefer cook() catch {};
+    //
+    // raw = cooked;
+    // // Use portable flags from posix
+    // inline for (.{ "ECHO", "ICANON", "ISIG", "IEXTEN" }) |flag| {
+    //     @field(raw.lflag, flag) = false;
+    // }
+    // inline for (.{ "IXON", "ICRNL", "BRKINT", "INPCK", "ISTRIP" }) |flag| {
+    //     @field(raw.iflag, flag) = false;
+    // }
+    // raw.cc[@intFromEnum(posix.V.TIME)] = 0;
+    // raw.cc[@intFromEnum(posix.V.MIN)] = 1;
+    // try posix.tcsetattr(tty.handle, .FLUSH, raw);
+    //
     try cook();
 }
 

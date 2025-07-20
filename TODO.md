@@ -5,13 +5,13 @@
     - [ ] algoirthm fix, EXETER failing best match
     - [ ] capitalisation in browser search
 - [ ] ROBUST NONBLOCK flag handling for mac
-- [ ] return to original state, whatever was printed before running goes back to being visible
 
 ## Semi important
 - [ ] fallback if TTY mode
 - [ ] remove indefinite dynamic allocation in queue (memory leak)
 - [ ] ROBUST check for terminal features
     - [ ] terminfo
+    - [ ] return to original state, whatever was printed before running goes back to being visible
 - [ ] Kitty input protocol?
 - [ ] handle no mp3 tags?
 
