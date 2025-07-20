@@ -264,9 +264,11 @@ pub fn togglePlaystate(isPlaying: bool) !bool {
     return true;
 }
 
-pub fn seekCur(isForward: bool) !void {
-    const dir = if (isForward) "+5" else "-5";
-    const command = try fmt.bufPrint(&cmdBuf, "seekcur {s}\n", .{dir});
+pub fn seek(dir: enum { forward, backward }, seconds: u8) !void {
+    const command: []const u8 = switch (dir) {
+        .forward => try fmt.bufPrint(&cmdBuf, "seekcur +{}\n", .{seconds}),
+        .backward => try fmt.bufPrint(&cmdBuf, "seekcur -{}\n", .{seconds}),
+    };
     try sendCommand(command);
 }
 

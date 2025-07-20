@@ -387,12 +387,20 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             } else if (mem.eql(u8, escBuffer[0..escRead], "[B")) {
                 // log("input: arrow down\r\n", .{});
             } else if (mem.eql(u8, escBuffer[0..escRead], "[C")) {
+                //right
                 if (debounce()) return;
-                try mpd.seekCur(true);
+                try mpd.seek(.forward, 5);
             } else if (mem.eql(u8, escBuffer[0..escRead], "[D")) {
+                //left
                 if (debounce()) return;
-                try mpd.seekCur(false);
-            } else {}
+                try mpd.seek(.backward, 5);
+            } else if (mem.eql(u8, escBuffer[0..escRead], "[1;2C")) {
+                //Shift right
+                try mpd.seek(.forward, 15);
+            } else if (mem.eql(u8, escBuffer[0..escRead], "[1;2D")) {
+                //Shift left
+                try mpd.seek(.backward, 15);
+            }
         },
         '\n', '\r' => {
             if (debounce()) return;
