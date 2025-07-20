@@ -188,6 +188,11 @@ fn writeByteToBuffer(byte: u8) !void {
 }
 
 // Terminal control sequences
+
+// pub fn backspace() !void {
+//     try writeToBuffer('\b');
+// }
+
 pub fn attributeReset() !void {
     try writeToBuffer("\x1B[0m");
     try setColor(.white);

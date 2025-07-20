@@ -723,7 +723,7 @@ pub const Idle = enum {
 };
 
 pub const TypingBuffer = struct {
-    buf: [256]u8,
+    buf: [32]u8,
     typed: []const u8,
 
     pub fn init(self: *TypingBuffer) void {
@@ -735,9 +735,15 @@ pub const TypingBuffer = struct {
         self.typed = self.buf[0..0];
     }
 
-    pub fn append(self: *TypingBuffer, char: u8) void {
+    pub fn append(self: *TypingBuffer, char: u8) !void {
+        if (self.typed.len == self.buf.len) return error.BufferFull;
         self.buf[self.typed.len] = char;
         self.typed = self.buf[0 .. self.typed.len + 1];
+    }
+
+    pub fn pop(self: *TypingBuffer) !void {
+        if (self.typed.len == 0) return error.NoTyped;
+        self.typed = self.buf[0 .. self.typed.len - 1];
     }
 };
 

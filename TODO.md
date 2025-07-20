@@ -8,12 +8,14 @@
 - [ ] return to original state, whatever was printed before running goes back to being visible
 - [ ] add a EMPTY QUEUE screen
 
-- [ ] shift arrow to seek faster
-- [ ] backspace on type
+- [ ] back takes you to beginning of song
 
 ## Semi important
 - [ ] fallback if TTY mode
 - [ ] remove indefinite dynamic allocation in queue (memory leak)
+- [ ] ROBUST check for terminal features
+    - [ ] terminfo
+- [ ] Kitty input protocol?
 
 ## Bugs/fixes
 - [ ] flashing in queue
@@ -74,6 +76,8 @@
 
 - [ ] allow browse by files and directories - (no tags set)
 - [ ] moving around in queue, visual mode?
+- [x] backspace on type
+- [x] shift arrow to seek faster
 - [x] play all of an artists catalogue
 - [x] space bar -> replace queue with selected
 - [x] lazy load strings

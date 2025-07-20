@@ -195,8 +195,21 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_br
             onTypingExit(app, render_state);
             return;
         },
+        '\x7F' => {
+            app.typing_buffer.pop() catch return;
+            if (searchable_items) |_| {
+                app.viewable_searchable = try algo.suTopNranked(
+                    &alloc.algoArena,
+                    alloc.typingAllocator,
+                    app.typing_buffer.typed,
+                    &searchable_items.?,
+                );
+            }
+            render_state.find_cursor = true;
+            render_state.find = true;
+        },
         else => {
-            app.typing_buffer.append(char);
+            app.typing_buffer.append(char) catch return;
 
             if (searchable_items) |_| {
                 app.viewable_searchable = try algo.suTopNranked(
@@ -679,11 +692,31 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
             const current = app.col_arr.getCurrent();
             try onBrowseTypingExit(app, current, render_state);
         },
+        '\x7F' => {
+            util.log("Backspace!!", .{});
+            app.typing_buffer.pop() catch return;
+            browse_typed = true;
+            const current = app.col_arr.getCurrent();
+            const displaying = current.displaying orelse return;
+            const best_match: []const u8 = try algo.stringBestMatch(
+                &alloc.algoArena,
+                alloc.typingAllocator,
+                app.typing_buffer.typed,
+                &search_strings,
+            );
+
+            const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
+            const index = findStringIndex(best_match, displaying, compare_type);
+            if (index) |unwrap| moveToIndex(unwrap, current, displaying, window.panels.find.validArea().ylen);
+            current.renderCursor(render_state);
+            current.render(render_state);
+            render_state.find = true;
+        },
         else => {
+            app.typing_buffer.append(char) catch return;
             const current = app.col_arr.getCurrent();
             const displaying = current.displaying orelse return;
             browse_typed = true;
-            app.typing_buffer.append(char);
             const best_match: []const u8 = try algo.stringBestMatch(
                 &alloc.algoArena,
                 alloc.typingAllocator,
