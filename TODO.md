@@ -8,8 +8,6 @@
 - [ ] return to original state, whatever was printed before running goes back to being visible
 - [ ] add a EMPTY QUEUE screen
 
-- [ ] back takes you to beginning of song
-
 ## Semi important
 - [ ] fallback if TTY mode
 - [ ] remove indefinite dynamic allocation in queue (memory leak)
@@ -76,6 +74,7 @@
 
 - [ ] allow browse by files and directories - (no tags set)
 - [ ] moving around in queue, visual mode?
+- [x] back takes you to beginning of song
 - [x] backspace on type
 - [x] shift arrow to seek faster
 - [x] play all of an artists catalogue

@@ -287,8 +287,12 @@ pub fn prevSong() !void {
 }
 
 pub fn playByPos(allocator: mem.Allocator, pos: usize) !void {
-    log("PLAYING!", .{});
     const command = try fmt.allocPrint(allocator, "play {}\n", .{pos});
+    try sendCommand(command);
+}
+
+pub fn playById(allocator: mem.Allocator, id: usize) !void {
+    const command = try fmt.allocPrint(allocator, "playid {}\n", .{id});
     try sendCommand(command);
 }
 

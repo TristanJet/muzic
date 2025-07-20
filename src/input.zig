@@ -323,12 +323,16 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         },
         'h' => {
             if (debounce()) return;
-            mpd.prevSong() catch |e| {
-                switch (e) {
-                    error.MpdError => return,
-                    else => return e,
-                }
-            };
+            if (app.song.time.elapsed < 5) {
+                mpd.prevSong() catch |e| {
+                    switch (e) {
+                        error.MpdError => return,
+                        else => return e,
+                    }
+                };
+            } else {
+                try mpd.playById(wrkallocator, app.song.id);
+            }
         },
         'f' => {
             _ = try mpd_data.init(.searchable);
