@@ -191,6 +191,12 @@ fn queueRender(
         try term.writeByteNTimes(' ', area.xlen);
     }
 
+    if (items.len == 0) {
+        try term.moveCursor(area.ylen / 2, area.xlen / 2);
+        try writeLineCenter("queue empty", area.ylen / 2, area.xmin, area.xmax);
+        return;
+    }
+
     for (0..area.ylen) |i| {
         const queue_index = i + inc;
         if (queue_index >= items.len) break;

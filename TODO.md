@@ -6,7 +6,6 @@
     - [ ] capitalisation in browser search
 - [ ] ROBUST NONBLOCK flag handling for mac
 - [ ] return to original state, whatever was printed before running goes back to being visible
-- [ ] add a EMPTY QUEUE screen
 
 ## Semi important
 - [ ] fallback if TTY mode
@@ -14,6 +13,7 @@
 - [ ] ROBUST check for terminal features
     - [ ] terminfo
 - [ ] Kitty input protocol?
+- [ ] handle no mp3 tags?
 
 ## Bugs/fixes
 - [ ] flashing in queue
@@ -31,6 +31,7 @@
 - [ ] Batch HOLD events on release - seeking, skipping through songs
 - [ ] store only visible strings in queue
 - [ ] unset apex problem on col switch l 768 in input
+- [x] add a EMPTY QUEUE screen
 - [x] print error message if fails to connect to MPD
 - [x] invalid argument error message
 - [x] parse address before mpd

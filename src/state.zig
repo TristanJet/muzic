@@ -778,6 +778,7 @@ fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState(n_browse
             try mpd.getQueue(alloc.respAllocator, &app.queue);
             app.queue.items = app.queue.getItems();
             _ = alloc.respArena.reset(.free_all);
+            if (app.queue.items.len == 0) app.isPlaying = false;
             render_state.queue = true;
             render_state.queueEffects = true;
         },
