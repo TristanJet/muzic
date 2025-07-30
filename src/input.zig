@@ -199,12 +199,11 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_br
             app.typing_buffer.pop() catch return;
             if (searchable_items) |_| {
                 app.viewable_searchable = try algo.suTopNranked(
-                    &alloc.algoArena,
                     alloc.typingAllocator,
                     app.typing_buffer.typed,
                     &searchable_items.?,
                 );
-            }
+            } else return;
             render_state.find_cursor = true;
             render_state.find = true;
         },
@@ -213,12 +212,11 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_br
 
             if (searchable_items) |_| {
                 app.viewable_searchable = try algo.suTopNranked(
-                    &alloc.algoArena,
                     alloc.typingAllocator,
                     app.typing_buffer.typed,
                     &searchable_items.?,
                 );
-            }
+            } else return;
             render_state.find_cursor = true;
             render_state.find = true;
         },
@@ -702,16 +700,16 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
             browse_typed = true;
             const current = app.col_arr.getCurrent();
             const displaying = current.displaying orelse return;
-            const best_match: []const u8 = try algo.stringBestMatch(
-                &alloc.algoArena,
+            const best_match: ?[]const u8 = try algo.stringBestMatch(
                 alloc.typingAllocator,
                 app.typing_buffer.typed,
                 &search_strings,
             );
-
-            const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
-            const index = findStringIndex(best_match, displaying, compare_type);
-            if (index) |unwrap| moveToIndex(unwrap, current, displaying, window.panels.find.validArea().ylen);
+            if (best_match) |best| {
+                const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
+                const index = findStringIndex(best, displaying, compare_type);
+                if (index) |unwrap| moveToIndex(unwrap, current, displaying, window.panels.find.validArea().ylen);
+            }
             current.renderCursor(render_state);
             current.render(render_state);
             render_state.find = true;
@@ -721,16 +719,17 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
             const current = app.col_arr.getCurrent();
             const displaying = current.displaying orelse return;
             browse_typed = true;
-            const best_match: []const u8 = try algo.stringBestMatch(
-                &alloc.algoArena,
+            const best_match: ?[]const u8 = try algo.stringBestMatch(
                 alloc.typingAllocator,
                 app.typing_buffer.typed,
                 &search_strings,
             );
-
-            const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
-            const index = findStringIndex(best_match, displaying, compare_type);
-            if (index) |unwrap| moveToIndex(unwrap, current, displaying, window.panels.find.validArea().ylen);
+            if (best_match) |best| {
+                util.log("best match: {s}", .{best});
+                const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
+                const index = findStringIndex(best, displaying, compare_type);
+                if (index) |unwrap| moveToIndex(unwrap, current, displaying, window.panels.find.validArea().ylen);
+            }
             current.renderCursor(render_state);
             current.render(render_state);
             render_state.find = true;

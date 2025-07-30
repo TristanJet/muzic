@@ -1,10 +1,12 @@
 const std = @import("std");
 const mpd = @import("mpdclient.zig");
 const util = @import("util.zig");
+const arena: *std.heap.ArenaAllocator = &@import("allocators.zig").algoArena;
+const arenaAllocator = arena.allocator();
 const log = util.log;
 const assert = std.debug.assert;
 
-pub var nRanked: usize = undefined;
+var nRanked: usize = undefined;
 
 const cutoff_denominator: u8 = 2;
 
@@ -28,16 +30,18 @@ const AlgoError = error{
     OutOfMemory,
 };
 
+pub fn init(n: usize) AlgoError!void {
+    if (n == 0) return AlgoError.NoWindowLength;
+    nRanked = n;
+}
+
 pub fn suTopNranked(
-    arena: *std.heap.ArenaAllocator,
     heapAllocator: std.mem.Allocator,
     input: []const u8,
     items: *[]mpd.SongStringAndUri,
 ) AlgoError![]mpd.SongStringAndUri {
-    if (nRanked == 0) return AlgoError.NoWindowLength;
-    const arenaAllocator = arena.allocator();
     const inputLower = try std.ascii.allocLowerString(heapAllocator, input);
-    if (inputLower.len == 1) return try suContained(heapAllocator, arena, inputLower[0], items);
+    if (inputLower.len == 1) return try suContained(heapAllocator, inputLower[0], items);
     var scoredStrings = std.ArrayList(ScoredStringAndUri).init(heapAllocator);
     defer scoredStrings.deinit();
     var newItemArray = std.ArrayList(mpd.SongStringAndUri).init(heapAllocator);
@@ -73,50 +77,11 @@ pub fn suTopNranked(
     return try result.toOwnedSlice();
 }
 
-pub fn suBestMatch(
-    arena: *std.heap.ArenaAllocator,
-    heapAllocator: std.mem.Allocator,
-    input: []const u8,
-    items: *[]mpd.SongStringAndUri,
-) !mpd.SongStringAndUri {
-    if (nRanked == 0) return AlgoError.NoWindowLength;
-    const arenaAllocator = arena.allocator();
-    const inputLower = try std.ascii.allocLowerString(heapAllocator, input);
-    if (inputLower.len == 1) {
-        const contained_in: []mpd.SongStringAndUri = try suContained(heapAllocator, arena, inputLower[0], items);
-        return contained_in[0];
-    }
-    var newItemArray = std.ArrayList(mpd.SongStringAndUri).init(heapAllocator);
-    var best_match: mpd.SongStringAndUri = undefined;
-    var highestScore: u16 = 0;
-
-    for (items.*) |item| {
-        defer {
-            _ = arena.reset(.retain_capacity);
-        }
-        const score = calculateScore(inputLower, item.string, arenaAllocator) catch unreachable;
-        //at least quarter are matches
-        const cutoff_fraction = inputLower.len / cutoff_denominator;
-        if (score >= cutoff_fraction) {
-            try newItemArray.append(item);
-            if (score > highestScore) {
-                best_match = item;
-                highestScore = score;
-            }
-        }
-    }
-
-    items.* = try newItemArray.toOwnedSlice();
-    return best_match;
-}
-
 fn suContained(
     heapAllocator: std.mem.Allocator,
-    arena: *std.heap.ArenaAllocator,
     input: u8,
     items: *[]mpd.SongStringAndUri,
 ) ![]mpd.SongStringAndUri {
-    const arenaAllocator = arena.allocator();
     var newItemArray = std.ArrayList(mpd.SongStringAndUri).init(heapAllocator);
     var rankedStrings = std.ArrayList(mpd.SongStringAndUri).init(heapAllocator);
 
@@ -134,66 +99,35 @@ fn suContained(
     return rankedStrings.toOwnedSlice();
 }
 
-pub fn stringTopNranked(
-    arena: *std.heap.ArenaAllocator,
-    heapAllocator: std.mem.Allocator,
-    input: []const u8,
-    items: *[][]const u8,
-) AlgoError![][]const u8 {
-    if (nRanked == 0) return AlgoError.NoWindowLength;
-    const arenaAllocator = arena.allocator();
-    const inputLower = try std.ascii.allocLowerString(heapAllocator, input);
-    if (inputLower.len == 1) return try stringContained(heapAllocator, arena, inputLower[0], items);
-    var scoredStrings = std.ArrayList(ScoredString).init(heapAllocator);
-    defer scoredStrings.deinit();
-    var newItemArray = std.ArrayList([]const u8).init(heapAllocator);
+test "su" {
+    var heap = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    const allocator = heap.allocator();
 
-    for (items.*) |item| {
-        defer {
-            _ = arena.reset(.retain_capacity);
-        }
-        const score = calculateScore(inputLower, item, arenaAllocator) catch unreachable;
-        //at least quarter are matches
-        const cutoff_fraction = inputLower.len / cutoff_denominator;
-        if (score >= cutoff_fraction) {
-            try newItemArray.append(item);
-            try scoredStrings.append(.{ .string = item, .score = score });
-        }
+    try mpd.connect(.command, false);
+
+    const song_data = try mpd.listAllData(allocator);
+    var searchable = try mpd.getSongStringAndUri(allocator, song_data);
+
+    try init(10);
+
+    const topranked = try suTopNranked(allocator, "exeter", &searchable);
+    for (topranked) |su| {
+        std.debug.print("{s}\n", .{su.string});
     }
-
-    items.* = try newItemArray.toOwnedSlice();
-
-    // Sort by score (highest first)
-    std.sort.pdq(ScoredString, scoredStrings.items, {}, struct {
-        fn lessThan(_: void, a: ScoredString, b: ScoredString) bool {
-            return a.score > b.score;
-        }
-    }.lessThan);
-
-    var result = std.ArrayList([]const u8).init(heapAllocator);
-    const numResults = @min(scoredStrings.items.len, nRanked);
-    for (scoredStrings.items[0..numResults]) |scored| {
-        try result.append(scored.string);
-    }
-
-    return try result.toOwnedSlice();
 }
 
 pub fn stringBestMatch(
-    arena: *std.heap.ArenaAllocator,
     heapAllocator: std.mem.Allocator,
     input: []const u8,
     items: *[][]const u8,
-) ![]const u8 {
-    if (nRanked == 0) return AlgoError.NoWindowLength;
-    const arenaAllocator = arena.allocator();
+) !?[]const u8 {
     const inputLower = try std.ascii.allocLowerString(heapAllocator, input);
     if (inputLower.len == 1) {
-        const contained_in: [][]const u8 = try stringContained(heapAllocator, arena, inputLower[0], items);
+        const contained_in: [][]const u8 = try stringContained(heapAllocator, inputLower[0], items);
         return contained_in[0];
     }
     var newItemArray = std.ArrayList([]const u8).init(heapAllocator);
-    var best_match: []const u8 = undefined;
+    var best_match: ?[]const u8 = null;
     var highestScore: u16 = 0;
 
     for (items.*) |item| {
@@ -218,11 +152,9 @@ pub fn stringBestMatch(
 
 fn stringContained(
     heapAllocator: std.mem.Allocator,
-    arena: *std.heap.ArenaAllocator,
     input: u8,
     items: *[][]const u8,
 ) ![][]const u8 {
-    const arenaAllocator = arena.allocator();
     var newItemArray = std.ArrayList([]const u8).init(heapAllocator);
     var rankedStrings = std.ArrayList([]const u8).init(heapAllocator);
 
@@ -238,60 +170,6 @@ fn stringContained(
     }
     items.* = try newItemArray.toOwnedSlice();
     return rankedStrings.toOwnedSlice();
-}
-
-test "string function" {
-    nRanked = 10;
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-
-    var longarena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer longarena.deinit();
-    const longallocator = longarena.allocator();
-
-    var respArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    const respAllocator = respArena.allocator();
-
-    var wrkbuf: [16]u8 = undefined;
-    _ = try mpd.connect(wrkbuf[0..16], .command, false);
-    log("connected\n", .{});
-
-    // const data = try mpd.listAllData(respAllocator);
-    // const items = try mpd.getAllSongs(longallocator, data);
-
-    // Extract the string values for algorithmString
-    // var strings = try longallocator.alloc([]const u8, items.len);
-    // for (items, 0..) |item, i| {
-    //     strings[i] = item.string;
-    // }
-    const strings = try mpd.getAllAlbums(longallocator, respAllocator);
-    respArena.deinit();
-
-    const input = "Revolver";
-
-    // var songs: [][]const u8 = undefined;
-    // log("Total set: {}\n", .{strings.len});
-    // for (1..input.len + 1) |i| {
-    //     const inputfr = input[0..i];
-    //     log("Input: {s}\n", .{inputfr});
-    //     var strings_slice = strings;
-    //     songs = try stringTopNranked(&arena, longallocator, inputfr, &strings_slice);
-    //     for (songs, 0..) |song, j| {
-    //         log("Best match: {} {s}\n", .{ j, song });
-    //     }
-    //     log("Total set: {}\n", .{strings.len});
-    // }
-
-    var best_match: []const u8 = undefined;
-    log("Total set: {}\n", .{strings.len});
-    for (1..input.len + 1) |i| {
-        const inputfr = input[0..i];
-        log("Input: {s}\n", .{inputfr});
-        var strings_slice = strings;
-        best_match = try stringBestMatch(&arena, longallocator, inputfr, &strings_slice);
-        log("best match: {s}\n", .{best_match});
-        log("Total set: {}\n", .{strings.len});
-    }
 }
 
 const Matrix = struct {
@@ -368,52 +246,4 @@ fn smithwaterman(seq1: []const u8, seq2: []const u8, allocator: std.mem.Allocato
         }
     }
     return totalmax;
-}
-
-test "full function" {
-    nRanked = 10;
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    // const arenaAllocator = arena.allocator();
-
-    var longarena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer longarena.deinit();
-    const longallocator = longarena.allocator();
-
-    var respArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    const respAllocator = respArena.allocator();
-
-    var wrkbuf: [16]u8 = undefined;
-    _ = try mpd.connect(wrkbuf[0..16], .command, false);
-    log("connected\n", .{});
-
-    const data = try mpd.listAllData(respAllocator);
-    const items = try mpd.getSongStringAndUri(longallocator, data);
-    respArena.deinit();
-
-    const input = "Beat It";
-
-    // var songs: []mpd.SongStringAndUri = undefined;
-    // log("Total set: {}\n", .{items.len});
-    // for (1..input.len + 1) |i| {
-    //     const inputfr = input[0..i];
-    //     log("Input: {s}\n", .{inputfr});
-    //     var items_slice = items;
-    //     songs = try suTopNranked(&arena, longallocator, inputfr, &items_slice);
-    //     for (songs, 0..) |song, j| {
-    //         log("Best match: {} {s}\n", .{ j, song.string });
-    //     }
-    //     log("Total set: {}\n", .{items.len});
-    // }
-
-    var best_match: mpd.SongStringAndUri = undefined;
-    log("Total set: {}\n", .{items.len});
-    for (1..input.len + 1) |i| {
-        const inputfr = input[0..i];
-        log("Input: {s}\n", .{inputfr});
-        var items_slice = items;
-        best_match = try suBestMatch(&arena, longallocator, inputfr, &items_slice);
-        log("Best match: {s}\n", .{best_match.string});
-        log("Total set: {}\n", .{items.len});
-    }
 }

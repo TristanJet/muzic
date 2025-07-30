@@ -37,8 +37,6 @@ const wrkbuf = &alloc.wrkbuf;
 
 pub fn main() !void {
     defer alloc.deinit();
-    var first = true;
-    const start = time.milliTimestamp();
 
     if (builtin.mode == .Debug) try util.loggerInit();
     defer if (builtin.mode == .Debug) util.deinit() catch {};
@@ -54,6 +52,7 @@ pub fn main() !void {
         },
         else => return,
     };
+
     if (args.help) return;
     if (args.version) return;
 
@@ -66,7 +65,6 @@ pub fn main() !void {
         else => return error.MpdConnectionFailed,
     };
     defer mpd.disconnect(.command);
-
     mpd.connect(.idle, true) catch |e| switch (e) {
         error.NoMpd => {
             try proc.printMpdFail(wrkallocator, args.host, args.port);
@@ -84,7 +82,7 @@ pub fn main() !void {
     defer term.deinit() catch {};
 
     try window.init();
-    algo.nRanked = window.panels.find.validArea().ylen;
+    try algo.init(window.panels.find.validArea().ylen);
 
     try dw.init(alloc.persistentAllocator, window.panels);
     defer dw.deinit(alloc.persistentAllocator);
@@ -167,11 +165,6 @@ pub fn main() !void {
 
         app.updateState(&render_state, &mpd_data);
         try render.render(&app.state, &render_state, window.panels, &wrkfba.end_index);
-        if (first) {
-            first = false;
-            const first_loop = time.milliTimestamp() - start;
-            util.log("FIRST RENDER TIME: {} milliseconds", .{first_loop});
-        }
         render_state.reset();
 
         // Calculate remaining time in frame and sleep if necessary

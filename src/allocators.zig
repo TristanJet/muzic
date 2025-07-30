@@ -11,7 +11,6 @@ pub var persistentArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 pub const persistentAllocator = persistentArena.allocator();
 
 pub var algoArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-pub const algoArenaAllocator = algoArena.allocator();
 
 pub var typingArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 pub const typingAllocator = typingArena.allocator();

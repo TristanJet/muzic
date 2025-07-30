@@ -4,11 +4,12 @@
 - [ ] fix search
     - [ ] algoirthm fix, EXETER failing best match
     - [ ] capitalisation in browser search
-- [ ] ROBUST NONBLOCK flag handling for mac
+- [ ] remove indefinite dynamic allocation in queue (memory leak)
+- [ ] typing in higher column should have same effect as scroll, resetting later nodes
 
 ## Semi important
+- [ ] ROBUST NONBLOCK flag handling for mac
 - [ ] fallback if TTY mode
-- [ ] remove indefinite dynamic allocation in queue (memory leak)
 - [ ] ROBUST check for terminal features
     - [ ] terminfo
     - [ ] return to original state, whatever was printed before running goes back to being visible
