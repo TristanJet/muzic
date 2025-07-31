@@ -9,6 +9,7 @@
 
 ## Semi important
 - [ ] ROBUST NONBLOCK flag handling for mac
+- [ ] set max size for memory
 - [ ] fallback if TTY mode
 - [ ] ROBUST check for terminal features
     - [ ] terminfo
@@ -74,6 +75,7 @@
 - [x] NUMBER FIX - program will crash if queue longer than 256
 ## Features 
 
+- [ ] infinite play without filling queue?
 - [ ] allow browse by files and directories - (no tags set)
 - [ ] moving around in queue, visual mode?
 - [x] back takes you to beginning of song

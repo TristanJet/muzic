@@ -97,14 +97,18 @@ pub fn main() !void {
     initial_typing.init();
 
     var mpd_data = state.Data{
-        .artists = undefined,
+        .artists = null,
+        .artists_lower = null,
         .artists_init = false,
-        .albums = undefined,
+        .albums = null,
+        .albums_lower = null,
         .albums_init = false,
-        .searchable = undefined,
+        .searchable = null,
+        .searchable_lower = null,
         .searchable_init = false,
-        .songs = undefined,
-        .song_titles = undefined,
+        .songs = null,
+        .songs_lower = null,
+        .song_titles = null,
         .songs_init = false,
     };
 

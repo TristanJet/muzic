@@ -47,9 +47,6 @@ pub fn suTopNranked(
     var newItemArray = std.ArrayList(mpd.SongStringAndUri).init(heapAllocator);
 
     for (items.*) |item| {
-        defer {
-            _ = arena.reset(.retain_capacity);
-        }
         const score = calculateScore(inputLower, item.string, arenaAllocator) catch unreachable;
         //at least quarter are matches
         const cutoff_fraction = inputLower.len / cutoff_denominator;
@@ -57,6 +54,7 @@ pub fn suTopNranked(
             try newItemArray.append(item);
             try scoredStrings.append(.{ .song = item, .score = score });
         }
+        _ = arena.reset(.retain_capacity);
     }
 
     items.* = try newItemArray.toOwnedSlice();
@@ -86,14 +84,12 @@ fn suContained(
     var rankedStrings = std.ArrayList(mpd.SongStringAndUri).init(heapAllocator);
 
     for (items.*) |item| {
-        defer {
-            _ = arena.reset(.retain_capacity);
-        }
         const stringLower: []const u8 = try std.ascii.allocLowerString(arenaAllocator, item.string);
         if (std.mem.indexOfScalar(u8, stringLower, input)) |_| {
             try newItemArray.append(item);
             if (rankedStrings.items.len < nRanked) try rankedStrings.append(item);
         }
+        _ = arena.reset(.retain_capacity);
     }
     items.* = try newItemArray.toOwnedSlice();
     return rankedStrings.toOwnedSlice();
@@ -131,9 +127,6 @@ pub fn stringBestMatch(
     var highestScore: u16 = 0;
 
     for (items.*) |item| {
-        defer {
-            _ = arena.reset(.retain_capacity);
-        }
         const score = calculateScore(inputLower, item, arenaAllocator) catch unreachable;
         //at least quarter are matches
         const cutoff_fraction = inputLower.len / cutoff_denominator;
@@ -144,6 +137,7 @@ pub fn stringBestMatch(
                 highestScore = score;
             }
         }
+        _ = arena.reset(.retain_capacity);
     }
 
     items.* = try newItemArray.toOwnedSlice();
@@ -159,14 +153,12 @@ fn stringContained(
     var rankedStrings = std.ArrayList([]const u8).init(heapAllocator);
 
     for (items.*) |item| {
-        defer {
-            _ = arena.reset(.retain_capacity);
-        }
         const stringLower: []const u8 = try std.ascii.allocLowerString(arenaAllocator, item);
         if (std.mem.indexOfScalar(u8, stringLower, input)) |_| {
             try newItemArray.append(item);
             if (rankedStrings.items.len < nRanked) try rankedStrings.append(item);
         }
+        _ = arena.reset(.retain_capacity);
     }
     items.* = try newItemArray.toOwnedSlice();
     return rankedStrings.toOwnedSlice();

@@ -3,10 +3,16 @@ const mpd = @import("mpdclient.zig");
 const input = @import("input.zig");
 const algo = @import("algo.zig");
 const RenderState = @import("render.zig").RenderState;
+const CodePointIterator = @import("code_point").Iterator;
+const isAsciiOnly = @import("ascii").isAsciiOnly;
+const lowerString = std.ascii.lowerString;
 const expect = std.testing.expect;
+const ascii = std.ascii;
 const time = std.time;
 const mem = std.mem;
+const math = std.math;
 const debug = std.debug;
+const unic = std.unicode;
 const log = @import("util.zig").log;
 
 const alloc = @import("allocators.zig");
@@ -48,12 +54,16 @@ pub const Data = struct {
     var song_data: ?[]u8 = null;
 
     searchable: ?[]mpd.SongStringAndUri,
+    searchable_lower: ?[][]const u8,
     searchable_init: bool,
     albums: ?[][]const u8,
+    albums_lower: ?[][]const u8,
     albums_init: bool,
     artists: ?[][]const u8,
+    artists_lower: ?[][]const u8,
     artists_init: bool,
     song_titles: ?[][]const u8,
+    songs_lower: ?[][]const u8,
     songs: ?[]mpd.SongStringAndUri,
     songs_init: bool,
 
@@ -61,7 +71,7 @@ pub const Data = struct {
         switch (D) {
             .searchable => {
                 if (self.searchable_init) return false;
-                try self.initSearchable();
+                try self.initSearchable(alloc.persistentAllocator, alloc.songDataAllocator);
                 self.searchable_init = true;
                 log("init searchable", .{});
             },
@@ -87,9 +97,41 @@ pub const Data = struct {
         return true;
     }
 
-    fn initSearchable(self: *Data) !void {
-        if (song_data == null) song_data = try mpd.listAllData(alloc.songDataAllocator);
-        self.searchable = try mpd.getSongStringAndUri(alloc.persistentAllocator, song_data.?);
+    fn initSearchable(self: *Data, heapAlloc: mem.Allocator, songDataAlloc: mem.Allocator) !void {
+        if (song_data == null) song_data = try mpd.listAllData(songDataAlloc);
+        self.searchable = try mpd.getSongStringAndUri(heapAlloc, song_data.?);
+        if (self.searchable) |search| {
+            var lower: [][]const u8 = try heapAlloc.alloc([]const u8, search.len);
+            for (search, 0..) |su, i| {
+                if (isAsciiOnly(su.string)) {
+                    lower[i] = try ascii.allocLowerString(heapAlloc, su.string);
+                    continue;
+                }
+                var buf = try heapAlloc.alloc(u8, su.string.len);
+                var cp_iter = CodePointIterator{ .bytes = su.string };
+                var prev_offset: u32 = 0;
+                while (cp_iter.next()) |cp| {
+                    defer {
+                        prev_offset = cp.offset;
+                    }
+                    if (cp.len != 1) {
+                        mem.copyForwards(u8, buf[prev_offset .. cp.offset + 1], su.string[prev_offset .. cp.offset + 1]);
+                        continue;
+                    }
+                    if (math.cast(u8, cp.code)) |c| {
+                        if (ascii.isAscii(c)) {
+                            buf[cp.offset] = ascii.toLower(c);
+                        }
+                    }
+                }
+                lower[i] = buf[0..];
+            }
+            self.searchable_lower = lower;
+        }
+
+        for (self.searchable_lower.?) |lower| {
+            log("{s}", .{lower});
+        }
 
         if (self.songs_init) {
             alloc.songData.deinit();
@@ -150,36 +192,27 @@ fn sortSongsLex(songs: []mpd.SongStringAndUri) !void {
     std.sort.block(mpd.SongStringAndUri, songs, SortContext{}, SortContext.lessThan);
 }
 
-test "codepointcount" {
-    var wrkbuf: [64]u8 = undefined;
-    mpd.connect(wrkbuf[0..64], .command, false) catch return error.MpdConnectionFailed;
+test "lower_searchable" {
+    mpd.connect(.command, false) catch return error.MpdConnectionFailed;
     defer mpd.disconnect(.command);
 
-    mpd.connect(wrkbuf[0..64], .idle, true) catch return error.MpdConnectionFailed;
-    defer mpd.disconnect(.idle);
-    try mpd.initIdle();
-    const data = try Data.init();
-    const start = std.time.milliTimestamp();
-    for (data.artists) |artist| {
-        const count: usize = try std.unicode.utf8CountCodepoints(artist);
-        // std.debug.print("{s}", .{artist});
-        // std.debug.print(": {}\n", .{count});
-        _ = count;
-    }
-    for (data.song_titles) |song| {
-        const count: usize = try std.unicode.utf8CountCodepoints(song);
-        // std.debug.print("{s}", .{artist});
-        // std.debug.print(": {}\n", .{count});
-        _ = count;
-    }
-    for (data.albums) |albums| {
-        const count: usize = try std.unicode.utf8CountCodepoints(albums);
-        // std.debug.print("{s}", .{artist});
-        // std.debug.print(": {}\n", .{count});
-        _ = count;
-    }
-    const timespent = std.time.milliTimestamp() - start;
-    std.debug.print("{}\n", .{timespent});
+    var mpd_data = Data{
+        .artists = null,
+        .artists_lower = null,
+        .artists_init = false,
+        .albums = null,
+        .albums_lower = null,
+        .albums_init = false,
+        .searchable = null,
+        .searchable_lower = null,
+        .searchable_init = false,
+        .songs = null,
+        .songs_lower = null,
+        .song_titles = null,
+        .songs_init = false,
+    };
+    const good = try mpd_data.init(.searchable);
+    std.testing.expect(good);
 }
 
 pub const Column_Type = enum {
