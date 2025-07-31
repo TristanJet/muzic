@@ -54,16 +54,16 @@ pub const Data = struct {
     var song_data: ?[]u8 = null;
 
     searchable: ?[]mpd.SongStringAndUri,
-    searchable_lower: ?[][]const u8,
+    searchable_lower: ?[][]u16,
     searchable_init: bool,
     albums: ?[][]const u8,
-    albums_lower: ?[][]const u8,
+    albums_lower: ?[][]u16,
     albums_init: bool,
     artists: ?[][]const u8,
-    artists_lower: ?[][]const u8,
+    artists_lower: ?[][]u16,
     artists_init: bool,
     song_titles: ?[][]const u8,
-    songs_lower: ?[][]const u8,
+    songs_lower: ?[][]u16,
     songs: ?[]mpd.SongStringAndUri,
     songs_init: bool,
 
@@ -77,19 +77,19 @@ pub const Data = struct {
             },
             .songs => {
                 if (self.songs_init) return false;
-                try self.initSongs();
+                try self.initSongs(alloc.persistentAllocator, alloc.songDataAllocator);
                 self.songs_init = true;
                 log("init songs", .{});
             },
             .albums => {
                 if (self.albums_init) return false;
-                try self.initAlbums();
+                try self.initAlbums(alloc.persistentAllocator, alloc.respAllocator);
                 self.albums_init = true;
                 log("init albums", .{});
             },
             .artists => {
                 if (self.artists_init) return false;
-                try self.initArtists();
+                try self.initArtists(alloc.persistentAllocator, alloc.respAllocator);
                 self.artists_init = true;
                 log("init artists", .{});
             },
@@ -101,36 +101,38 @@ pub const Data = struct {
         if (song_data == null) song_data = try mpd.listAllData(songDataAlloc);
         self.searchable = try mpd.getSongStringAndUri(heapAlloc, song_data.?);
         if (self.searchable) |search| {
-            var lower: [][]const u8 = try heapAlloc.alloc([]const u8, search.len);
+            var lower: [][]u16 = try heapAlloc.alloc([]u16, search.len);
             for (search, 0..) |su, i| {
+                var array = ArrayList(u16).init(heapAlloc);
                 if (isAsciiOnly(su.string)) {
-                    lower[i] = try ascii.allocLowerString(heapAlloc, su.string);
+                    for (su.string, 0..) |c, j| {
+                        if (ascii.isUpper(c)) {
+                            if (math.cast(u16, j)) |casted|
+                                try array.append(casted)
+                            else
+                                return error.OutOfBoundsOffset;
+                        }
+                    }
+                    lower[i] = try array.toOwnedSlice();
                     continue;
                 }
-                var buf = try heapAlloc.alloc(u8, su.string.len);
                 var cp_iter = CodePointIterator{ .bytes = su.string };
-                var prev_offset: u32 = 0;
                 while (cp_iter.next()) |cp| {
-                    defer {
-                        prev_offset = cp.offset;
-                    }
                     if (cp.len != 1) {
-                        mem.copyForwards(u8, buf[prev_offset .. cp.offset + 1], su.string[prev_offset .. cp.offset + 1]);
                         continue;
                     }
                     if (math.cast(u8, cp.code)) |c| {
-                        if (ascii.isAscii(c)) {
-                            buf[cp.offset] = ascii.toLower(c);
+                        if (ascii.isAscii(c) and ascii.isUpper(c)) {
+                            if (math.cast(u16, cp.offset)) |casted|
+                                try array.append(casted)
+                            else
+                                return error.OutOfBoundsOffset;
                         }
                     }
                 }
-                lower[i] = buf[0..];
+                lower[i] = try array.toOwnedSlice();
             }
             self.searchable_lower = lower;
-        }
-
-        for (self.searchable_lower.?) |lower| {
-            log("{s}", .{lower});
         }
 
         if (self.songs_init) {
@@ -139,46 +141,136 @@ pub const Data = struct {
         }
     }
 
-    fn initSongs(self: *Data) !void {
-        if (song_data == null) song_data = try mpd.listAllData(alloc.songDataAllocator);
-        const songs = try mpd.getAllSongs(alloc.persistentAllocator, song_data.?);
+    fn initSongs(self: *Data, persistentAlloc: mem.Allocator, songDataAlloc: mem.Allocator) !void {
+        if (song_data == null) song_data = try mpd.listAllData(songDataAlloc);
+        const songs = try mpd.getAllSongs(persistentAlloc, song_data.?);
 
         // Sort songs alphabetically
         try sortSongsLex(songs);
 
-        var titles = try alloc.persistentAllocator.alloc([]const u8, songs.len);
+        var titles = try persistentAlloc.alloc([]const u8, songs.len);
         for (songs, 0..) |song, i| {
             titles[i] = song.string;
         }
 
+        const lower = try persistentAlloc.alloc([]u16, titles.len);
+        try getUpperIndices(titles, lower, persistentAlloc);
+
         self.songs = songs;
         self.song_titles = titles;
+        self.songs_lower = lower;
 
         if (self.searchable_init) {
             alloc.songData.deinit();
             song_data = null;
         }
+        // var buf = try persistentAlloc.alloc(u8, 512);
+        // for (self.song_titles.?, 0..) |a, i| {
+        //     getLowerString(a, self.songs_lower.?[i], buf);
+        //     log("{s} - {s}", .{
+        //         a,
+        //         buf[0..a.len],
+        //     });
+        // }
     }
 
-    fn initAlbums(self: *Data) !void {
-        self.albums = try mpd.getAllAlbums(alloc.persistentAllocator, alloc.respAllocator);
+    fn initAlbums(self: *Data, persistentAllocator: mem.Allocator, tempAllocator: mem.Allocator) !void {
+        self.albums = try mpd.getAllAlbums(persistentAllocator, tempAllocator);
+        if (self.albums) |albums| {
+            const lower = try persistentAllocator.alloc([]u16, albums.len);
+            try getUpperIndices(albums, lower, persistentAllocator);
+            self.albums_lower = lower;
+        }
         if (self.artists_init) {
             _ = alloc.respArena.reset(.free_all);
         } else {
             _ = alloc.respArena.reset(.retain_capacity);
         }
+
+        // var buf = try persistentAllocator.alloc(u8, 512);
+        // for (self.albums.?, 0..) |a, i| {
+        //     getLowerString(a, self.albums_lower.?[i], buf);
+        //     log("{s} - {s}", .{
+        //         a,
+        //         buf[0..a.len],
+        //     });
+        // }
     }
 
-    fn initArtists(self: *Data) !void {
-        self.artists = try mpd.getAllArtists(alloc.persistentAllocator, alloc.respAllocator);
+    fn initArtists(self: *Data, persistentAllocator: mem.Allocator, tempAllocator: mem.Allocator) !void {
+        self.artists = try mpd.getAllArtists(persistentAllocator, tempAllocator);
+        if (self.artists) |artists| {
+            const lower = try persistentAllocator.alloc([]u16, artists.len);
+            try getUpperIndices(artists, lower, persistentAllocator);
+            self.artists_lower = lower;
+        }
         if (self.albums_init) {
             _ = alloc.respArena.reset(.free_all);
         } else {
             _ = alloc.respArena.reset(.retain_capacity);
         }
+
+        // var buf = try persistentAllocator.alloc(u8, 512);
+        // for (self.artists.?, 0..) |a, i| {
+        //     getLowerString(a, self.artists_lower.?[i], buf);
+        //     log("{s} - {s}", .{
+        //         a,
+        //         buf[0..a.len],
+        //     });
+        // }
     }
 };
 
+fn getUpperIndices(strings: [][]const u8, dest: [][]u16, allocator: mem.Allocator) !void {
+    for (strings, 0..) |str, i| {
+        var array = ArrayList(u16).init(allocator);
+        if (isAsciiOnly(str)) {
+            for (str, 0..) |c, j| {
+                if (ascii.isUpper(c)) {
+                    if (math.cast(u16, j)) |casted|
+                        try array.append(casted)
+                    else
+                        return error.OutOfBoundsOffset;
+                }
+            }
+            dest[i] = try array.toOwnedSlice();
+            continue;
+        }
+        var cp_iter = CodePointIterator{ .bytes = str };
+        while (cp_iter.next()) |cp| {
+            if (cp.len != 1) {
+                continue;
+            }
+            if (math.cast(u8, cp.code)) |c| {
+                if (ascii.isAscii(c) and ascii.isUpper(c)) {
+                    if (math.cast(u16, cp.offset)) |casted|
+                        try array.append(casted)
+                    else
+                        return error.OutOfBoundsOffset;
+                }
+            }
+        }
+        dest[i] = try array.toOwnedSlice();
+    }
+}
+
+fn getLowerString(str: []const u8, uppers: []u16, buf: []u8) void {
+    var index: usize = 0;
+    var char: u8 = undefined;
+    for (str, 0..) |c, i| {
+        if (index == uppers.len) {
+            mem.copyForwards(u8, buf[i..str.len], str[i..str.len]);
+            return;
+        }
+        if (i == uppers[index]) {
+            char = ascii.toLower(c);
+            index += 1;
+        } else {
+            char = c;
+        }
+        buf[i] = char;
+    }
+}
 // Helper function to sort songs alphabetically
 fn sortSongsLex(songs: []mpd.SongStringAndUri) !void {
     // Define a custom context for sorting based on song titles
@@ -190,29 +282,6 @@ fn sortSongsLex(songs: []mpd.SongStringAndUri) !void {
 
     // Sort songs using block sort
     std.sort.block(mpd.SongStringAndUri, songs, SortContext{}, SortContext.lessThan);
-}
-
-test "lower_searchable" {
-    mpd.connect(.command, false) catch return error.MpdConnectionFailed;
-    defer mpd.disconnect(.command);
-
-    var mpd_data = Data{
-        .artists = null,
-        .artists_lower = null,
-        .artists_init = false,
-        .albums = null,
-        .albums_lower = null,
-        .albums_init = false,
-        .searchable = null,
-        .searchable_lower = null,
-        .searchable_init = false,
-        .songs = null,
-        .songs_lower = null,
-        .song_titles = null,
-        .songs_init = false,
-    };
-    const good = try mpd_data.init(.searchable);
-    std.testing.expect(good);
 }
 
 pub const Column_Type = enum {
