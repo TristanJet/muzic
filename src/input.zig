@@ -26,9 +26,6 @@ var key_down: ?u8 = null;
 
 var select_pos: u8 = 0;
 
-var searchable_items: ?[]mpd.SongStringAndUri = undefined;
-var search_strings: [][]const u8 = undefined;
-
 var modeSwitch: bool = false;
 var browse_typed: bool = false;
 var next_col_ready: bool = false;
@@ -107,7 +104,7 @@ pub fn handleInput(char: u8, app_state: *state.State, render_state: *RenderState
     const initial_state = app_state.input_state;
     switch (initial_state) {
         .normal_queue => normalQueue(char, app_state, render_state, mpd_data) catch unreachable,
-        .typing_find => typingFind(char, app_state, render_state, mpd_data) catch unreachable,
+        .typing_find => typingFind(char, app_state, render_state) catch unreachable,
         .normal_browse => handleNormalBrowse(char, app_state, render_state, mpd_data) catch unreachable,
         .typing_browse => typingBrowse(char, app_state, render_state) catch unreachable,
     }
@@ -172,8 +169,7 @@ fn onBrowseExit(app: *state.State, render_state: *RenderState(state.n_browse_col
 
 // ---- Input Mode Handlers ----
 
-fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns), mpd_data: *const state.Data) !void {
-    if (modeSwitch) searchable_items = mpd_data.searchable;
+fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
     switch (char) {
         '\x1B' => {
             var escBuffer: [8]u8 = undefined;
@@ -197,26 +193,26 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_br
         },
         '\x7F' => {
             app.typing_buffer.pop() catch return;
-            if (searchable_items) |_| {
-                app.viewable_searchable = try algo.suTopNranked(
-                    alloc.typingAllocator,
-                    app.typing_buffer.typed,
-                    &searchable_items.?,
-                );
-            } else return;
+            // if (searchable_items) |_| {
+            //     app.viewable_searchable = try algo.suTopNranked(
+            //         alloc.typingAllocator,
+            //         app.typing_buffer.typed,
+            //         &searchable_items.?,
+            //     );
+            // } else return;
             render_state.find_cursor = true;
             render_state.find = true;
         },
         else => {
             app.typing_buffer.append(char) catch return;
 
-            if (searchable_items) |_| {
-                app.viewable_searchable = try algo.suTopNranked(
-                    alloc.typingAllocator,
-                    app.typing_buffer.typed,
-                    &searchable_items.?,
-                );
-            } else return;
+            // if (searchable_items) |_| {
+            //     app.viewable_searchable = try algo.suTopNranked(
+            //         alloc.typingAllocator,
+            //         app.typing_buffer.typed,
+            //         &searchable_items.?,
+            //     );
+            // } else return;
             render_state.find_cursor = true;
             render_state.find = true;
         },
@@ -575,7 +571,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
             if (node.type == .Select) return;
             app.input_state = .typing_browse;
             const curr_col = app.col_arr.getCurrent();
-            try switchToTyping(curr_col);
+            // try switchToTyping(curr_col);
             curr_col.render(render_state);
             curr_col.clearCursor(render_state);
         },
@@ -674,10 +670,10 @@ fn goBottom(current: *state.BrowseColumn) !void {
     }
 }
 
-fn switchToTyping(curr_col: *state.BrowseColumn) !void {
-    const displaying = curr_col.displaying orelse return error.NoDisplaying;
-    search_strings = try getSearchStrings(displaying, alloc.browserAllocator);
-}
+// fn switchToTyping(curr_col: *state.BrowseColumn) !void {
+//     const displaying = curr_col.displaying orelse return error.NoDisplaying;
+//     search_strings = try getSearchStrings(displaying, alloc.browserAllocator);
+// }
 
 fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
     switch (char) {
@@ -699,17 +695,17 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
             app.typing_buffer.pop() catch return;
             browse_typed = true;
             const current = app.col_arr.getCurrent();
-            const displaying = current.displaying orelse return;
-            const best_match: ?[]const u8 = try algo.stringBestMatch(
-                alloc.typingAllocator,
-                app.typing_buffer.typed,
-                &search_strings,
-            );
-            if (best_match) |best| {
-                const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
-                const index = findStringIndex(best, displaying, compare_type);
-                if (index) |unwrap| moveToIndex(unwrap, current, displaying, window.panels.find.validArea().ylen);
-            }
+            // const displaying = current.displaying orelse return;
+            // const best_match: ?[]const u8 = try algo.stringBestMatch(
+            //     alloc.typingAllocator,
+            //     app.typing_buffer.typed,
+            //     &search_strings,
+            // );
+            // if (best_match) |best| {
+            //     const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
+            //     const index = findStringIndex(best, displaying, compare_type);
+            //     if (index) |unwrap| moveToIndex(unwrap, current, displaying, window.panels.find.validArea().ylen);
+            // }
             current.renderCursor(render_state);
             current.render(render_state);
             render_state.find = true;
@@ -717,19 +713,19 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
         else => {
             app.typing_buffer.append(char) catch return;
             const current = app.col_arr.getCurrent();
-            const displaying = current.displaying orelse return;
+            // const displaying = current.displaying orelse return;
             browse_typed = true;
-            const best_match: ?[]const u8 = try algo.stringBestMatch(
-                alloc.typingAllocator,
-                app.typing_buffer.typed,
-                &search_strings,
-            );
-            if (best_match) |best| {
-                util.log("best match: {s}", .{best});
-                const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
-                const index = findStringIndex(best, displaying, compare_type);
-                if (index) |unwrap| moveToIndex(unwrap, current, displaying, window.panels.find.validArea().ylen);
-            }
+            // const best_match: ?[]const u8 = try algo.stringBestMatch(
+            //     alloc.typingAllocator,
+            //     app.typing_buffer.typed,
+            //     &search_strings,
+            // );
+            // if (best_match) |best| {
+            //     util.log("best match: {s}", .{best});
+            //     const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
+            //     const index = findStringIndex(best, displaying, compare_type);
+            //     if (index) |unwrap| moveToIndex(unwrap, current, displaying, window.panels.find.validArea().ylen);
+            // }
             current.renderCursor(render_state);
             current.render(render_state);
             render_state.find = true;

@@ -590,7 +590,7 @@ pub fn findTracksFromAlbum(
     return try songs.toOwnedSlice();
 }
 
-pub fn titlesFromTracks(tracks: []SongStringAndUri, allocator: mem.Allocator) ![][]const u8 {
+pub fn titlesFromTracks(tracks: []const SongStringAndUri, allocator: mem.Allocator) ![][]const u8 {
     var titles = try allocator.alloc([]const u8, tracks.len);
     for (tracks, 0..) |track, i| {
         titles[i] = track.string;
@@ -822,7 +822,7 @@ pub fn addFromUri(allocator: mem.Allocator, uri: []const u8) !void {
     try sendCommand(command);
 }
 
-pub fn addList(allocator: mem.Allocator, list: []SongStringAndUri) !void {
+pub fn addList(allocator: mem.Allocator, list: []const SongStringAndUri) !void {
     try connSend("command_list_begin\n", &cmdStream);
     for (list) |item| {
         const command = try fmt.allocPrint(allocator, "add \"{s}\"\n", .{item.uri});

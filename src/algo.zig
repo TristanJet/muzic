@@ -2,11 +2,21 @@ const std = @import("std");
 const mpd = @import("mpdclient.zig");
 const util = @import("util.zig");
 const arena: *std.heap.ArenaAllocator = &@import("allocators.zig").algoArena;
+const getLowerString = @import("state.zig").getLowerString;
 const arenaAllocator = arena.allocator();
+const persistentAllocator = @import("allocators.zig").persistentAllocator;
 const log = util.log;
 const assert = std.debug.assert;
+const ascii = std.ascii;
+const mem = std.mem;
+const ArrayList = std.ArrayList;
+
+var search_sample: ArrayList(usize) = ArrayList(usize).init(persistentAllocator);
 
 var nRanked: usize = undefined;
+
+var inputLowerBuf: [32]u8 = undefined;
+var stringLowerBuf: [512]u8 = undefined;
 
 const cutoff_denominator: u8 = 2;
 
@@ -35,12 +45,40 @@ pub fn init(n: usize) AlgoError!void {
     nRanked = n;
 }
 
+pub fn setSearchSample(set_len: usize) !void {
+    if (set_len > search_sample.capacity) {
+        const diff = set_len - search_sample.capacity;
+        _ = try search_sample.addManyAt(search_sample.capacity, diff);
+    }
+    if (set_len > search_sample.items.len) {
+        search_sample.expandToCapacity();
+    }
+    search_sample.shrinkRetainingCapacity(set_len);
+    for (0..set_len) |i| {
+        search_sample.items[i] = i;
+    }
+}
+
+test "setSearch" {
+    try mpd.connect(.command, false);
+
+    var respArena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    const respAllocator: std.mem.Allocator = respArena.allocator();
+
+    const artists = try mpd.getAllArtists(persistentAllocator, respAllocator);
+    try setSearchSample(artists.len);
+    std.debug.print("{}\n", .{artists.len});
+    std.debug.print("{s}\n", .{artists[69]});
+    try std.testing.expect(search_sample.items.len == artists.len);
+    try std.testing.expect(search_sample.items[69] == 69);
+}
+
 pub fn suTopNranked(
     heapAllocator: std.mem.Allocator,
     input: []const u8,
     items: *[]mpd.SongStringAndUri,
 ) AlgoError![]mpd.SongStringAndUri {
-    const inputLower = try std.ascii.allocLowerString(heapAllocator, input);
+    const inputLower = ascii.lowerString(&inputLowerBuf, input);
     if (inputLower.len == 1) return try suContained(heapAllocator, inputLower[0], items);
     var scoredStrings = std.ArrayList(ScoredStringAndUri).init(heapAllocator);
     defer scoredStrings.deinit();

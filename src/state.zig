@@ -53,18 +53,18 @@ pub const State = struct {
 pub const Data = struct {
     var song_data: ?[]u8 = null;
 
-    searchable: ?[]mpd.SongStringAndUri,
-    searchable_lower: ?[][]u16,
+    searchable: ?[]const mpd.SongStringAndUri,
+    searchable_lower: ?[]const []u16,
     searchable_init: bool,
-    albums: ?[][]const u8,
-    albums_lower: ?[][]u16,
+    albums: ?[]const []const u8,
+    albums_lower: ?[]const []u16,
     albums_init: bool,
-    artists: ?[][]const u8,
-    artists_lower: ?[][]u16,
+    artists: ?[]const []const u8,
+    artists_lower: ?[]const []u16,
     artists_init: bool,
-    song_titles: ?[][]const u8,
-    songs_lower: ?[][]u16,
-    songs: ?[]mpd.SongStringAndUri,
+    song_titles: ?[]const []const u8,
+    songs_lower: ?[]const []u16,
+    songs: ?[]const mpd.SongStringAndUri,
     songs_init: bool,
 
     pub fn init(self: *Data, D: enum { searchable, songs, albums, artists }) !bool {
@@ -221,7 +221,7 @@ pub const Data = struct {
     }
 };
 
-fn getUpperIndices(strings: [][]const u8, dest: [][]u16, allocator: mem.Allocator) !void {
+fn getUpperIndices(strings: []const []const u8, dest: [][]u16, allocator: mem.Allocator) !void {
     for (strings, 0..) |str, i| {
         var array = ArrayList(u16).init(allocator);
         if (isAsciiOnly(str)) {
@@ -254,7 +254,7 @@ fn getUpperIndices(strings: [][]const u8, dest: [][]u16, allocator: mem.Allocato
     }
 }
 
-fn getLowerString(str: []const u8, uppers: []u16, buf: []u8) void {
+pub fn getLowerString(str: []const u8, uppers: []u16, buf: []u8) []u8 {
     var index: usize = 0;
     var char: u8 = undefined;
     for (str, 0..) |c, i| {
@@ -270,6 +270,7 @@ fn getLowerString(str: []const u8, uppers: []u16, buf: []u8) void {
         }
         buf[i] = char;
     }
+    return buf[0..str.len];
 }
 // Helper function to sort songs alphabetically
 fn sortSongsLex(songs: []mpd.SongStringAndUri) !void {
@@ -302,8 +303,8 @@ const DisplayCallback = union(CallbackType) {
         artist: []const u8,
     },
     TitlesFromTracks: struct {
-        func: *const fn ([]mpd.SongStringAndUri, mem.Allocator) anyerror![][]const u8,
-        tracks: []mpd.SongStringAndUri,
+        func: *const fn ([]const mpd.SongStringAndUri, mem.Allocator) anyerror![][]const u8,
+        tracks: []const mpd.SongStringAndUri,
     },
 };
 //A node is a virtual column.
@@ -324,7 +325,7 @@ pub const BrowseNode = struct {
         self.slice_inc = column.slice_inc;
     }
 
-    fn setCallback(self: *const BrowseNode, selected_artist: ?[]const u8, tracks: ?[]mpd.SongStringAndUri) !DisplayCallback {
+    fn setCallback(self: *const BrowseNode, selected_artist: ?[]const u8, tracks: ?[]const mpd.SongStringAndUri) !DisplayCallback {
         if (self.callback_type) |type_| {
             return switch (type_) {
                 .AlbumsFromArtist => DisplayCallback{ .AlbumsFromArtist = .{
@@ -367,10 +368,10 @@ pub const Browser = struct {
     index: u8,
     len: u8,
     apex: NodeApex,
-    tracks: ?[]mpd.SongStringAndUri,
+    tracks: ?[]const mpd.SongStringAndUri,
     find_filter: mpd.Filter_Songs,
 
-    pub fn apexAlbums(data_str: [][]const u8) Browser {
+    pub fn apexAlbums(data_str: []const []const u8) Browser {
         return Browser{
             .buf = .{
                 .{ .pos = 1, .slice_inc = 0, .displaying = &browse_types, .callback_type = null, .type = .Select },
@@ -389,7 +390,7 @@ pub const Browser = struct {
         };
     }
 
-    pub fn apexArtists(data_str: [][]const u8) Browser {
+    pub fn apexArtists(data_str: []const []const u8) Browser {
         return Browser{
             .buf = .{
                 .{ .pos = 2, .slice_inc = 0, .displaying = &browse_types, .callback_type = null, .type = .Select },
@@ -408,7 +409,7 @@ pub const Browser = struct {
         };
     }
 
-    pub fn apexTracks(songs: []mpd.SongStringAndUri, song_titles: [][]const u8) Browser {
+    pub fn apexTracks(songs: []const mpd.SongStringAndUri, song_titles: []const []const u8) Browser {
         return Browser{
             .buf = .{
                 .{ .pos = 3, .slice_inc = 0, .displaying = &browse_types, .callback_type = null, .type = .Select },
