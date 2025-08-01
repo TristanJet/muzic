@@ -46,14 +46,8 @@ pub fn init(n: usize) AlgoError!void {
 }
 
 pub fn setSearchSample(set_len: usize) !void {
-    if (set_len > search_sample.capacity) {
-        const diff = set_len - search_sample.capacity;
-        _ = try search_sample.addManyAt(search_sample.capacity, diff);
-    }
-    if (set_len > search_sample.items.len) {
-        search_sample.expandToCapacity();
-    }
-    search_sample.shrinkRetainingCapacity(set_len);
+    try search_sample.ensureTotalCapacity(set_len);
+    search_sample.items.len = set_len;
     for (0..set_len) |i| {
         search_sample.items[i] = i;
     }
@@ -71,6 +65,10 @@ test "setSearch" {
     std.debug.print("{s}\n", .{artists[69]});
     try std.testing.expect(search_sample.items.len == artists.len);
     try std.testing.expect(search_sample.items[69] == 69);
+    _ = search_sample.orderedRemove(69);
+    try std.testing.expect(search_sample.items[69] == 70);
+    try std.testing.expect(search_sample.capacity >= artists.len);
+    std.debug.print("{}\n", .{search_sample.capacity});
 }
 
 pub fn suTopNranked(
