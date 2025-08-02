@@ -189,7 +189,6 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_br
             const addUri = app.viewable_searchable.?[app.find_cursor_pos].uri;
             try mpd.addFromUri(wrkallocator, addUri);
             onTypingExit(app, render_state);
-            return;
         },
         '\x7F' => {
             app.typing_buffer.pop() catch return;
@@ -205,14 +204,7 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_br
         },
         else => {
             app.typing_buffer.append(char) catch return;
-
-            // if (searchable_items) |_| {
-            //     app.viewable_searchable = try algo.suTopNranked(
-            //         alloc.typingAllocator,
-            //         app.typing_buffer.typed,
-            //         &searchable_items.?,
-            //     );
-            // } else return;
+            app.viewable_searchable = try algo.suTopNranked(app.typing_buffer.typed, &app.search_sample_su);
             render_state.find_cursor = true;
             render_state.find = true;
         },
@@ -330,6 +322,10 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         },
         'f' => {
             _ = try mpd_data.init(.searchable);
+            const searchable = mpd_data.searchable orelse return;
+            const uppers = mpd_data.searchable_lower orelse return;
+            if (!app.algo_init) try algo.init(window.panels.find.validArea().ylen, searchable.len);
+            try app.search_sample_su.update(searchable, uppers);
             app.input_state = .typing_find;
             render_state.find = true;
             render_state.queue = true;

@@ -82,7 +82,6 @@ pub fn main() !void {
     defer term.deinit() catch {};
 
     try window.init();
-    try algo.init(window.panels.find.validArea().ylen);
 
     try dw.init(alloc.persistentAllocator, window.panels);
     defer dw.deinit(alloc.persistentAllocator);
@@ -140,6 +139,10 @@ pub fn main() !void {
         .find_cursor_pos = 0,
         .find_cursor_prev = 0,
         .viewable_searchable = null,
+
+        .algo_init = false,
+        .search_sample_str = algo.SearchSample([]const u8).init(alloc.persistentAllocator),
+        .search_sample_su = algo.SearchSample(mpd.SongStringAndUri).init(alloc.persistentAllocator),
 
         .col_arr = state.ColumnArray(state.n_browse_columns).init(mpd_data.albums),
         .node_switched = false,

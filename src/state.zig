@@ -41,7 +41,11 @@ pub const State = struct {
     typing_buffer: TypingBuffer,
     find_cursor_pos: u8,
     find_cursor_prev: u8,
-    viewable_searchable: ?[]mpd.SongStringAndUri,
+    viewable_searchable: ?[]const mpd.SongStringAndUri,
+
+    algo_init: bool,
+    search_sample_str: algo.SearchSample([]const u8),
+    search_sample_su: algo.SearchSample(mpd.SongStringAndUri),
 
     col_arr: ColumnArray(n_browse_columns),
     node_switched: bool,
@@ -54,16 +58,16 @@ pub const Data = struct {
     var song_data: ?[]u8 = null;
 
     searchable: ?[]const mpd.SongStringAndUri,
-    searchable_lower: ?[]const []u16,
+    searchable_lower: ?[]const []const u16,
     searchable_init: bool,
     albums: ?[]const []const u8,
-    albums_lower: ?[]const []u16,
+    albums_lower: ?[]const []const u16,
     albums_init: bool,
     artists: ?[]const []const u8,
-    artists_lower: ?[]const []u16,
+    artists_lower: ?[]const []const u16,
     artists_init: bool,
     song_titles: ?[]const []const u8,
-    songs_lower: ?[]const []u16,
+    songs_lower: ?[]const []const u16,
     songs: ?[]const mpd.SongStringAndUri,
     songs_init: bool,
 
@@ -254,13 +258,13 @@ fn getUpperIndices(strings: []const []const u8, dest: [][]u16, allocator: mem.Al
     }
 }
 
-pub fn getLowerString(str: []const u8, uppers: []u16, buf: []u8) []u8 {
+pub fn fastLowerString(str: []const u8, uppers: []const u16, buf: []u8) []const u8 {
     var index: usize = 0;
     var char: u8 = undefined;
     for (str, 0..) |c, i| {
         if (index == uppers.len) {
             mem.copyForwards(u8, buf[i..str.len], str[i..str.len]);
-            return;
+            break;
         }
         if (i == uppers[index]) {
             char = ascii.toLower(c);

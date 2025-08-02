@@ -2,7 +2,7 @@ const std = @import("std");
 const mpd = @import("mpdclient.zig");
 const util = @import("util.zig");
 const arena: *std.heap.ArenaAllocator = &@import("allocators.zig").algoArena;
-const getLowerString = @import("state.zig").getLowerString;
+const fastLowerString = @import("state.zig").fastLowerString;
 const arenaAllocator = arena.allocator();
 const persistentAllocator = @import("allocators.zig").persistentAllocator;
 const log = util.log;
@@ -11,7 +11,46 @@ const ascii = std.ascii;
 const mem = std.mem;
 const ArrayList = std.ArrayList;
 
-var search_sample: ArrayList(usize) = ArrayList(usize).init(persistentAllocator);
+pub fn SearchSample(comptime T: type) type {
+    return struct {
+        const Self = @This();
+
+        indices: ArrayList(usize),
+        set: []const T,
+        uppers: []const []const u16,
+
+        pub fn init(allocator: mem.Allocator) Self {
+            return Self{
+                .indices = ArrayList(usize).init(allocator),
+                .set = undefined,
+                .uppers = undefined,
+            };
+        }
+
+        pub fn update(self: *Self, set: []const T, uppers: []const []const u16) !void {
+            try self.indices.ensureTotalCapacity(set.len);
+            self.indices.items.len = set.len;
+            for (0..set.len) |i| {
+                self.indices.items[i] = i;
+            }
+            self.set = set;
+            self.uppers = uppers;
+        }
+
+        fn itemFromI(self: *const Self, j: usize) T {
+            assert(j < self.indices.items.len);
+            return self.set[self.indices.items[j]];
+        }
+
+        fn upperFromI(self: *const Self, j: usize) []const u16 {
+            assert(j < self.indices.items.len);
+            return self.uppers[self.indices.items[j]];
+        }
+    };
+}
+
+var result_su = ArrayList(mpd.SongStringAndUri).init(persistentAllocator);
+var scoredSongs: ArrayList(ScoredStringAndUri) = undefined;
 
 var nRanked: usize = undefined;
 
@@ -40,95 +79,91 @@ const AlgoError = error{
     OutOfMemory,
 };
 
-pub fn init(n: usize) AlgoError!void {
+pub fn init(n: usize, nsearchable: usize) AlgoError!void {
     if (n == 0) return AlgoError.NoWindowLength;
     nRanked = n;
+    try result_su.ensureTotalCapacityPrecise(nRanked);
+    result_su.expandToCapacity();
+    scoredSongs = ArrayList(ScoredStringAndUri).init(persistentAllocator);
+    try scoredSongs.ensureTotalCapacityPrecise(nsearchable);
 }
 
-pub fn setSearchSample(set_len: usize) !void {
-    try search_sample.ensureTotalCapacity(set_len);
-    search_sample.items.len = set_len;
-    for (0..set_len) |i| {
-        search_sample.items[i] = i;
-    }
-}
-
-test "setSearch" {
-    try mpd.connect(.command, false);
-
-    var respArena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    const respAllocator: std.mem.Allocator = respArena.allocator();
-
-    const artists = try mpd.getAllArtists(persistentAllocator, respAllocator);
-    try setSearchSample(artists.len);
-    std.debug.print("{}\n", .{artists.len});
-    std.debug.print("{s}\n", .{artists[69]});
-    try std.testing.expect(search_sample.items.len == artists.len);
-    try std.testing.expect(search_sample.items[69] == 69);
-    _ = search_sample.orderedRemove(69);
-    try std.testing.expect(search_sample.items[69] == 70);
-    try std.testing.expect(search_sample.capacity >= artists.len);
-    std.debug.print("{}\n", .{search_sample.capacity});
-}
+// test "setSearch" {
+//     try mpd.connect(.command, false);
+//
+//     var respArena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+//     const respAllocator: std.mem.Allocator = respArena.allocator();
+//     search_sample_str = SearchSample([]const u8).init(persistentAllocator);
+//     const artists: []const []const u8 = try mpd.getAllArtists(persistentAllocator, respAllocator);
+//     try search_sample_str.update(artists);
+//     std.debug.print("{}\n", .{artists.len});
+//     std.debug.print("{s}\n", .{artists[69]});
+//     try std.testing.expect(search_sample_str.indices.items.len == artists.len);
+//     try std.testing.expect(search_sample_str.indices.items[69] == 69);
+//     try std.testing.expect(mem.eql(u8, search_sample_str.getItem(69), "Black Sabbath"));
+//     _ = search_sample_str.indices.orderedRemove(69);
+//     try std.testing.expect(search_sample_str.indices.items[69] == 70);
+//     try std.testing.expect(search_sample_str.indices.capacity >= artists.len);
+//     std.debug.print("{s}\n", .{search_sample_str.getItem(69)});
+//     std.debug.print("{}\n", .{search_sample_str.indices.capacity});
+// }
 
 pub fn suTopNranked(
-    heapAllocator: std.mem.Allocator,
     input: []const u8,
-    items: *[]mpd.SongStringAndUri,
-) AlgoError![]mpd.SongStringAndUri {
+    search_sample: *SearchSample(mpd.SongStringAndUri),
+) AlgoError![]const mpd.SongStringAndUri {
+    scoredSongs.shrinkRetainingCapacity(0);
     const inputLower = ascii.lowerString(&inputLowerBuf, input);
-    if (inputLower.len == 1) return try suContained(heapAllocator, inputLower[0], items);
-    var scoredStrings = std.ArrayList(ScoredStringAndUri).init(heapAllocator);
-    defer scoredStrings.deinit();
-    var newItemArray = std.ArrayList(mpd.SongStringAndUri).init(heapAllocator);
+    if (inputLower.len == 1) return try suContained(inputLower[0], search_sample);
 
-    for (items.*) |item| {
-        const score = calculateScore(inputLower, item.string, arenaAllocator) catch unreachable;
-        //at least quarter are matches
+    var i: usize = 0;
+    while (i < search_sample.indices.items.len) {
+        const score = calculateScore(inputLower, search_sample.itemFromI(i).string, arenaAllocator) catch unreachable;
         const cutoff_fraction = inputLower.len / cutoff_denominator;
         if (score >= cutoff_fraction) {
-            try newItemArray.append(item);
-            try scoredStrings.append(.{ .song = item, .score = score });
+            try scoredSongs.append(.{ .song = search_sample.itemFromI(i), .score = score });
+        } else {
+            _ = search_sample.indices.orderedRemove(i);
+            continue;
         }
+        i += 1;
         _ = arena.reset(.retain_capacity);
     }
-
-    items.* = try newItemArray.toOwnedSlice();
-
-    // Sort by score (highest first)
-    std.sort.pdq(ScoredStringAndUri, scoredStrings.items, {}, struct {
+    // Sort by score
+    std.sort.pdq(ScoredStringAndUri, scoredSongs.items, {}, struct {
         fn lessThan(_: void, a: ScoredStringAndUri, b: ScoredStringAndUri) bool {
             return a.score > b.score;
         }
     }.lessThan);
 
-    var result = std.ArrayList(mpd.SongStringAndUri).init(heapAllocator);
-    const numResults = @min(scoredStrings.items.len, nRanked);
-    for (scoredStrings.items[0..numResults]) |scored| {
-        try result.append(scored.song);
+    const numResults = @min(scoredSongs.items.len, nRanked);
+    for (scoredSongs.items[0..numResults], 0..) |scored, j| {
+        result_su.items[j] = scored.song;
     }
 
-    return try result.toOwnedSlice();
+    return result_su.items[0..numResults];
 }
 
 fn suContained(
-    heapAllocator: std.mem.Allocator,
     input: u8,
-    items: *[]mpd.SongStringAndUri,
-) ![]mpd.SongStringAndUri {
-    var newItemArray = std.ArrayList(mpd.SongStringAndUri).init(heapAllocator);
-    var rankedStrings = std.ArrayList(mpd.SongStringAndUri).init(heapAllocator);
-
-    for (items.*) |item| {
-        const stringLower: []const u8 = try std.ascii.allocLowerString(arenaAllocator, item.string);
-        if (std.mem.indexOfScalar(u8, stringLower, input)) |_| {
-            try newItemArray.append(item);
-            if (rankedStrings.items.len < nRanked) try rankedStrings.append(item);
+    search_sample: *SearchSample(mpd.SongStringAndUri),
+) ![]const mpd.SongStringAndUri {
+    var i: usize = 0;
+    while (i < search_sample.indices.items.len) {
+        const stringLower = fastLowerString(search_sample.itemFromI(i).string, search_sample.upperFromI(i), &stringLowerBuf);
+        if (mem.indexOfScalar(u8, stringLower, input) == null) {
+            _ = search_sample.indices.orderedRemove(i);
+            continue;
         }
-        _ = arena.reset(.retain_capacity);
+        i += 1;
     }
-    items.* = try newItemArray.toOwnedSlice();
-    return rankedStrings.toOwnedSlice();
+
+    const nresult = @min(nRanked, search_sample.indices.items.len);
+    for (0..nresult) |j| {
+        result_su.items[j] = search_sample.itemFromI(j);
+    }
+
+    return result_su.items[0..nresult];
 }
 
 test "su" {
