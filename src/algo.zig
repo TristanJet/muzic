@@ -116,12 +116,15 @@ pub fn suTopNranked(
     const inputLower = ascii.lowerString(&inputLowerBuf, input);
     if (inputLower.len == 1) return try suContained(inputLower[0], search_sample);
 
+    var matrix = Matrix.init(inputLower.len);
     var i: usize = 0;
     while (i < search_sample.indices.items.len) {
-        const score = calculateScore(inputLower, search_sample.itemFromI(i).string, arenaAllocator) catch unreachable;
+        const item = search_sample.itemFromI(i);
+        const stringLower = fastLowerString(item.string, search_sample.upperFromI(i), &stringLowerBuf);
+        const score = try calculateScore(inputLower, stringLower, &matrix);
         const cutoff_fraction = inputLower.len / cutoff_denominator;
         if (score >= cutoff_fraction) {
-            try scoredSongs.append(.{ .song = search_sample.itemFromI(i), .score = score });
+            try scoredSongs.append(.{ .song = item, .score = score });
         } else {
             _ = search_sample.indices.orderedRemove(i);
             continue;
@@ -235,60 +238,67 @@ fn stringContained(
     return rankedStrings.toOwnedSlice();
 }
 
+// var buf1: [33][]u16 = persistentAllocator.alloc([]u16, 33) catch unreachable;
+// var buf2: [33 * 257]u16 = persistentAllocator.alloc(u16, (33 * 257)) catch unreachable;
+var buf1: [33][]u16 = undefined;
+var buf2: [33 * 257]u16 = undefined;
 const Matrix = struct {
     //use arena.reset(.retain_capacity)
+    //max input size -> 32
+    //max string size -> 256
     data: [][]u16 = undefined,
     super: usize,
     sub: usize,
 
-    pub fn init(super: usize, sub: usize, allocator: std.mem.Allocator) !Matrix {
-        const data = try allocator.alloc([]u16, super);
-
-        var i: usize = 0;
-        while (i < super) {
-            data[i] = try allocator.alloc(u16, sub);
-            i += 1;
-        }
-        for (data) |row| {
-            @memset(row, 0);
-        }
+    fn init(input_len: usize) Matrix {
+        const super = input_len + 1;
+        const data: [][]u16 = buf1[0..super];
 
         return .{
             .super = super,
-            .sub = sub,
+            .sub = undefined,
             .data = data,
         };
     }
+
+    fn loUpdate(self: *Matrix, string_len: usize) void {
+        const sub = string_len + 1;
+        var i: usize = 0;
+        while (i < self.super) {
+            self.data[i] = buf2[(i * sub)..((i + 1) * sub)];
+            i += 1;
+        }
+        for (self.data) |row| {
+            @memset(row, 0);
+        }
+    }
 };
 
-fn calculateScore(input: []const u8, string: []const u8, allocator: std.mem.Allocator) !u16 {
-    // First, calculate exact word matches
-    const inputLower: []const u8 = try std.ascii.allocLowerString(allocator, input);
-    const stringLower: []const u8 = try std.ascii.allocLowerString(allocator, string);
+fn calculateScore(input: []const u8, string: []const u8, matrix: *Matrix) !u16 {
     var exact_score: u16 = 0;
-    var input_words = std.mem.splitSequence(u8, inputLower, " ");
+    var input_words = mem.splitSequence(u8, input, " ");
     while (input_words.next()) |word| {
         // Skip very short words (like "the", "a", etc.)
         if (word.len <= 2 or word.len >= 255) continue;
 
         const len: u8 = @intCast(word.len);
         // Look for exact word match
-        if (std.mem.indexOf(u8, stringLower, word)) |_| {
+        if (std.mem.indexOf(u8, string, word)) |_| {
             exact_score += len * exact_word_multiplier;
         }
     }
 
     // Then get the Smith-Waterman score for overall similarity
-    const sw_score = try smithwaterman(input, string, allocator);
+    const sw_score = try smithwaterman(input, string, matrix);
 
     return exact_score + sw_score;
 }
 
-fn smithwaterman(seq1: []const u8, seq2: []const u8, allocator: std.mem.Allocator) !u16 {
+fn smithwaterman(seq1: []const u8, seq2: []const u8, matrix: *Matrix) !u16 {
     const len1: usize = seq1.len + 1;
     const len2: usize = seq2.len + 1;
 
-    const matrix = try Matrix.init(len1, len2, allocator);
+    matrix.loUpdate(seq2.len);
 
     var totalmax: u16 = 0;
     for (1..len1) |i| {

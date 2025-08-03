@@ -8,6 +8,7 @@
 - [ ] typing in higher column should have same effect as scroll, resetting later nodes
 
 ## Semi important
+- [ ] implement strict max string size
 - [ ] ROBUST NONBLOCK flag handling for mac
 - [ ] set max size for memory
 - [ ] fallback if TTY mode
