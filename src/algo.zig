@@ -296,6 +296,7 @@ fn smithwaterman(seq1: []const u8, seq2: []const u8, matrix: *Matrix) u16 {
     var totalmax: u16 = 0;
     for (1..len1) |i| {
         for (1..len2) |j| {
+            //If the char_matches is equal to both lengths then the string is a perfect match and should be returned
             const char_matches = seq1[i - 1] == seq2[j - 1];
 
             const match_add: i32 = if (char_matches) match_score else mismatch_penalty;

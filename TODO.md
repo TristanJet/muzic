@@ -16,7 +16,8 @@ I, Tristan Lay will ship 1.0 on the 5th of August or else I am a **faggot** and 
 - [ ] typing in higher column should have same effect as scroll, resetting later nodes
 
 ## Semi important
-- [ ] convert all apostrophes to same
+- [ ] return exact matches, this can be done inside the smithwaterman function
+- [ ] convert all apostrophes to same, this can be done inside the smithwaterman function
 - [ ] implement strict max string size at MPD level
 - [ ] ROBUST NONBLOCK flag handling for mac
 - [ ] set max size for memory
