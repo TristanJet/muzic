@@ -16,6 +16,8 @@ const unic = std.unicode;
 const log = @import("util.zig").log;
 
 const alloc = @import("allocators.zig");
+const stringLowerBuf1 = alloc.ptrLower1;
+const stringLowerBuf2 = alloc.ptrLower2;
 const wrkallocator = alloc.wrkallocator;
 const ArrayList = std.ArrayList;
 
@@ -149,8 +151,8 @@ pub const Data = struct {
         if (song_data == null) song_data = try mpd.listAllData(songDataAlloc);
         const songs = try mpd.getAllSongs(persistentAlloc, song_data.?);
 
-        // Sort songs alphabetically
-        try sortSongsLex(songs);
+        // Sort songs alphabetically in lower-case
+        sortSongsLex(songs);
 
         var titles = try persistentAlloc.alloc([]const u8, songs.len);
         for (songs, 0..) |song, i| {
@@ -179,12 +181,12 @@ pub const Data = struct {
     }
 
     fn initAlbums(self: *Data, persistentAllocator: mem.Allocator, tempAllocator: mem.Allocator) !void {
-        self.albums = try mpd.getAllAlbums(persistentAllocator, tempAllocator);
-        if (self.albums) |albums| {
-            const lower = try persistentAllocator.alloc([]u16, albums.len);
-            try getUpperIndices(albums, lower, persistentAllocator);
-            self.albums_lower = lower;
-        }
+        const albums = try mpd.getAllAlbums(persistentAllocator, tempAllocator);
+        sortStringsLex(albums);
+        self.albums = albums;
+        const lower = try persistentAllocator.alloc([]u16, albums.len);
+        try getUpperIndices(albums, lower, persistentAllocator);
+        self.albums_lower = lower;
         if (self.artists_init) {
             _ = alloc.respArena.reset(.free_all);
         } else {
@@ -202,12 +204,12 @@ pub const Data = struct {
     }
 
     fn initArtists(self: *Data, persistentAllocator: mem.Allocator, tempAllocator: mem.Allocator) !void {
-        self.artists = try mpd.getAllArtists(persistentAllocator, tempAllocator);
-        if (self.artists) |artists| {
-            const lower = try persistentAllocator.alloc([]u16, artists.len);
-            try getUpperIndices(artists, lower, persistentAllocator);
-            self.artists_lower = lower;
-        }
+        const artists = try mpd.getAllArtists(persistentAllocator, tempAllocator);
+        sortStringsLex(artists);
+        self.artists = artists;
+        const lower = try persistentAllocator.alloc([]u16, artists.len);
+        try getUpperIndices(artists, lower, persistentAllocator);
+        self.artists_lower = lower;
         if (self.albums_init) {
             _ = alloc.respArena.reset(.free_all);
         } else {
@@ -277,11 +279,12 @@ pub fn fastLowerString(str: []const u8, uppers: []const u16, buf: []u8) []const 
     return buf[0..str.len];
 }
 // Helper function to sort songs alphabetically
-fn sortSongsLex(songs: []mpd.SongStringAndUri) !void {
-    // Define a custom context for sorting based on song titles
+fn sortSongsLex(songs: []mpd.SongStringAndUri) void {
     const SortContext = struct {
         pub fn lessThan(_: @This(), a: mpd.SongStringAndUri, b: mpd.SongStringAndUri) bool {
-            return std.mem.lessThan(u8, a.string, b.string);
+            const alower: []const u8 = ascii.lowerString(stringLowerBuf1, a.string);
+            const blower: []const u8 = ascii.lowerString(stringLowerBuf2, b.string);
+            return mem.lessThan(u8, alower, blower);
         }
     };
 
@@ -289,11 +292,24 @@ fn sortSongsLex(songs: []mpd.SongStringAndUri) !void {
     std.sort.block(mpd.SongStringAndUri, songs, SortContext{}, SortContext.lessThan);
 }
 
+fn sortStringsLex(strings: [][]const u8) void {
+    const SortContext = struct {
+        pub fn lessThan(_: @This(), a: []const u8, b: []const u8) bool {
+            const alower: []const u8 = ascii.lowerString(stringLowerBuf1, a);
+            const blower: []const u8 = ascii.lowerString(stringLowerBuf2, b);
+            return mem.lessThan(u8, alower, blower);
+        }
+    };
+
+    // Sort songs using block sort
+    std.sort.block([]const u8, strings, SortContext{}, SortContext.lessThan);
+}
+
 pub const Column_Type = enum {
-    Select,
-    Artists,
     Albums,
+    Artists,
     Tracks,
+    Select,
     None,
 };
 
@@ -352,7 +368,7 @@ pub const BrowseNode = struct {
     }
 };
 
-const NodeApex = enum {
+pub const NodeApex = enum {
     Albums,
     Artists,
     Tracks,

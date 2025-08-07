@@ -567,7 +567,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
             if (node.type == .Select) return;
             app.input_state = .typing_browse;
             const curr_col = app.col_arr.getCurrent();
-            // try switchToTyping(curr_col);
+            try switchToTyping(node.type, node_buffer.apex, curr_col, mpd_data, &app.search_sample_str);
             curr_col.render(render_state);
             curr_col.clearCursor(render_state);
         },
@@ -581,6 +581,39 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
             try browserHandleSpace(alloc.typingAllocator, curr_col.absolutePos(), mpd_data);
         },
         else => return,
+    }
+}
+
+fn switchToTyping(
+    node_type: state.Column_Type,
+    apex: state.NodeApex,
+    col: *const state.BrowseColumn,
+    data: *const state.Data,
+    search_sample: *algo.SearchSample([]const u8),
+) !void {
+    // This is a very fragile solution
+    if (@intFromEnum(apex) == @intFromEnum(node_type)) {
+        var set: []const []const u8 = undefined;
+        var uppers: []const []const u16 = undefined;
+        switch (apex) {
+            .Albums => {
+                set = data.albums orelse return;
+                uppers = data.albums_lower orelse return;
+            },
+            .Artists => {
+                set = data.artists orelse return;
+                uppers = data.artists_lower orelse return;
+            },
+            .Tracks => {
+                set = data.song_titles orelse return;
+                uppers = data.songs_lower orelse return;
+            },
+            else => unreachable,
+        }
+        try search_sample.update(set, uppers);
+    } else {
+        const disp = col.displaying orelse return error.NoDisplaying;
+        try search_sample.update(disp, null);
     }
 }
 
@@ -709,19 +742,15 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
         else => {
             app.typing_buffer.append(char) catch return;
             const current = app.col_arr.getCurrent();
-            // const displaying = current.displaying orelse return;
+            const displaying = current.displaying orelse return;
             browse_typed = true;
-            // const best_match: ?[]const u8 = try algo.stringBestMatch(
-            //     alloc.typingAllocator,
-            //     app.typing_buffer.typed,
-            //     &search_strings,
-            // );
-            // if (best_match) |best| {
-            //     util.log("best match: {s}", .{best});
-            //     const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
-            //     const index = findStringIndex(best, displaying, compare_type);
-            //     if (index) |unwrap| moveToIndex(unwrap, current, displaying, window.panels.find.validArea().ylen);
-            // }
+            const best_match: ?[]const u8 = try algo.stringBestMatch(app.typing_buffer.typed, &app.search_sample_str);
+            if (best_match) |best| {
+                util.log("best match: {s}", .{best});
+                const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
+                const index = findStringIndex(best, app.search_sample_str.set, app.search_sample_str.uppers, compare_type) orelse return error.NotFound;
+                moveToIndex(index, current, displaying, window.panels.find.validArea().ylen);
+            }
             current.renderCursor(render_state);
             current.render(render_state);
             render_state.find = true;

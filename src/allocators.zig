@@ -4,6 +4,13 @@ pub var wrkbuf: [4096]u8 = undefined;
 pub var wrkfba = std.heap.FixedBufferAllocator.init(&wrkbuf);
 pub const wrkallocator = wrkfba.allocator();
 
+var stringLowerBuf1: [512]u8 = undefined;
+var stringLowerBuf2: [512]u8 = undefined;
+var inputLowerBuf: [32]u8 = undefined;
+pub const ptrInput: *[32]u8 = &inputLowerBuf;
+pub const ptrLower1: *[512]u8 = &stringLowerBuf1;
+pub const ptrLower2: *[512]u8 = &stringLowerBuf2;
+
 pub var respArena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 pub const respAllocator: std.mem.Allocator = respArena.allocator();
 

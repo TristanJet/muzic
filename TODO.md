@@ -1,14 +1,22 @@
 # muzic
 
 ## TO 1.0 !!!!!!!!!!
-I, Tristan Lay, will not sleep tomorrow until 1.0 is shipped!
+---I, Tristan Lay, will not sleep tomorrow until 1.0 is shipped!---
+
+I, Tristan Lay will ship 1.0 on the 5th of August or else I am a **faggot** and a *loser* and I will never become a great man and I will never marry a gorgeous woman.
+
+7th. Today is the day.
+
 - [ ] fix search
-    - [ ] algoirthm fix, EXETER failing best match
-    - [ ] capitalisation in browser search
+    - [x] browser search
+    - [x] capitalisation in browser search
+    - [x] rewrite algorithm - no longer uses allocator
 - [ ] remove indefinite dynamic allocation in queue (memory leak)
+    - [ ] circular buffer
 - [ ] typing in higher column should have same effect as scroll, resetting later nodes
 
 ## Semi important
+- [ ] convert all apostrophes to same
 - [ ] implement strict max string size at MPD level
 - [ ] ROBUST NONBLOCK flag handling for mac
 - [ ] set max size for memory
@@ -20,6 +28,7 @@ I, Tristan Lay, will not sleep tomorrow until 1.0 is shipped!
 - [ ] handle no mp3 tags?
 
 ## Bugs/fixes
+- [ ] better error handling, I should only run the search algorithms IF there is a valid search set right, so its not the responsibility of algorithm to return error over that
 - [ ] flashing in queue
 - [ ] check reading terminal input, why do I read one byte at a time??
 - [ ] render highlight granular on typing find

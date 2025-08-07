@@ -5,6 +5,12 @@ const math = std.math;
 const mem = std.mem;
 var logtty: fs.File = undefined;
 var logger: fs.File.Writer = undefined;
+const state = @import("state.zig");
+const alloc = @import("allocators.zig");
+const lowerBuf1: *[512]u8 = alloc.ptrLower1;
+const lowerBuf2: *[512]u8 = alloc.ptrLower2;
+const SearchSample = @import("algo.zig").SearchSample;
+const ascii = std.ascii;
 //macos tty: /dev/ttys001
 
 pub fn loggerInit() !void {
@@ -36,26 +42,69 @@ pub const CompareType = enum {
     linear,
 };
 
-fn linearFind(key: []const u8, items: []const []const u8) ?usize {
+fn linearFind(context: S, items: []const []const u8) ?usize {
     for (items, 0..) |item, i| {
-        if (mem.eql(u8, key, item)) return i;
+        var lowerItem: []const u8 = undefined;
+        if (context.uppers) |uppers| {
+            lowerItem = state.fastLowerString(item, uppers[i], context.lowerBuf);
+        } else {
+            lowerItem = ascii.lowerString(context.lowerBuf, item);
+        }
+        if (mem.eql(u8, context.key, lowerItem)) return i;
     }
     return null;
 }
+
 const S = struct {
-    fn compareStrings(key: []const u8, mid_item: []const u8) math.Order {
-        return std.mem.order(u8, key, mid_item);
-    }
+    key: []const u8,
+    uppers: ?[]const []const u16,
+    lowerBuf: []u8,
 };
 
+fn compareStrings(context: S, mid_item: []const u8, index: usize) math.Order {
+    var lowerItem: []const u8 = undefined;
+    if (context.uppers) |uppers| {
+        lowerItem = state.fastLowerString(mid_item, uppers[index], context.lowerBuf);
+    } else {
+        lowerItem = ascii.lowerString(context.lowerBuf, lowerItem);
+    }
+    const order = std.mem.order(u8, context.key, lowerItem);
+    log("key: {s}", .{context.key});
+    log("item: {s}", .{lowerItem});
+    log("{}", .{order});
+    return order;
+}
+
+fn binarySearch(
+    comptime T: type,
+    items: []const T,
+    context: anytype,
+    comptime compareFn: fn (@TypeOf(context), T, usize) std.math.Order,
+) ?usize {
+    var low: usize = 0;
+    var high: usize = items.len;
+
+    while (low < high) {
+        // Avoid overflowing in the midpoint calculation
+        const mid = low + (high - low) / 2;
+        switch (compareFn(context, items[mid], mid)) {
+            .eq => return mid,
+            .gt => low = mid + 1,
+            .lt => high = mid,
+        }
+    }
+    return null;
+}
 // Binary search for a string in a sorted slice of strings
 pub fn findStringIndex(
     key: []const u8,
     items: []const []const u8,
+    uppers: ?[]const []const u16,
     compare_type: CompareType,
 ) ?usize {
+    const lowerKey: []const u8 = ascii.lowerString(lowerBuf1, key);
     return switch (compare_type) {
-        .binary => std.sort.binarySearch([]const u8, items, key, S.compareStrings),
-        .linear => linearFind(key, items),
+        .binary => binarySearch([]const u8, items, S{ .key = lowerKey, .uppers = uppers, .lowerBuf = lowerBuf2 }, compareStrings),
+        .linear => linearFind(S{ .key = lowerKey, .uppers = uppers, .lowerBuf = lowerBuf2 }, items),
     };
 }

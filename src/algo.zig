@@ -2,7 +2,11 @@ const std = @import("std");
 const mpd = @import("mpdclient.zig");
 const util = @import("util.zig");
 const fastLowerString = @import("state.zig").fastLowerString;
-const persistentAllocator = @import("allocators.zig").persistentAllocator;
+const alloc = @import("allocators.zig");
+const persistentAllocator = alloc.persistentAllocator;
+const inputLowerBuf = alloc.ptrInput;
+const stringLowerBuf1 = alloc.ptrLower1;
+const stringLowerBuf2 = alloc.ptrLower2;
 const log = util.log;
 const assert = std.debug.assert;
 const ascii = std.ascii;
@@ -15,7 +19,7 @@ pub fn SearchSample(comptime T: type) type {
 
         indices: ArrayList(usize),
         set: []const T,
-        uppers: []const []const u16,
+        uppers: ?[]const []const u16,
 
         pub fn init(allocator: mem.Allocator) Self {
             return Self{
@@ -25,14 +29,18 @@ pub fn SearchSample(comptime T: type) type {
             };
         }
 
-        pub fn update(self: *Self, set: []const T, uppers: []const []const u16) !void {
+        pub fn update(self: *Self, set: []const T, uppers: ?[]const []const u16) !void {
             try self.indices.ensureTotalCapacity(set.len);
             self.indices.items.len = set.len;
             for (0..set.len) |i| {
                 self.indices.items[i] = i;
             }
             self.set = set;
-            self.uppers = uppers;
+            if (uppers) |upp| {
+                self.uppers = upp;
+            } else {
+                self.uppers = null;
+            }
         }
 
         fn itemFromI(self: *const Self, j: usize) !T {
@@ -43,12 +51,13 @@ pub fn SearchSample(comptime T: type) type {
             }
         }
 
-        fn upperFromI(self: *const Self, j: usize) ![]const u16 {
-            if (j < self.indices.items.len) {
-                return self.uppers[self.indices.items[j]];
-            } else {
-                return error.BadIndex;
+        pub fn upperFromI(self: *const Self, j: usize) ![]const u16 {
+            if (self.uppers) |uppers| {
+                if (j < self.indices.items.len) {
+                    return uppers[self.indices.items[j]];
+                }
             }
+            return error.BadIndex;
         }
     };
 }
@@ -57,9 +66,6 @@ var result_su = ArrayList(mpd.SongStringAndUri).init(persistentAllocator);
 var scoredSongs: ArrayList(ScoredStringAndUri) = undefined;
 
 var nRanked: usize = undefined;
-
-var inputLowerBuf: [32]u8 = undefined;
-var stringLowerBuf: [512]u8 = undefined;
 
 const match_score: i8 = 2;
 const mismatch_penalty: i8 = -1;
@@ -99,7 +105,7 @@ pub fn suTopNranked(
     search_sample: *SearchSample(mpd.SongStringAndUri),
 ) AlgoError!?[]const mpd.SongStringAndUri {
     scoredSongs.shrinkRetainingCapacity(0);
-    const inputLower = ascii.lowerString(&inputLowerBuf, input);
+    const inputLower = ascii.lowerString(inputLowerBuf, input);
     if (inputLower.len == 1) return suContained(inputLower[0], search_sample);
 
     var matrix = Matrix.init(inputLower.len);
@@ -112,7 +118,7 @@ pub fn suTopNranked(
                 return e;
             }
         };
-        const stringLower = fastLowerString(item.string, try search_sample.upperFromI(i), &stringLowerBuf);
+        const stringLower = fastLowerString(item.string, try search_sample.upperFromI(i), stringLowerBuf1);
         const score = calculateScore(inputLower, stringLower, &matrix);
         if (score >= inputLower.len) {
             try scoredSongs.append(.{ .song = item, .score = score });
@@ -150,7 +156,7 @@ fn suContained(
                 return e;
             }
         };
-        const stringLower = fastLowerString(item.string, try search_sample.upperFromI(i), &stringLowerBuf);
+        const stringLower = fastLowerString(item.string, try search_sample.upperFromI(i), stringLowerBuf1);
         if (mem.indexOfScalar(u8, stringLower, input) == null) {
             _ = search_sample.indices.orderedRemove(i);
             continue;
@@ -170,7 +176,7 @@ pub fn stringBestMatch(
     input: []const u8,
     search_sample: *SearchSample([]const u8),
 ) !?[]const u8 {
-    const inputLower = ascii.lowerString(&inputLowerBuf, input);
+    const inputLower = ascii.lowerString(inputLowerBuf, input);
     if (inputLower.len == 1) {
         return try stringContained(input[0], search_sample);
     }
@@ -180,11 +186,16 @@ pub fn stringBestMatch(
     var matrix = Matrix.init(inputLower.len);
     var i: usize = 0;
     while (i < search_sample.indices.items.len) {
-        const item = fastLowerString(try search_sample.itemFromI(i), try search_sample.upperFromI(i), &stringLowerBuf);
+        var item: []const u8 = undefined;
+        if (search_sample.uppers) |_| {
+            item = fastLowerString(try search_sample.itemFromI(i), try search_sample.upperFromI(i), stringLowerBuf1);
+        } else {
+            item = ascii.lowerString(stringLowerBuf1, try search_sample.itemFromI(i));
+        }
         const score = calculateScore(inputLower, item, &matrix);
         if (score >= inputLower.len) {
             if (score > highestScore) {
-                best_match = item;
+                best_match = try search_sample.itemFromI(i);
                 highestScore = score;
             }
         } else {
@@ -198,7 +209,7 @@ pub fn stringBestMatch(
 
 fn stringContained(
     input: u8,
-    search_sample: SearchSample([]const u8),
+    search_sample: *SearchSample([]const u8),
 ) !?[]const u8 {
     var i: usize = 0;
     while (i < search_sample.indices.items.len) {
@@ -209,7 +220,12 @@ fn stringContained(
                 return e;
             }
         };
-        const stringLower = fastLowerString(item, try search_sample.upperFromI(i), &stringLowerBuf);
+        var stringLower: []const u8 = undefined;
+        if (search_sample.uppers) |_| {
+            stringLower = fastLowerString(item, try search_sample.upperFromI(i), stringLowerBuf1);
+        } else {
+            stringLower = ascii.lowerString(stringLowerBuf1, item);
+        }
         if (mem.indexOfScalar(u8, stringLower, input) == null) {
             _ = search_sample.indices.orderedRemove(i);
             continue;
