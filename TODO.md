@@ -7,7 +7,7 @@ I, Tristan Lay will ship 1.0 on the 5th of August or else I am a **faggot** and 
 
 7th. Today is the day.
 
-- [ ] fix search
+- [x] fix search
     - [x] browser search
     - [x] capitalisation in browser search
     - [x] rewrite algorithm - no longer uses allocator
