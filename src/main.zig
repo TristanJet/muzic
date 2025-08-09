@@ -25,11 +25,6 @@ const target_frame_time_ms = 1000 / target_fps;
 
 var initial_song: mpd.CurrentSong = undefined;
 var initial_typing: state.TypingBuffer = undefined;
-var initial_queue: mpd.Queue = .{
-    .allocator = alloc.persistentAllocator,
-    .array = ArrayList(mpd.QSong).init(alloc.persistentAllocator),
-    .items = undefined,
-};
 
 const wrkallocator = alloc.wrkallocator;
 const wrkfba = &alloc.wrkfba;
@@ -89,9 +84,9 @@ pub fn main() !void {
     initial_song.init();
     try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &initial_song);
     try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &initial_song);
-    try mpd.getQueue(alloc.respAllocator, &initial_queue);
+    var top_queue: mpd.Queue = try mpd.Queue.init(null, alloc.topQueue);
+    try mpd.getQueue(alloc.respAllocator, alloc.persistentAllocator, &top_queue);
     _ = alloc.respArena.reset(.free_all);
-    initial_queue.items = initial_queue.getItems();
 
     initial_typing.init();
 
@@ -125,7 +120,7 @@ pub fn main() !void {
 
         .last_ping = time.milliTimestamp(),
 
-        .queue = initial_queue,
+        .queue = top_queue,
         .scroll_q = state.QueueScroll{
             .pos = 0,
             .prev_pos = 0,

@@ -36,6 +36,8 @@ pub const MpdError = error{
     NoSongs,
 };
 
+const BufferFull = error.BufferFull;
+
 /// Common function to handle setting string values in a fixed buffer
 fn setStringValue(buffer: []u8, value: []const u8, max_len: usize) ![]const u8 {
     if (value.len > max_len) {
@@ -310,90 +312,185 @@ pub fn getCurrentSong(
 }
 
 pub const Queue = struct {
-    const MAX_LEN = 64;
+    top: Qframe,
+    rest: ?Qring,
 
-    allocator: mem.Allocator,
-    array: ArrayList(QSong),
-    items: []QSong,
-
-    pub fn append(self: *Queue, song: QSong) !void {
-        var duped_title: ?[]const u8 = null;
-        var duped_artist: ?[]const u8 = null;
-
-        if (song.title) |title| {
-            const slice = if (title.len > MAX_LEN) title[0..MAX_LEN] else title;
-            duped_title = try self.allocator.dupe(u8, slice);
-        }
-        if (song.artist) |artist| {
-            const slice = if (artist.len > MAX_LEN) artist[0..MAX_LEN] else artist;
-            duped_artist = try self.allocator.dupe(u8, slice);
-        }
-
-        try self.array.append(.{
-            .title = duped_title,
-            .artist = duped_artist,
-            .time = song.time,
-            .pos = song.pos,
-            .id = song.id,
-        });
+    fn init(framebuf: *[Qframe.NSONGS]QSong, songbuf: *[Qframe.NSONGS * Qframe.STR_BUF_SIZE]u8) Queue {
+        const frame = Qframe.init(null, framebuf, songbuf) catch unreachable;
+        return Queue{
+            .top = frame,
+            .rest = null,
+        };
     }
 
-    pub fn getItems(self: *const Queue) []QSong {
-        return self.array.items;
+    fn initRing(self: *Queue, allocator: mem.Allocator) !void {
+        self.rest = try Qring.init(allocator);
+    }
+};
+
+const Qring = struct {
+    buf: [3]Qframe,
+    wi: u2,
+    ri: u2,
+
+    fn init(allocator: mem.Allocator) !Qring {
+        var buf: [3]Qframe = undefined;
+        for (0..buf.len) |i| {
+            buf[i] = try Qframe.init(allocator, null, null);
+        }
+        return Qring{
+            .buf = buf,
+            .wi = 0,
+            .ri = 0,
+        };
+    }
+};
+
+pub const Qframe = struct {
+    pub const NSONGS = 8;
+    const STR_BUF_SIZE = 2 * QSong.MAX_LEN;
+    fbuf: []QSong,
+    added: usize,
+    strbuf: []u8,
+    fba: std.heap.FixedBufferAllocator,
+
+    pub fn init(allocator: ?mem.Allocator, framebuffer: ?*[NSONGS]QSong, songbuffer: ?*[NSONGS * STR_BUF_SIZE]u8) !Qframe {
+        var fbuf: []QSong = undefined;
+        var strbuf: []u8 = undefined;
+        if (allocator) |a| {
+            fbuf = try a.alloc(QSong, NSONGS);
+            strbuf = try a.alloc(u8, (NSONGS * STR_BUF_SIZE));
+        } else if (framebuffer) |fb| {
+            fbuf = fb;
+            if (songbuffer) |sb| {
+                strbuf = sb;
+            } else return error.NoBuffer;
+        } else return error.NoBuffer;
+        return Qframe{
+            .fbuf = fbuf,
+            .added = 0,
+            .strbuf = strbuf,
+            .fba = std.heap.FixedBufferAllocator.init(strbuf),
+        };
+    }
+
+    fn getItems(self: *Qframe) []const QSong {
+        return self.fbuf[0..self.added];
     }
 };
 
 pub const QSong = struct {
+    const MAX_LEN = 64;
     title: ?[]const u8,
     artist: ?[]const u8,
-    time: u16,
-    pos: usize,
-    id: usize,
+    time: ?u16,
+    pos: ?usize,
+    id: ?usize,
 };
 
-pub fn getQueue(respAllocator: mem.Allocator, queue: *Queue) !void {
+test "queue" {
+    const alloc = @import("allocators.zig");
+    const respAllocator = alloc.respAllocator;
+    const persistentAllocator = alloc.persistentAllocator;
+
+    try connect(.command, false);
+
+    var fbuf: [Qframe.NSONGS]QSong = undefined;
+    var sbuf: [(Qframe.NSONGS * Qframe.STR_BUF_SIZE)]u8 = undefined;
+    var queue = Queue.init(&fbuf, &sbuf);
+    try fillQueue(respAllocator, persistentAllocator, &queue);
+    for (queue.top.getItems()) |item| {
+        if (item.title) |title| {
+            std.debug.print("TITLE: {s}\n", .{title});
+        }
+    }
+    for (queue.rest.?.buf[0].getItems()) |item| {
+        if (item.title) |title| {
+            std.debug.print("TITLE: {s}\n", .{title});
+        }
+    }
+    for (queue.rest.?.buf[1].getItems()) |item| {
+        if (item.title) |title| {
+            std.debug.print("TITLE: {s}\n", .{title});
+        }
+    }
+}
+
+fn fillQueue(respAllocator: mem.Allocator, persistentAllocator: mem.Allocator, queue: *Queue) !void {
+    const queuelen = try getPlaylistLen(respAllocator);
+    std.debug.print("{}\n", .{queuelen});
+    const nFrame = queuelen / Qframe.NSONGS;
+    std.debug.print("{}\n", .{nFrame});
+    if (nFrame > 0) try queue.initRing(persistentAllocator);
     const command = "playlistinfo\n";
     const data = try readLargeResponse(respAllocator, command);
     var lines = processLargeResponse(data) catch |err| switch (err) {
         error.NoSongs => return,
         else => return err,
     };
+    queue.top.added = try fillFrame(&lines, queue.top.fbuf, queue.top.fba.allocator());
+    for (1..nFrame + 1) |n| {
+        var frame: *Qframe = &queue.rest.?.buf[n - 1];
+        frame.added = try fillFrame(&lines, frame.fbuf, frame.fba.allocator());
+        std.debug.print("added: {}\n", .{frame.added});
+    }
+}
 
+fn getPlaylistLen(respAllocator: mem.Allocator) !usize {
+    const command = "status\n";
+    const data = try readLargeResponse(respAllocator, command);
+    var lines = try processLargeResponse(data);
+    while (lines.next()) |line| {
+        if (mem.startsWith(u8, line, "playlistlength:")) {
+            const slice = mem.trimLeft(u8, line[15..], " ");
+            return try fmt.parseUnsigned(usize, slice, 10);
+        }
+    }
+    return error.NoLength;
+}
+
+pub fn fillFrame(lines: *mem.SplitIterator(u8, .scalar), output: []QSong, allocator: mem.Allocator) !usize {
+    var added: u8 = 0;
     var current: ?QSong = null;
     while (lines.next()) |line| {
         if (line.len == 0) continue;
-        if (std.mem.startsWith(u8, line, "file:")) {
-            // If there's a current song, add it to the list
+        if (mem.startsWith(u8, line, "file:")) {
             if (current) |song| {
-                try queue.append(song);
+                output[added] = song;
+                added += 1;
             }
             current = QSong{
-                .title = null,
                 .artist = null,
-                .time = undefined,
-                .pos = undefined,
-                .id = undefined,
+                .title = null,
+                .id = null,
+                .pos = null,
+                .time = null,
             };
         } else if (current != null) {
             // Parse key-value pairs for the current song
-            if (std.mem.startsWith(u8, line, "Title:")) {
-                current.?.title = std.mem.trimLeft(u8, line[6..], " ");
+            if (mem.startsWith(u8, line, "Title:")) {
+                const title = mem.trimLeft(u8, line[6..], " ");
+                const copied = try allocator.dupe(u8, title);
+                current.?.title = copied;
             } else if (std.mem.startsWith(u8, line, "Artist:")) {
-                current.?.artist = std.mem.trimLeft(u8, line[7..], " ");
+                const artist = mem.trimLeft(u8, line[7..], " ");
+                const copied = try allocator.dupe(u8, artist);
+                current.?.artist = copied;
             } else if (std.mem.startsWith(u8, line, "Time:")) {
-                const time_str = std.mem.trimLeft(u8, line[5..], " ");
+                const time_str = mem.trimLeft(u8, line[5..], " ");
                 current.?.time = try std.fmt.parseInt(u16, time_str, 10);
             } else if (std.mem.startsWith(u8, line, "Pos:")) {
-                const pos_str = std.mem.trimLeft(u8, line[4..], " ");
-                current.?.pos = try std.fmt.parseInt(u8, pos_str, 10);
+                const pos_str = mem.trimLeft(u8, line[4..], " ");
+                current.?.pos = try fmt.parseInt(u8, pos_str, 10);
             } else if (std.mem.startsWith(u8, line, "Id:")) {
                 const id_str = std.mem.trimLeft(u8, line[3..], " ");
-                current.?.id = try std.fmt.parseInt(usize, id_str, 10);
+                current.?.id = try fmt.parseInt(usize, id_str, 10);
             }
         }
+        if (added + 1 == Qframe.NSONGS) break;
     }
-    // Add the last song if it exists
-    if (current) |song| try queue.append(song);
+    if (current) |song| output[added] = song;
+    return added + 1;
 }
 
 fn handleTrackTimeField(key: []const u8, value: []const u8, song: *CurrentSong) !void {
