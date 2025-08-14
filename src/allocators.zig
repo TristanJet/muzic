@@ -5,11 +5,11 @@ pub var wrkbuf: [4096]u8 = undefined;
 pub var wrkfba = std.heap.FixedBufferAllocator.init(&wrkbuf);
 pub const wrkallocator = wrkfba.allocator();
 
-var topQueuebuf: [mpd.Queue.BUF_SIZE]mpd.QSong = undefined;
+var queue_str_buf: [mpd.QSong.STR_BUF_SIZE * mpd.Queue.N_SONGS]u8 = undefined;
+pub var queuefba = std.heap.FixedBufferAllocator.init(&queue_str_buf);
 var stringLowerBuf1: [512]u8 = undefined;
 var stringLowerBuf2: [512]u8 = undefined;
 var inputLowerBuf: [32]u8 = undefined;
-pub const topQueue: *[mpd.Queue.BUF_SIZE]mpd.QSong = &topQueuebuf;
 pub const ptrInput: *[32]u8 = &inputLowerBuf;
 pub const ptrLower1: *[512]u8 = &stringLowerBuf1;
 pub const ptrLower2: *[512]u8 = &stringLowerBuf2;

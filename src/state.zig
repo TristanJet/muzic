@@ -875,6 +875,108 @@ pub const BrowseCursorPos = struct {
     prev_pos: u8,
 };
 
+fn RingBuffer(size: comptime_int, T: type) type {
+    return struct {
+        const Self = @This();
+        const TOP = 0;
+        const MID = size / 2;
+        bytes: []T,
+        top: usize,
+        //0, 128
+        bottom: usize,
+        //127, 255
+        fn init(allocator: mem.Allocator, data: *[size]T) !Self {
+            const buf = try allocator.alloc(T, size);
+            @memcpy(buf, data);
+            return .{
+                .bytes = buf,
+                .top = 0,
+                .bottom = @as(usize, 0) -% 1,
+            };
+        }
+
+        fn write(self: *Self, src: *[size / 2]T) void {
+            @memcpy(self.bytes[self.top .. self.top + size / 2], src);
+            self.top +%= (size / 2);
+            self.bottom +%= (size / 2);
+        }
+
+        fn readOne(self: *Self, index: usize) T {
+            debug.assert(index < size);
+            switch (self.top) {
+                MID => {
+                    if (index < size / 2) {
+                        return self.bytes[(size / 2) + index];
+                    } else {
+                        return self.bytes[index - (size / 2)];
+                    }
+                },
+                TOP => {
+                    return self.bytes[index];
+                },
+                else => unreachable,
+            }
+        }
+        //Assumes writes were done correctly
+        fn readSlice(self: *Self, output: []T, index: usize) void {
+            debug.assert(index < size);
+            debug.assert(output.len <= size - index);
+
+            switch (self.top) {
+                MID => {
+                    if (index < size / 2) {
+                        const stop1 = size / 2 - index;
+                        @memcpy(output[0..stop1], self.bytes[self.top + index .. self.top + index + stop1]);
+                        const stop2 = output.len - stop1;
+                        @memcpy(output[stop1..], self.bytes[0..stop2]);
+                    } else {
+                        const start = index - size / 2;
+                        @memcpy(output, self.bytes[start..output.len]);
+                    }
+                },
+                TOP => {
+                    @memcpy(output, self.bytes[index..output.len]);
+                },
+                else => unreachable,
+            }
+        }
+    };
+}
+
+test "ring" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    const allocator = arena.allocator();
+
+    var arr: [64]u8 = .{0} ** 64;
+    var num: u8 = 0;
+    for (&arr) |*x| {
+        x.* = num;
+        num += 1;
+    }
+
+    var ring = try RingBuffer(64, u8).init(allocator, &arr);
+
+    var arr2: [32]u8 = .{0} ** 32;
+    num = 64;
+    for (&arr2) |*x| {
+        x.* = num;
+        num += 1;
+    }
+
+    ring.write(&arr2);
+    for (ring.bytes, 0..) |b, i| {
+        debug.print("val {}: {}\n", .{ i, b });
+    }
+
+    ring.readSlice(&arr2, 0);
+    debug.print("--------------\n", .{});
+    for (arr2) |x| {
+        debug.print("arr val: {}\n", .{x});
+    }
+
+    debug.print("val: {}\n", .{ring.readOne(61)});
+}
+
 fn handleTime(time_: i64, app: *State, _render_state: *RenderState(n_browse_columns)) !void {
     updateElapsed(time_, app, app, _render_state);
     try ping(time_, app);
