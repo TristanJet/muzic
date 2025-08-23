@@ -877,28 +877,38 @@ pub const BrowseCursorPos = struct {
 
 fn RingBuffer(size: comptime_int, T: type) type {
     return struct {
+        const t = switch (size) {
+            8 => u3,
+            128 => u7,
+            256 => u8,
+            else => unreachable,
+        };
         const Self = @This();
         const TOP = 0;
         const MID = size / 2;
         bytes: []T,
-        top: usize,
-        //0, 128
-        bottom: usize,
-        //127, 255
-        fn init(allocator: mem.Allocator, data: *[size]T) !Self {
+        top: t,
+        bottom: t,
+        initfill: u2,
+
+        fn init(allocator: mem.Allocator) !Self {
             const buf = try allocator.alloc(T, size);
-            @memcpy(buf, data);
             return .{
                 .bytes = buf,
                 .top = 0,
-                .bottom = @as(usize, 0) -% 1,
+                .bottom = @as(t, 0) -% 1,
+                .initfill = 0,
             };
         }
 
-        fn write(self: *Self, src: *[size / 2]T) void {
-            @memcpy(self.bytes[self.top .. self.top + size / 2], src);
-            self.top +%= (size / 2);
-            self.bottom +%= (size / 2);
+        fn write(self: *Self, src: *[MID]T) void {
+            @memcpy(self.bytes[self.top .. @as(usize, self.top) + MID], src);
+            if (self.initfill == 2) {
+                self.bottom +%= MID;
+            } else {
+                self.initfill += 1;
+            }
+            self.top +%= MID;
         }
 
         fn readOne(self: *Self, index: usize) T {
@@ -921,6 +931,7 @@ fn RingBuffer(size: comptime_int, T: type) type {
         fn readSlice(self: *Self, output: []T, index: usize) void {
             debug.assert(index < size);
             debug.assert(output.len <= size - index);
+            debug.print("TOP: {}", .{self.top});
 
             switch (self.top) {
                 MID => {
@@ -935,7 +946,7 @@ fn RingBuffer(size: comptime_int, T: type) type {
                     }
                 },
                 TOP => {
-                    @memcpy(output, self.bytes[index..output.len]);
+                    @memcpy(output, self.bytes[index .. index + output.len]);
                 },
                 else => unreachable,
             }
@@ -947,34 +958,68 @@ test "ring" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     const allocator = arena.allocator();
 
+    var ring = try RingBuffer(128, u8).init(allocator);
+
+    var out: [10]u8 = .{0} ** 10;
     var arr: [64]u8 = .{0} ** 64;
     var num: u8 = 0;
     for (&arr) |*x| {
         x.* = num;
         num += 1;
     }
+    ring.write(&arr);
 
-    var ring = try RingBuffer(64, u8).init(allocator, &arr);
-
-    var arr2: [32]u8 = .{0} ** 32;
     num = 64;
-    for (&arr2) |*x| {
+    for (&arr) |*x| {
         x.* = num;
         num += 1;
     }
+    ring.write(&arr);
 
-    ring.write(&arr2);
-    for (ring.bytes, 0..) |b, i| {
-        debug.print("val {}: {}\n", .{ i, b });
-    }
-
-    ring.readSlice(&arr2, 0);
+    var output: [128]u8 = .{0} ** 128;
+    ring.readSlice(&output, 0);
     debug.print("--------------\n", .{});
-    for (arr2) |x| {
+    for (output) |x| {
         debug.print("arr val: {}\n", .{x});
     }
 
-    debug.print("val: {}\n", .{ring.readOne(61)});
+    num = 128;
+    for (&arr) |*x| {
+        x.* = num;
+        num += 1;
+    }
+    ring.write(&arr);
+
+    ring.readSlice(&output, 0);
+    debug.print("--------------\n", .{});
+    for (output) |x| {
+        debug.print("arr val: {}\n", .{x});
+    }
+
+    ring.readSlice(&out, 60);
+    debug.print("--------------\n", .{});
+    for (out) |x| {
+        debug.print("arr val: {}\n", .{x});
+    }
+
+    num = 192;
+    for (&arr) |*x| {
+        x.* = num;
+        num +%= 1;
+    }
+    ring.write(&arr);
+
+    ring.readSlice(&output, 0);
+    debug.print("--------------\n", .{});
+    for (output) |x| {
+        debug.print("arr val: {}\n", .{x});
+    }
+
+    ring.readSlice(&out, 60);
+    debug.print("--------------\n", .{});
+    for (out) |x| {
+        debug.print("arr val: {}\n", .{x});
+    }
 }
 
 fn handleTime(time_: i64, app: *State, _render_state: *RenderState(n_browse_columns)) !void {
