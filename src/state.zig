@@ -22,6 +22,7 @@ const wrkallocator = alloc.wrkallocator;
 const ArrayList = std.ArrayList;
 
 pub const n_browse_columns: u4 = 3;
+pub const RingBufSize = 128;
 
 pub const State = struct {
     quit: bool,
@@ -38,6 +39,8 @@ pub const State = struct {
 
     queue: mpd.Queue,
     scroll_q: QueueScroll,
+    // songbuf: RingBuffer(RingBufSize, mpd.QSong),
+    // strbuf: RingBuffer(RingBufSize * mpd.QSong.STR_BUF_SIZE, u8),
     prev_id: usize,
 
     typing_buffer: TypingBuffer,
@@ -875,80 +878,59 @@ pub const BrowseCursorPos = struct {
     prev_pos: u8,
 };
 
-fn RingBuffer(size: comptime_int, T: type) type {
+fn Ring(size: usize, T: type) type {
     return struct {
-        const t = switch (size) {
-            8 => u3,
-            128 => u7,
-            256 => u8,
-            else => unreachable,
-        };
         const Self = @This();
-        const TOP = 0;
-        const MID = size / 2;
-        bytes: []T,
-        top: t,
-        bottom: t,
-        initfill: u2,
+        buf: []T,
+        first: usize,
+        stop: usize,
+        fill: usize,
 
         fn init(allocator: mem.Allocator) !Self {
-            const buf = try allocator.alloc(T, size);
             return .{
-                .bytes = buf,
-                .top = 0,
-                .bottom = @as(t, 0) -% 1,
-                .initfill = 0,
+                .buf = try allocator.alloc(T, size),
+                .first = 0,
+                .stop = 0,
+                .fill = 0,
             };
         }
 
-        fn write(self: *Self, src: *[MID]T) void {
-            @memcpy(self.bytes[self.top .. @as(usize, self.top) + MID], src);
-            if (self.initfill == 2) {
-                self.bottom +%= MID;
+        fn forwardWrite(self: *Self, src: []const T) void {
+            debug.assert(src.len <= size);
+            const rest = size - self.stop;
+            if (src.len <= rest) {
+                @memcpy(self.buf[self.stop .. self.stop + src.len], src);
             } else {
-                self.initfill += 1;
+                @memcpy(self.buf[self.stop..size], src[0..rest]);
+                @memcpy(self.buf[0 .. src.len - rest], src[rest..]);
             }
-            self.top +%= MID;
-        }
+            self.stop = (self.stop + src.len) % size;
 
-        fn readOne(self: *Self, index: usize) T {
-            debug.assert(index < size);
-            switch (self.top) {
-                MID => {
-                    if (index < size / 2) {
-                        return self.bytes[(size / 2) + index];
-                    } else {
-                        return self.bytes[index - (size / 2)];
-                    }
-                },
-                TOP => {
-                    return self.bytes[index];
-                },
-                else => unreachable,
+            self.fill += src.len;
+            if (self.fill > size) {
+                self.first = (self.first + (self.fill - size)) % size;
+                self.fill = size;
             }
         }
-        //Assumes writes were done correctly
-        fn readSlice(self: *Self, output: []T, index: usize) void {
-            debug.assert(index < size);
-            debug.assert(output.len <= size - index);
-            debug.print("TOP: {}", .{self.top});
 
-            switch (self.top) {
-                MID => {
-                    if (index < size / 2) {
-                        const stop1 = size / 2 - index;
-                        @memcpy(output[0..stop1], self.bytes[self.top + index .. self.top + index + stop1]);
-                        const stop2 = output.len - stop1;
-                        @memcpy(output[stop1..], self.bytes[0..stop2]);
-                    } else {
-                        const start = index - size / 2;
-                        @memcpy(output, self.bytes[start..output.len]);
-                    }
-                },
-                TOP => {
-                    @memcpy(output, self.bytes[index .. index + output.len]);
-                },
-                else => unreachable,
+        fn backwardWrite(self: *Self, src: []const T) void {
+            debug.assert(src.len <= size);
+            const start: usize = (self.first + size - src.len) % size;
+            if (src.len <= self.first) {
+                @memcpy(self.buf[start..self.first], src);
+            } else {
+                const tail_len = size - start;
+                @memcpy(self.buf[start..size], src[0..tail_len]);
+                const head_len = src.len - tail_len;
+                @memcpy(self.buf[0..head_len], src[tail_len..]);
+            }
+            self.first = start;
+
+            self.fill += src.len;
+            if (self.fill > size) {
+                const overflow = self.fill - size;
+                self.stop = (self.stop + size - overflow) % size;
+                self.fill = size;
             }
         }
     };
@@ -958,67 +940,30 @@ test "ring" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     const allocator = arena.allocator();
 
-    var ring = try RingBuffer(128, u8).init(allocator);
-
-    var out: [10]u8 = .{0} ** 10;
-    var arr: [64]u8 = .{0} ** 64;
-    var num: u8 = 0;
-    for (&arr) |*x| {
-        x.* = num;
-        num += 1;
+    var arr: [8]u8 = undefined;
+    for (0..8) |i| {
+        const cast: u8 = @intCast(i);
+        arr[i] = cast;
     }
-    ring.write(&arr);
+    var ring = try Ring(8, u8).init(allocator);
 
-    num = 64;
-    for (&arr) |*x| {
-        x.* = num;
-        num += 1;
-    }
-    ring.write(&arr);
+    ring.forwardWrite(arr[0..]);
 
-    var output: [128]u8 = .{0} ** 128;
-    ring.readSlice(&output, 0);
-    debug.print("--------------\n", .{});
-    for (output) |x| {
-        debug.print("arr val: {}\n", .{x});
+    debug.print("---------------\n", .{});
+    for (ring.buf) |x| {
+        debug.print("Val: {}\n", .{x});
     }
 
-    num = 128;
-    for (&arr) |*x| {
-        x.* = num;
-        num += 1;
-    }
-    ring.write(&arr);
-
-    ring.readSlice(&output, 0);
-    debug.print("--------------\n", .{});
-    for (output) |x| {
-        debug.print("arr val: {}\n", .{x});
+    for (0..4) |i| {
+        const cast: u8 = @intCast(i + 3);
+        arr[i] = cast;
     }
 
-    ring.readSlice(&out, 60);
-    debug.print("--------------\n", .{});
-    for (out) |x| {
-        debug.print("arr val: {}\n", .{x});
-    }
+    ring.backwardWrite(arr[0..4]);
 
-    num = 192;
-    for (&arr) |*x| {
-        x.* = num;
-        num +%= 1;
-    }
-    ring.write(&arr);
-
-    ring.readSlice(&output, 0);
-    debug.print("--------------\n", .{});
-    for (output) |x| {
-        debug.print("arr val: {}\n", .{x});
-    }
-
-    ring.readSlice(&out, 60);
-    debug.print("--------------\n", .{});
-    for (out) |x| {
-        debug.print("arr val: {}\n", .{x});
+    debug.print("---------------\n", .{});
+    for (ring.buf) |x| {
+        debug.print("Val: {}\n", .{x});
     }
 }
 

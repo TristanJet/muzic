@@ -342,7 +342,6 @@ pub const Queue = struct {
 pub const QSong = struct {
     pub const STR_BUF_SIZE = 2 * MAX_LEN;
     const MAX_LEN = 64;
-    var allocator: mem.Allocator = @import("allocators.zig").queuefba.allocator();
     title: ?[]const u8,
     artist: ?[]const u8,
     time: ?u16,
@@ -363,18 +362,17 @@ fn getPlaylistLen(respAllocator: mem.Allocator) !usize {
     return error.NoLength;
 }
 
-// pub fn fillFrame(lines: *mem.SplitIterator(u8, .scalar), start: usize, ns: usize, frame: *Qframe) !usize {
-//     const allocator = frame.fba.allocator();
+// pub fn getQueue(lines: *mem.SplitIterator(u8, .scalar), index: usize, out: []*const QSong) !usize {
 //     var current: ?QSong = null;
 //     var added: usize = 0;
-//     var nsongs: usize = ns;
+//     var nsongs: usize = 0;
 //     while (lines.next()) |line| {
 //         if (line.len == 0) continue;
 //         if (mem.startsWith(u8, line, "file:")) {
 //             std.debug.print("nsongs: {}\n", .{nsongs});
 //             std.debug.print("added: {}\n", .{added});
 //             nsongs += 1;
-//             if (nsongs < start) continue;
+//             if (nsongs < index) continue;
 //             if (current) |song| {
 //                 frame.fbuf[added] = song;
 //                 added += 1;
@@ -413,7 +411,7 @@ fn getPlaylistLen(respAllocator: mem.Allocator) !usize {
 //     frame.added = added + 1;
 //     return nsongs;
 // }
-//
+
 fn handleTrackTimeField(key: []const u8, value: []const u8, song: *CurrentSong) !void {
     if (mem.eql(u8, key, "time")) {
         try song.handleField(key, value);
