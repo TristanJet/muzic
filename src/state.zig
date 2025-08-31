@@ -885,13 +885,16 @@ fn Ring(size: usize, T: type) type {
         first: usize,
         stop: usize,
         fill: usize,
+        items: Iterator(T),
 
         fn init(allocator: mem.Allocator) !Self {
+            const buf = try allocator.alloc(T, size);
             return .{
-                .buf = try allocator.alloc(T, size),
+                .buf = buf,
                 .first = 0,
                 .stop = 0,
                 .fill = 0,
+                .items = Iterator(T).init(buf.ptr, size),
             };
         }
 
@@ -911,6 +914,9 @@ fn Ring(size: usize, T: type) type {
                 self.first = (self.first + (self.fill - size)) % size;
                 self.fill = size;
             }
+
+            self.items.index = self.first;
+            self.items.remaining = self.fill;
         }
 
         fn backwardWrite(self: *Self, src: []const T) void {
@@ -932,6 +938,36 @@ fn Ring(size: usize, T: type) type {
                 self.stop = (self.stop + size - overflow) % size;
                 self.fill = size;
             }
+
+            self.items.index = self.first;
+            self.items.remaining = self.fill;
+        }
+    };
+}
+
+fn Iterator(T: type) type {
+    return struct {
+        const Self = @This();
+        buf: [*]const T,
+        index: usize,
+        remaining: usize,
+        size: usize,
+
+        fn init(buf: [*]const T, size: usize) Self {
+            return .{
+                .buf = buf,
+                .index = 0,
+                .remaining = 0,
+                .size = size,
+            };
+        }
+
+        fn next(self: *Self) ?T {
+            if (self.remaining == 0) return null;
+            const value = self.buf[self.index];
+            self.index = (self.index + 1) % self.size;
+            self.remaining -= 1;
+            return value;
         }
     };
 }
@@ -955,15 +991,20 @@ test "ring" {
     }
 
     for (0..4) |i| {
-        const cast: u8 = @intCast(i + 3);
-        arr[i] = cast;
+        arr[i] = 69;
     }
 
-    ring.backwardWrite(arr[0..4]);
+    ring.forwardWrite(arr[0..4]);
 
     debug.print("---------------\n", .{});
     for (ring.buf) |x| {
         debug.print("Val: {}\n", .{x});
+    }
+
+    debug.print("---------------\n", .{});
+    debug.print("Ordered\n", .{});
+    while (ring.items.next()) |item| {
+        debug.print("Val: {}\n", .{item});
     }
 }
 
