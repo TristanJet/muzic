@@ -130,7 +130,7 @@ pub fn StrBuffer(size: usize, max_str: usize) type {
 
         //Return an iterator based on the current state of the ring
         //Incrementing or changing the ring will make this iterator invalid
-        fn getIterator(self: *Self) Iterator {
+        pub fn getIterator(self: *Self) Iterator {
             return Iterator{
                 .buf = self.buf.ptr,
                 .index = self.ring.first,
