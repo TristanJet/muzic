@@ -2,7 +2,7 @@ const std = @import("std");
 const mem = std.mem;
 const debug = std.debug;
 
-const Ring = struct {
+pub const Ring = struct {
     size: usize,
     first: usize,
     stop: usize,
@@ -33,23 +33,17 @@ pub fn Buffer(size: usize, T: type) type {
     return struct {
         const Self = @This();
         buf: []T,
-        ring: *const Ring,
 
-        pub fn init(allocator: mem.Allocator, ring: *const Ring) !Self {
-            debug.assert(ring.size == size);
-            const buf = try allocator.alloc(T, size);
-            return .{
-                .buf = buf,
-                .ring = ring,
-            };
+        pub fn init(allocator: mem.Allocator) !Self {
+            return .{ .buf = try allocator.alloc(T, size) };
         }
 
-        pub fn forwardWrite(self: *Self, src: T) void {
-            self.buf[self.ring.stop] = src;
+        pub fn forwardWrite(self: *Self, ring: Ring, src: T) void {
+            self.buf[ring.stop] = src;
         }
 
-        pub fn backwardWrite(self: *Self, src: T) void {
-            const start: usize = (self.ring.first + self.ring.size - 1) % self.ring.size;
+        pub fn backwardWrite(self: *Self, ring: Ring, src: T) void {
+            const start: usize = (ring.first + ring.size - 1) % ring.size;
             self.buf[start] = src;
         }
 
@@ -69,11 +63,11 @@ pub fn Buffer(size: usize, T: type) type {
 
         //Return an iterator based on the current state of the ring
         //Incrementing or changing the ring will make this iterator invalid
-        pub fn getIterator(self: *Self) Iterator {
+        pub fn getIterator(self: *Self, ring: Ring) Iterator {
             return Iterator{
                 .buf = self.buf.ptr,
-                .index = self.ring.first,
-                .remaining = self.ring.fill,
+                .index = ring.first,
+                .remaining = ring.fill,
             };
         }
     };
@@ -84,24 +78,18 @@ pub fn StrBuffer(size: usize, max_str: usize) type {
     return struct {
         const Self = @This();
         buf: []T,
-        ring: *const Ring,
 
-        pub fn init(allocator: mem.Allocator, ring: *const Ring) !Self {
-            debug.assert(ring.size == size);
-            const buf = try allocator.alloc(T, size);
-            return .{
-                .buf = buf,
-                .ring = ring,
-            };
+        pub fn init(allocator: mem.Allocator) !Self {
+            return .{ .buf = try allocator.alloc(T, size) };
         }
 
-        pub fn forwardWrite(self: *Self, src: []const u8) []const u8 {
-            const str = copyString(&self.buf[self.ring.stop], src);
+        pub fn forwardWrite(self: *Self, ring: Ring, src: []const u8) []const u8 {
+            const str = copyString(&self.buf[ring.stop], src);
             return str;
         }
 
-        pub fn backwardWrite(self: *Self, src: []const u8) []const u8 {
-            const start: usize = (self.ring.first + self.ring.size - 1) % size;
+        pub fn backwardWrite(self: *Self, ring: Ring, src: []const u8) []const u8 {
+            const start: usize = (ring.first + ring.size - 1) % size;
             const str = copyString(&self.buf[start], src);
             return str;
         }
@@ -130,11 +118,11 @@ pub fn StrBuffer(size: usize, max_str: usize) type {
 
         //Return an iterator based on the current state of the ring
         //Incrementing or changing the ring will make this iterator invalid
-        pub fn getIterator(self: *Self) Iterator {
+        pub fn getIterator(self: *Self, ring: Ring) Iterator {
             return Iterator{
                 .buf = self.buf.ptr,
-                .index = self.ring.first,
-                .remaining = self.ring.fill,
+                .index = ring.first,
+                .remaining = ring.fill,
             };
         }
     };
@@ -151,8 +139,8 @@ test "ring" {
         .stop = 0,
         .fill = 0,
     };
-    var intbuf = try Buffer(size, u8).init(allocator, &ring);
-    var strbuf = try StrBuffer(size, 32).init(allocator, &ring);
+    var intbuf = try Buffer(size, u8).init(allocator);
+    var strbuf = try StrBuffer(size, 32).init(allocator);
 
     const arr: [4][]const u8 = .{ "Tristan", "Mikael", "Jet", "Lay" };
 
@@ -161,17 +149,17 @@ test "ring" {
         i += 1;
         ring.increment();
     }) {
-        intbuf.forwardWrite(i);
-        _ = strbuf.forwardWrite(arr[i]);
+        intbuf.forwardWrite(ring, i);
+        _ = strbuf.forwardWrite(ring, arr[i]);
     }
 
     debug.print("-----------\n", .{});
-    var itint = intbuf.getIterator();
+    var itint = intbuf.getIterator(ring);
     while (itint.next()) |item| {
         debug.print("{}\n", .{item});
     }
 
-    var itstr = strbuf.getIterator();
+    var itstr = strbuf.getIterator(ring);
     debug.print("-----------\n", .{});
     while (itstr.next()) |item| {
         debug.print("{s}\n", .{item});

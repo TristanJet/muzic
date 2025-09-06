@@ -1,6 +1,8 @@
 const std = @import("std");
 const util = @import("util.zig");
 const state = @import("state.zig");
+const ring = @import("ring.zig");
+const Ring = ring.Ring;
 const Idle = state.Idle;
 const Event = state.Event;
 const log = util.log;
@@ -312,25 +314,65 @@ pub fn getCurrentSong(
 }
 
 pub const Queue = struct {
-    pub const N_SONGS = 256;
-    pub const ADD_SIZE = N_SONGS / 2;
+    pub const NSONGS = 8;
+    pub const ADD_SIZE = NSONGS / 2;
     playlist_len: usize,
     ibufferstart: usize,
     itopviewport: usize,
     nviewable: usize,
+    song_it: SongIterator,
+    //query based on indes
+    ring: Ring,
+    songbuf: ring.Buffer(NSONGS, QSong),
+    artistbuf: ring.StrBuffer(NSONGS, QSong.MAXLEN),
+    titlebuf: ring.StrBuffer(NSONGS, QSong.MAXLEN),
+
+    pub fn init(respAllocator: mem.Allocator, persAllocator: mem.Allocator, nviewable: usize) !Queue {
+        const buf = try fetchQueueBuf(respAllocator);
+        var song_it = SongIterator{
+            .buffer = buf,
+            .index = 0,
+            .ireverse = buf.len,
+        };
+
+        var r = Ring{
+            .first = 0,
+            .stop = 0,
+            .fill = 0,
+            .size = NSONGS,
+        };
+        var songbuf = try ring.Buffer(NSONGS, QSong).init(persAllocator);
+        var artistbuf = try ring.StrBuffer(NSONGS, QSong.MAXLEN).init(persAllocator);
+        var titlebuf = try ring.StrBuffer(NSONGS, QSong.MAXLEN).init(persAllocator);
+
+        try fillQueue(&song_it, .forward, &r, &songbuf, &titlebuf, &artistbuf, NSONGS);
+
+        return Queue{
+            .playlist_len = try getPlaylistLen(respAllocator),
+            .ibufferstart = 0,
+            .itopviewport = 0,
+            .nviewable = nviewable,
+            .song_it = song_it,
+            .ring = r,
+            .songbuf = songbuf,
+            .artistbuf = artistbuf,
+            .titlebuf = titlebuf,
+        };
+    }
 
     pub fn scroll(self: *Queue, dir: enum { up, down }) void {
         switch (dir) {
             .down => {
+                if (self.itopviewport == self.playlist_len - 1) return;
                 self.itopviewport += 1;
-                if (self.itopviewport > self.ibufferstart + N_SONGS) {
+                if (self.itopviewport + self.nviewable > self.ibufferstart + NSONGS) {
                     self.ibufferstart += ADD_SIZE;
-                    //write forwards
                 }
             },
             .up => {
+                if (self.itopviewport == 0) return;
                 self.itopviewport -= 1;
-                if (self.itopviewport < self.ibufferstart and self.itopviewport > 0) {
+                if (self.itopviewport < self.ibufferstart) {
                     self.ibufferstart -= ADD_SIZE;
                     //write backwards
                 }
@@ -340,8 +382,7 @@ pub const Queue = struct {
 };
 
 pub const QSong = struct {
-    pub const STR_BUF_SIZE = 2 * MAX_LEN;
-    const MAX_LEN = 64;
+    pub const MAXLEN = 64;
     title: ?[]const u8,
     artist: ?[]const u8,
     time: ?u16,
@@ -362,55 +403,239 @@ fn getPlaylistLen(respAllocator: mem.Allocator) !usize {
     return error.NoLength;
 }
 
-// pub fn getQueue(lines: *mem.SplitIterator(u8, .scalar), index: usize, out: []*const QSong) !usize {
-//     var current: ?QSong = null;
-//     var added: usize = 0;
-//     var nsongs: usize = 0;
-//     while (lines.next()) |line| {
-//         if (line.len == 0) continue;
-//         if (mem.startsWith(u8, line, "file:")) {
-//             std.debug.print("nsongs: {}\n", .{nsongs});
-//             std.debug.print("added: {}\n", .{added});
-//             nsongs += 1;
-//             if (nsongs < index) continue;
-//             if (current) |song| {
-//                 frame.fbuf[added] = song;
-//                 added += 1;
-//             }
-//             current = QSong{
-//                 .artist = null,
-//                 .title = null,
-//                 .id = null,
-//                 .pos = null,
-//                 .time = null,
-//             };
-//         } else if (current != null) {
-//             // Parse key-value pairs for the current song
-//             if (mem.startsWith(u8, line, "Title:")) {
-//                 const title = mem.trimLeft(u8, line[6..], " ");
-//                 const copied = try allocator.dupe(u8, title);
-//                 current.?.title = copied;
-//             } else if (std.mem.startsWith(u8, line, "Artist:")) {
-//                 const artist = mem.trimLeft(u8, line[7..], " ");
-//                 const copied = try allocator.dupe(u8, artist);
-//                 current.?.artist = copied;
-//             } else if (std.mem.startsWith(u8, line, "Time:")) {
-//                 const time_str = mem.trimLeft(u8, line[5..], " ");
-//                 current.?.time = try std.fmt.parseInt(u16, time_str, 10);
-//             } else if (std.mem.startsWith(u8, line, "Pos:")) {
-//                 const pos_str = mem.trimLeft(u8, line[4..], " ");
-//                 current.?.pos = try fmt.parseInt(u8, pos_str, 10);
-//             } else if (std.mem.startsWith(u8, line, "Id:")) {
-//                 const id_str = std.mem.trimLeft(u8, line[3..], " ");
-//                 current.?.id = try fmt.parseInt(usize, id_str, 10);
-//             }
-//         }
-//         if (added + 1 == Qframe.NSONGS) break;
-//     }
-//     if (current) |song| frame.fbuf[added] = song;
-//     frame.added = added + 1;
-//     return nsongs;
-// }
+//I need to fetch the correct range of songs
+fn fetchQueueBuf(respAllocator: mem.Allocator) ![]const u8 {
+    const command = "playlistinfo\n";
+    return try readLargeResponse(respAllocator, command);
+}
+
+fn fillQueue(
+    songs: *SongIterator,
+    dir: enum { forward, backward },
+    r: *Ring,
+    songbuf: *ring.Buffer(Queue.NSONGS, QSong),
+    titlebuf: *ring.StrBuffer(Queue.NSONGS, QSong.MAXLEN),
+    artistbuf: *ring.StrBuffer(Queue.NSONGS, QSong.MAXLEN),
+    N: usize,
+) !void {
+    var current: QSong = undefined;
+    var lines: mem.SplitIterator(u8, .scalar) = undefined;
+    var next: *const fn (*SongIterator) ?[]const u8 = undefined;
+    var strwrite: *const fn (*ring.StrBuffer(Queue.NSONGS, QSong.MAXLEN), Ring, []const u8) []const u8 = undefined;
+    var songwrite: *const fn (*ring.Buffer(Queue.NSONGS, QSong), Ring, QSong) void = undefined;
+    var ringUpdate: *const fn (*ring.Ring) void = undefined;
+    switch (dir) {
+        .forward => {
+            next = &SongIterator.next;
+            strwrite = &ring.StrBuffer(Queue.NSONGS, QSong.MAXLEN).forwardWrite;
+            songwrite = &ring.Buffer(Queue.NSONGS, QSong).forwardWrite;
+            ringUpdate = &Ring.increment;
+        },
+        .backward => {
+            next = &SongIterator.reverseNext;
+            strwrite = &ring.StrBuffer(Queue.NSONGS, QSong.MAXLEN).backwardWrite;
+            songwrite = &ring.Buffer(Queue.NSONGS, QSong).backwardWrite;
+            ringUpdate = &Ring.decrement;
+        },
+    }
+    var added: usize = 0;
+    while (next(songs)) |song| : ({
+        ringUpdate(r);
+        added += 1;
+    }) {
+        lines = mem.splitScalar(u8, song, '\n');
+        while (lines.next()) |line| {
+            if (mem.startsWith(u8, line, "Title:")) {
+                const title = mem.trimLeft(u8, line[6..], " ");
+                const copied = strwrite(titlebuf, r.*, title);
+                current.title = copied;
+            } else if (mem.startsWith(u8, line, "Artist:")) {
+                const artist = mem.trimLeft(u8, line[7..], " ");
+                const copied = strwrite(artistbuf, r.*, artist);
+                current.artist = copied;
+            } else if (mem.startsWith(u8, line, "Time:")) {
+                const time_str = mem.trimLeft(u8, line[5..], " ");
+                current.time = try std.fmt.parseInt(u16, time_str, 10);
+            } else if (mem.startsWith(u8, line, "Pos:")) {
+                const pos_str = mem.trimLeft(u8, line[4..], " ");
+                current.pos = try fmt.parseInt(u8, pos_str, 10);
+            } else if (mem.startsWith(u8, line, "Id:")) {
+                const id_str = mem.trimLeft(u8, line[3..], " ");
+                current.id = try fmt.parseInt(usize, id_str, 10);
+            }
+        }
+        songwrite(songbuf, r.*, current);
+        if (added == N) break;
+    }
+}
+
+const string =
+    \\file: TWICEcoaster： LANE1/TT - TWICE - TWICEcoaster： LANE1.mp3
+    \\Last-Modified: 2025-04-13T16:43:41Z
+    \\Added: 2025-01-17T14:11:13Z
+    \\Format: 48000:16:2
+    \\Artist: TWICE
+    \\Title: TT
+    \\Album: TWICEcoaster : LANE1
+    \\Track: 1
+    \\Time: 213
+    \\duration: 212.990
+    \\Pos: 0
+    \\Id: 28
+    \\file: Rodeo/3500 - Travis Scott, Future, 2 Chainz - Rodeo.mp3
+    \\Last-Modified: 2025-04-13T16:43:25Z
+    \\Added: 2025-01-17T14:11:15Z
+    \\Format: 48000:16:2
+    \\Artist: Travis Scott feat. Future & 2 Chainz
+    \\Title: 3500
+    \\Album: Rodeo
+    \\Track: 3
+    \\Time: 462
+    \\duration: 461.840
+    \\Pos: 1
+    \\Id: 29
+    \\file: Thriller/Thriller - Michael Jackson - Thriller.mp3
+    \\Last-Modified: 2025-04-13T16:43:31Z
+    \\Added: 2025-01-17T14:11:13Z
+    \\Format: 48000:16:2
+    \\Artist: Michael Jackson
+    \\Title: Thriller
+    \\Album: Thriller
+    \\Track: 4
+    \\Time: 358
+    \\duration: 357.753
+    \\Pos: 2
+    \\Id: 30
+    \\file: 21/Someone Like You - Adele - 21.mp3
+    \\Last-Modified: 2025-04-13T16:43:42Z
+    \\Added: 2025-01-17T14:11:20Z
+    \\Format: 48000:16:2
+    \\Artist: Adele
+    \\Title: Someone Like You
+    \\Album: 21
+    \\Track: 11
+    \\Time: 285
+    \\duration: 285.240
+    \\Pos: 3
+    \\Id: 31
+    \\file: Lust For Life/Lust For Life - Lana Del Rey, The Weeknd - Lust For Life.mp3
+    \\Last-Modified: 2025-04-13T16:43:17Z
+    \\Added: 2025-01-17T14:11:17Z
+    \\Format: 48000:16:2
+    \\Artist: Lana Del Rey & The Weeknd
+    \\Title: Lust for Life
+    \\Album: Lust for Life
+    \\Track: 2
+    \\Time: 264
+    \\duration: 264.066
+    \\Pos: 4
+    \\Id: 32
+    \\file: evermore/ivy - Taylor Swift - evermore.mp3
+    \\Last-Modified: 2025-04-13T16:43:38Z
+    \\Added: 2025-01-17T14:11:12Z
+    \\Format: 48000:16:2
+    \\Artist: Taylor Swift
+    \\Title: ivy
+    \\Album: evermore
+    \\Track: 10
+    \\Time: 260
+    \\duration: 260.440
+    \\Pos: 5
+    \\Id: 33
+    \\file: A Night To Remember/A Night To Remember - beabadoobee, Laufey - A Night To Remember.mp3
+    \\Last-Modified: 2025-04-13T16:43:26Z
+    \\Added: 2025-01-17T14:11:20Z
+    \\Format: 48000:16:2
+    \\Artist: beabadoobee & Laufey
+    \\Title: A Night to Remember
+    \\Album: A Night to Remember
+    \\Track: 1
+    \\Time: 233
+    \\duration: 233.388
+    \\Pos: 6
+    \\Id: 34
+    \\file: Aute Cuture/Aute Cuture - ROSALÍA - Aute Cuture.mp3
+    \\Last-Modified: 2025-04-13T16:43:43Z
+    \\Added: 2025-01-17T14:11:20Z
+    \\Format: 48000:16:2
+    \\Artist: ROSALÍA
+    \\Title: Aute cuture
+    \\Album: Aute cuture
+    \\Track: 1
+    \\Time: 148
+    \\duration: 147.626
+    \\Pos: 7
+    \\Id: 35
+    \\file: Broke with Expensive Taste/Luxury - Azealia Banks - Broke with Expensive Taste.mp3
+    \\Last-Modified: 2025-04-13T16:43:20Z
+    \\Added: 2025-01-17T14:11:19Z
+    \\Format: 48000:16:2
+    \\Artist: Azealia Banks
+    \\Title: Luxury
+    \\Album: Broke With Expensive Taste
+    \\Track: 13
+    \\Time: 168
+    \\duration: 168.096
+    \\Pos: 8
+    \\Id: 36
+    \\file: Because the Internet/3005 - Childish Gambino, Donald Glover - Because the Internet.mp3
+    \\Last-Modified: 2025-04-13T16:43:28Z
+    \\Added: 2025-01-17T14:11:20Z
+    \\Format: 48000:16:2
+    \\Artist: Childish Gambino
+    \\Title: V. 3005
+    \\Album: Because the Internet
+    \\Track: 9
+    \\Time: 234
+    \\duration: 234.215
+    \\Pos: 9
+    \\Id: 37
+    \\file: Red (Taylor's Version)/I Knew You Were Trouble (Taylor's Version) - Taylor Swift - Red (Taylor's Version).mp3
+    \\Last-Modified: 2025-04-13T16:43:39Z
+    \\Added: 2025-01-17T14:11:15Z
+    \\Format: 48000:16:2
+    \\Artist: Taylor Swift
+    \\Title: I Knew You Were Trouble (Taylor’s version)
+    \\Album: Red (Taylor’s version)
+    \\Track: 4
+    \\Time: 220
+    \\duration: 219.762
+    \\Pos: 10
+    \\Id: 38
+;
+test "fill" {
+    var heapArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer heapArena.deinit();
+    const heapAllocator = heapArena.allocator();
+
+    var respArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer respArena.deinit();
+    const respAllocator = respArena.allocator();
+
+    try connect(.command, false);
+
+    var queue = try Queue.init(respAllocator, heapAllocator, 4);
+    // _ = respArena.reset(.free_all);
+    debug.print("------------\n", .{});
+    var it = queue.titlebuf.getIterator(queue.ring);
+    while (it.next()) |item| {
+        debug.print("{s}\n", .{item});
+    }
+
+    debug.print("------------\n", .{});
+    for (queue.titlebuf.buf) |*buf| {
+        const ptr: [*:0]const u8 = @ptrCast(buf);
+        const str = mem.span(ptr);
+        debug.print("{s}\n", .{str});
+    }
+
+    try fillQueue(&queue.song_it, .backward, &queue.ring, &queue.songbuf, &queue.titlebuf, &queue.artistbuf, 4);
+    debug.print("------------\n", .{});
+    it = queue.titlebuf.getIterator(queue.ring);
+    while (it.next()) |item| {
+        debug.print("{s}\n", .{item});
+    }
+}
 
 fn handleTrackTimeField(key: []const u8, value: []const u8, song: *CurrentSong) !void {
     if (mem.eql(u8, key, "time")) {
@@ -478,10 +703,50 @@ pub fn readLargeResponse(tempAllocator: mem.Allocator, command: []const u8) MpdE
     return try list.toOwnedSlice();
 }
 
-fn processLargeResponse(data: []const u8) MpdError!mem.SplitIterator(u8, .scalar) {
-    if (mem.startsWith(u8, data, "ACK")) return MpdError.InvalidResponse;
-    if (mem.startsWith(u8, data, "OK")) return MpdError.NoSongs;
-    return mem.splitScalar(u8, data, '\n');
+const SongIterator = struct {
+    buffer: []const u8,
+    index: usize,
+    ireverse: usize,
+
+    pub fn next(self: *SongIterator) ?[]const u8 {
+        if (self.index >= self.buffer.len) return null;
+
+        // On first call, locate the start of the initial "file:" to skip headers.
+        if (self.index == 0) {
+            self.index = mem.indexOf(u8, self.buffer, "file:") orelse return null;
+        }
+
+        const start = self.index;
+        // Search for the next "\nfile:" starting after the current "file:".
+        const delim_pos = mem.indexOfPos(u8, self.buffer, start + 5, "\nfile:") orelse self.buffer.len;
+        const song = self.buffer[start..delim_pos];
+        // Advance to the start of the next "file:" (skip the '\n').
+        self.index = delim_pos + 1;
+        return song;
+    }
+
+    pub fn reverseNext(self: *SongIterator) ?[]const u8 {
+        if (self.ireverse == 0) return null;
+
+        const slice = self.buffer[0..self.ireverse];
+        const pos = mem.lastIndexOf(u8, slice, "file:") orelse return null;
+
+        const song = self.buffer[pos..self.ireverse];
+
+        if (pos == 0) {
+            self.ireverse = 0;
+        } else {
+            self.ireverse = pos - 1;
+        }
+
+        return song;
+    }
+};
+
+fn processLargeResponse(bytes: []const u8) MpdError!mem.SplitIterator(u8, .scalar) {
+    if (mem.startsWith(u8, bytes, "ACK")) return MpdError.InvalidResponse;
+    if (mem.startsWith(u8, bytes, "OK")) return MpdError.NoSongs;
+    return mem.splitScalar(u8, bytes, '\n');
 }
 
 fn getAllType(data_type: []const u8, heapAllocator: mem.Allocator, respAllocator: std.mem.Allocator) ![][]const u8 {
