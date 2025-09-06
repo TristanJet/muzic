@@ -2,32 +2,32 @@ const std = @import("std");
 const mem = std.mem;
 const debug = std.debug;
 
-const Ring = @This();
+const Ring = struct {
+    size: usize,
+    first: usize,
+    stop: usize,
+    fill: usize,
 
-size: usize,
-first: usize,
-stop: usize,
-fill: usize,
+    pub fn increment(self: *Ring) void {
+        self.stop = (self.stop + 1) % self.size;
 
-pub fn increment(self: *Ring) void {
-    self.stop = (self.stop + 1) % self.size;
-
-    self.fill += 1;
-    if (self.fill > self.size) {
-        self.first = self.stop;
-        self.fill = self.size;
+        self.fill += 1;
+        if (self.fill > self.size) {
+            self.first = self.stop;
+            self.fill = self.size;
+        }
     }
-}
-pub fn decrement(self: *Ring) void {
-    const start: usize = (self.first + self.size - 1) % self.size;
-    self.first = start;
+    pub fn decrement(self: *Ring) void {
+        const start: usize = (self.first + self.size - 1) % self.size;
+        self.first = start;
 
-    self.fill += 1;
-    if (self.fill > self.size) {
-        self.stop = self.first;
-        self.fill = self.size;
+        self.fill += 1;
+        if (self.fill > self.size) {
+            self.stop = self.first;
+            self.fill = self.size;
+        }
     }
-}
+};
 
 pub fn Buffer(size: usize, T: type) type {
     return struct {
