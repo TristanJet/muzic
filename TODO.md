@@ -12,8 +12,8 @@ I, Tristan Lay will ship 1.0 on the 5th of August or else I am a **faggot** and 
     - [x] capitalisation in browser search
     - [x] rewrite algorithm - no longer uses allocator
 - [ ] remove indefinite dynamic allocation in queue (memory leak)
-    - [ ] Queue returns an array of pointers
-    - [ ] circular buffer
+    - [x] circular buffer
+    - [ ] bring out the increment of the ring
 - [ ] typing in higher column should have same effect as scroll, resetting later nodes
 
 ## Semi important

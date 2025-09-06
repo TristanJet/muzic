@@ -2,14 +2,56 @@ const std = @import("std");
 const mem = std.mem;
 const debug = std.debug;
 
-fn Buffer(size: usize, T: type) type {
+const Ring = @This();
+
+size: usize,
+first: usize,
+stop: usize,
+fill: usize,
+
+pub fn increment(self: *Ring) void {
+    self.stop = (self.stop + 1) % self.size;
+
+    self.fill += 1;
+    if (self.fill > self.size) {
+        self.first = self.stop;
+        self.fill = self.size;
+    }
+}
+pub fn decrement(self: *Ring) void {
+    const start: usize = (self.first + self.size - 1) % self.size;
+    self.first = start;
+
+    self.fill += 1;
+    if (self.fill > self.size) {
+        self.stop = self.first;
+        self.fill = self.size;
+    }
+}
+
+pub fn Buffer(size: usize, T: type) type {
     return struct {
         const Self = @This();
         buf: []T,
-        first: usize,
-        stop: usize,
-        fill: usize,
-        items: Iterator,
+        ring: *const Ring,
+
+        pub fn init(allocator: mem.Allocator, ring: *const Ring) !Self {
+            debug.assert(ring.size == size);
+            const buf = try allocator.alloc(T, size);
+            return .{
+                .buf = buf,
+                .ring = ring,
+            };
+        }
+
+        pub fn forwardWrite(self: *Self, src: T) void {
+            self.buf[self.ring.stop] = src;
+        }
+
+        pub fn backwardWrite(self: *Self, src: T) void {
+            const start: usize = (self.ring.first + self.ring.size - 1) % self.ring.size;
+            self.buf[start] = src;
+        }
 
         const Iterator = struct {
             buf: [*]const T,
@@ -25,77 +67,51 @@ fn Buffer(size: usize, T: type) type {
             }
         };
 
-        fn init(allocator: mem.Allocator) !Self {
-            const buf = try allocator.alloc(T, size);
-            return .{
-                .buf = buf,
-                .first = 0,
-                .stop = 0,
-                .fill = 0,
-                .items = Iterator{
-                    .buf = buf.ptr,
-                    .index = 0,
-                    .remaining = 0,
-                },
+        //Return an iterator based on the current state of the ring
+        //Incrementing or changing the ring will make this iterator invalid
+        pub fn getIterator(self: *Self) Iterator {
+            return Iterator{
+                .buf = self.buf.ptr,
+                .index = self.ring.first,
+                .remaining = self.ring.fill,
             };
-        }
-
-        fn forwardWrite(self: *Self, src: []const T) void {
-            debug.assert(src.len <= size);
-            const rest = size - self.stop;
-            if (src.len <= rest) {
-                @memcpy(self.buf[self.stop .. self.stop + src.len], src);
-            } else {
-                @memcpy(self.buf[self.stop..size], src[0..rest]);
-                @memcpy(self.buf[0 .. src.len - rest], src[rest..]);
-            }
-            self.stop = (self.stop + src.len) % size;
-
-            self.fill += src.len;
-            if (self.fill > size) {
-                self.first = (self.first + (self.fill - size)) % size;
-                self.fill = size;
-            }
-
-            self.items.index = self.first;
-            self.items.remaining = self.fill;
-        }
-
-        fn backwardWrite(self: *Self, src: []const T) void {
-            debug.assert(src.len <= size);
-            const start: usize = (self.first + size - src.len) % size;
-            if (src.len <= self.first) {
-                @memcpy(self.buf[start..self.first], src);
-            } else {
-                const tail_len = size - start;
-                @memcpy(self.buf[start..size], src[0..tail_len]);
-                const head_len = src.len - tail_len;
-                @memcpy(self.buf[0..head_len], src[tail_len..]);
-            }
-            self.first = start;
-
-            self.fill += src.len;
-            if (self.fill > size) {
-                const overflow = self.fill - size;
-                self.stop = (self.stop + size - overflow) % size;
-                self.fill = size;
-            }
-
-            self.items.index = self.first;
-            self.items.remaining = self.fill;
         }
     };
 }
 
-fn StrBuffer(size: usize, max_str: usize) type {
-    const T = [32:0]u8;
+pub fn StrBuffer(size: usize, max_str: usize) type {
+    const T = [max_str:0]u8;
     return struct {
         const Self = @This();
         buf: []T,
-        first: usize,
-        stop: usize,
-        fill: usize,
-        items: Iterator,
+        ring: *const Ring,
+
+        pub fn init(allocator: mem.Allocator, ring: *const Ring) !Self {
+            debug.assert(ring.size == size);
+            const buf = try allocator.alloc(T, size);
+            return .{
+                .buf = buf,
+                .ring = ring,
+            };
+        }
+
+        pub fn forwardWrite(self: *Self, src: []const u8) []const u8 {
+            const str = copyString(&self.buf[self.ring.stop], src);
+            return str;
+        }
+
+        pub fn backwardWrite(self: *Self, src: []const u8) []const u8 {
+            const start: usize = (self.ring.first + self.ring.size - 1) % size;
+            const str = copyString(&self.buf[start], src);
+            return str;
+        }
+
+        fn copyString(dest: *T, str: []const u8) []const u8 {
+            const end: usize = if (str.len < max_str) str.len else max_str;
+            @memcpy(dest[0..end], str[0..end]);
+            dest[end] = 0; // Null-terminate.
+            return dest[0..end];
+        }
 
         const Iterator = struct {
             buf: [*]const T,
@@ -112,87 +128,14 @@ fn StrBuffer(size: usize, max_str: usize) type {
             }
         };
 
-        pub fn init(allocator: mem.Allocator) !Self {
-            const buf = try allocator.alloc(T, size);
-            return .{
-                .buf = buf,
-                .first = 0,
-                .stop = 0,
-                .fill = 0,
-                .items = Iterator{
-                    .buf = buf.ptr,
-                    .index = 0,
-                    .remaining = 0,
-                },
+        //Return an iterator based on the current state of the ring
+        //Incrementing or changing the ring will make this iterator invalid
+        fn getIterator(self: *Self) Iterator {
+            return Iterator{
+                .buf = self.buf.ptr,
+                .index = self.ring.first,
+                .remaining = self.ring.fill,
             };
-        }
-
-        pub fn forwardWrite(self: *Self, src: []const []const u8) void {
-            debug.assert(src.len <= size);
-            const rest = size - self.stop;
-            var i: usize = 0;
-            if (src.len <= rest) {
-                while (i < src.len) : (i += 1) {
-                    const pos = self.stop + i;
-                    copyString(&self.buf[pos], src[i]);
-                }
-            } else {
-                while (i < rest) : (i += 1) {
-                    const pos = self.stop + i;
-                    copyString(&self.buf[pos], src[i]);
-                }
-                while (i < src.len) : (i += 1) {
-                    copyString(&self.buf[i - rest], src[i]);
-                }
-            }
-            self.stop = (self.stop + src.len) % size;
-
-            self.fill += src.len;
-            if (self.fill > size) {
-                self.first = (self.first + (self.fill - size)) % size;
-                self.fill = size;
-            }
-
-            self.items.index = self.first;
-            self.items.remaining = self.fill;
-        }
-
-        pub fn backwardWrite(self: *Self, src: []const []const u8) void {
-            debug.assert(src.len <= size);
-            const start: usize = (self.first + size - src.len) % size;
-            var i: usize = 0;
-            if (src.len <= self.first) {
-                while (i < src.len) : (i += 1) {
-                    const pos = start + i;
-                    copyString(&self.buf[pos], src[i]);
-                }
-            } else {
-                const tail_len = size - start;
-                while (i < tail_len) : (i += 1) {
-                    const pos = start + i;
-                    copyString(&self.buf[pos], src[i]);
-                }
-                while (i < src.len) : (i += 1) {
-                    copyString(&self.buf[i - tail_len], src[i]);
-                }
-            }
-            self.first = start;
-
-            self.fill += src.len;
-            if (self.fill > size) {
-                const overflow = self.fill - size;
-                self.stop = (self.stop + size - overflow) % size;
-                self.fill = size;
-            }
-
-            self.items.index = self.first;
-            self.items.remaining = self.fill;
-        }
-
-        fn copyString(dest: *T, str: []const u8) void {
-            debug.assert(str.len < max_str); // Reserve space for null terminator.
-            @memcpy(dest[0..str.len], str);
-            dest[str.len] = 0; // Null-terminate.
         }
     };
 }
@@ -201,55 +144,36 @@ test "ring" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     const allocator = arena.allocator();
 
-    var arr: [8]u8 = undefined;
-    for (0..8) |i| {
-        const cast: u8 = @intCast(i);
-        arr[i] = cast;
-    }
-    var ring = try Buffer(8, u8).init(allocator);
+    const size = 4;
+    var ring = Ring{
+        .size = size,
+        .first = 0,
+        .stop = 0,
+        .fill = 0,
+    };
+    var intbuf = try Buffer(size, u8).init(allocator, &ring);
+    var strbuf = try StrBuffer(size, 32).init(allocator, &ring);
 
-    ring.forwardWrite(arr[0..]);
+    const arr: [4][]const u8 = .{ "Tristan", "Mikael", "Jet", "Lay" };
 
-    debug.print("---------------\n", .{});
-    for (ring.buf) |x| {
-        debug.print("Val: {}\n", .{x});
-    }
-
-    for (0..4) |i| {
-        arr[i] = 69;
-    }
-
-    ring.forwardWrite(arr[0..4]);
-
-    debug.print("---------------\n", .{});
-    for (ring.buf) |x| {
-        debug.print("Val: {}\n", .{x});
+    var i: u8 = 0;
+    while (i < ring.size) : ({
+        i += 1;
+        ring.increment();
+    }) {
+        intbuf.forwardWrite(i);
+        _ = strbuf.forwardWrite(arr[i]);
     }
 
-    debug.print("---------------\n", .{});
-    debug.print("Ordered\n", .{});
-    while (ring.items.next()) |item| {
-        debug.print("Val: {}\n", .{item});
+    debug.print("-----------\n", .{});
+    var itint = intbuf.getIterator();
+    while (itint.next()) |item| {
+        debug.print("{}\n", .{item});
     }
-}
 
-test "string ring" {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    const allocator = arena.allocator();
-
-    var ring = try StrBuffer(4, 32).init(allocator);
-
-    ring.forwardWrite(&[_][]const u8{ "Tristan", "Ngan", "Mari" });
-    ring.backwardWrite(&[_][]const u8{"peeppe"});
-    ring.backwardWrite(&[_][]const u8{"Jet"});
-
-    debug.print("---------------\n", .{});
-    while (ring.items.next()) |item| {
-        debug.print("Val: {s}\n", .{item});
-    }
-    ring.forwardWrite(&[_][]const u8{ "Lee", "Harry", "Friedrich" });
-    debug.print("---------------\n", .{});
-    while (ring.items.next()) |item| {
-        debug.print("Val: {s}\n", .{item});
+    var itstr = strbuf.getIterator();
+    debug.print("-----------\n", .{});
+    while (itstr.next()) |item| {
+        debug.print("{s}\n", .{item});
     }
 }
