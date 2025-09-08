@@ -47,14 +47,16 @@ pub fn Buffer(size: usize, T: type) type {
             self.buf[start] = src;
         }
 
-        const Iterator = struct {
+        pub const Iterator = struct {
             buf: [*]const T,
             index: usize,
             remaining: usize,
 
-            pub fn next(self: *Iterator) ?T {
-                if (self.remaining == 0) return null;
-                const value = self.buf[self.index];
+            pub fn next(self: *Iterator, inc: usize) ?T {
+                const index = (self.index + inc) % size;
+                const remaining = @subWithOverflow(self.remaining, inc);
+                if (remaining[1] != 0 or remaining[0] == 0) return null;
+                const value = self.buf[index];
                 self.index = (self.index + 1) % size;
                 self.remaining -= 1;
                 return value;
@@ -101,14 +103,16 @@ pub fn StrBuffer(size: usize, max_str: usize) type {
             return dest[0..end];
         }
 
-        const Iterator = struct {
+        pub const Iterator = struct {
             buf: [*]const T,
             index: usize,
             remaining: usize,
 
-            pub fn next(self: *Iterator) ?[]const u8 {
-                if (self.remaining == 0) return null;
-                const ptr: [*:0]const u8 = @ptrCast(&self.buf[self.index]);
+            pub fn next(self: *Iterator, inc: usize) ?[]const u8 {
+                const index = (self.index + inc) % size;
+                const remaining = @subWithOverflow(self.remaining, inc);
+                if (remaining[1] != 0 or remaining[0] == 0) return null;
+                const ptr: [*:0]const u8 = @ptrCast(&self.buf[index]);
                 const value = mem.span(ptr); // Computes length up to null terminator.
                 self.index = (self.index + 1) % size;
                 self.remaining -= 1;
@@ -142,10 +146,10 @@ test "ring" {
     var intbuf = try Buffer(size, u8).init(allocator);
     var strbuf = try StrBuffer(size, 32).init(allocator);
 
-    const arr: [4][]const u8 = .{ "Tristan", "Mikael", "Jet", "Lay" };
+    const arr: [7][]const u8 = .{ "Tristan", "Mikael", "Jet", "Lay", "Ngan", "Pow", "Trixie" };
 
     var i: u8 = 0;
-    while (i < ring.size) : ({
+    while (i < ring.size + 2) : ({
         i += 1;
         ring.increment();
     }) {
@@ -155,13 +159,33 @@ test "ring" {
 
     debug.print("-----------\n", .{});
     var itint = intbuf.getIterator(ring);
-    while (itint.next()) |item| {
+    while (itint.next(0)) |item| {
         debug.print("{}\n", .{item});
     }
 
     var itstr = strbuf.getIterator(ring);
     debug.print("-----------\n", .{});
-    while (itstr.next()) |item| {
+    while (itstr.next(0)) |item| {
+        debug.print("{s}\n", .{item});
+    }
+
+    i = 0;
+    while (i < 2) : ({
+        i += 1;
+        ring.decrement();
+    }) {
+        intbuf.backwardWrite(ring, i + 68);
+        _ = strbuf.backwardWrite(ring, arr[i]);
+    }
+    debug.print("-----------\n", .{});
+    itint = intbuf.getIterator(ring);
+    while (itint.next(0)) |item| {
+        debug.print("{}\n", .{item});
+    }
+
+    itstr = strbuf.getIterator(ring);
+    debug.print("-----------\n", .{});
+    while (itstr.next(0)) |item| {
         debug.print("{s}\n", .{item});
     }
 }

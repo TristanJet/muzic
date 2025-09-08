@@ -314,7 +314,7 @@ pub fn getCurrentSong(
 }
 
 pub const Queue = struct {
-    pub const NSONGS = 8;
+    pub const NSONGS = state.QUEUE_BUF_SIZE;
     pub const ADD_SIZE = NSONGS / 2;
     playlist_len: usize,
     ibufferstart: usize,
@@ -439,10 +439,7 @@ fn fillQueue(
         },
     }
     var added: usize = 0;
-    while (next(songs)) |song| : ({
-        ringUpdate(r);
-        added += 1;
-    }) {
+    while (next(songs)) |song| : (ringUpdate(r)) {
         lines = mem.splitScalar(u8, song, '\n');
         while (lines.next()) |line| {
             if (mem.startsWith(u8, line, "Title:")) {
@@ -465,6 +462,7 @@ fn fillQueue(
             }
         }
         songwrite(songbuf, r.*, current);
+        added += 1;
         if (added == N) break;
     }
 }
@@ -483,12 +481,14 @@ test "fill" {
     var queue = try Queue.init(respAllocator, heapAllocator, 4);
     // _ = respArena.reset(.free_all);
     debug.print("------------\n", .{});
+    debug.print("Iterator inc 0: \n", .{});
     var it = queue.titlebuf.getIterator(queue.ring);
-    while (it.next()) |item| {
+    while (it.next(0)) |item| {
         debug.print("{s}\n", .{item});
     }
 
     debug.print("------------\n", .{});
+    debug.print("Buf contents: \n", .{});
     for (queue.titlebuf.buf) |*buf| {
         const ptr: [*:0]const u8 = @ptrCast(buf);
         const str = mem.span(ptr);
@@ -496,9 +496,26 @@ test "fill" {
     }
 
     try fillQueue(&queue.song_it, .backward, &queue.ring, &queue.songbuf, &queue.titlebuf, &queue.artistbuf, 4);
+
     debug.print("------------\n", .{});
+    debug.print("Buf contents: \n", .{});
+    for (queue.titlebuf.buf) |*buf| {
+        const ptr: [*:0]const u8 = @ptrCast(buf);
+        const str = mem.span(ptr);
+        debug.print("{s}\n", .{str});
+    }
+
+    debug.print("------------\n", .{});
+    debug.print("Iterator inc 0: \n", .{});
     it = queue.titlebuf.getIterator(queue.ring);
-    while (it.next()) |item| {
+    while (it.next(0)) |item| {
+        debug.print("{s}\n", .{item});
+    }
+
+    debug.print("------------\n", .{});
+    debug.print("Iterator inc 2: \n", .{});
+    it = queue.titlebuf.getIterator(queue.ring);
+    while (it.next(2)) |item| {
         debug.print("{s}\n", .{item});
     }
 }

@@ -22,7 +22,7 @@ const wrkallocator = alloc.wrkallocator;
 const ArrayList = std.ArrayList;
 
 pub const n_browse_columns: u4 = 3;
-pub const RingBufSize = 128;
+pub const QUEUE_BUF_SIZE = 16;
 
 pub const State = struct {
     quit: bool,
