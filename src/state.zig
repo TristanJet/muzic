@@ -4,6 +4,7 @@ const input = @import("input.zig");
 const algo = @import("algo.zig");
 const RenderState = @import("render.zig").RenderState;
 const CodePointIterator = @import("code_point").Iterator;
+const SongIterator = @import("ring.zig").Buffer(QUEUE_BUF_SIZE, mpd.QSong).Iterator;
 const isAsciiOnly = @import("ascii").isAsciiOnly;
 const lowerString = std.ascii.lowerString;
 const expect = std.testing.expect;
@@ -22,13 +23,13 @@ const wrkallocator = alloc.wrkallocator;
 const ArrayList = std.ArrayList;
 
 pub const n_browse_columns: u4 = 3;
-pub const QUEUE_BUF_SIZE = 16;
+pub const QUEUE_BUF_SIZE = 64;
 
 pub const State = struct {
     quit: bool,
     first_render: bool,
 
-    song: mpd.CurrentSong,
+    song: *mpd.CurrentSong,
     isPlaying: bool,
     last_second: i64,
     last_elapsed: u16,
@@ -37,10 +38,8 @@ pub const State = struct {
 
     last_ping: i64,
 
-    queue: mpd.Queue,
+    queue: *mpd.Queue,
     scroll_q: QueueScroll,
-    // songbuf: RingBuffer(RingBufSize, mpd.QSong),
-    // strbuf: RingBuffer(RingBufSize * mpd.QSong.STR_BUF_SIZE, u8),
     prev_id: usize,
 
     typing_buffer: TypingBuffer,
@@ -693,21 +692,21 @@ pub const BrowseColumn = struct {
 pub const QueueScroll = struct {
     pos: u8,
     prev_pos: u8,
-    slice_inc: usize,
+    inc: usize,
 
+    queue: *const mpd.Queue,
     threshold_pos: u8,
     area_height: usize,
 
-    pub fn absolutePos(self: *const QueueScroll) usize {
-        return self.pos + self.slice_inc;
+    pub fn absolutePos(q: QueueScroll) usize {
+        return q.pos + q.queue.itopviewport;
     }
 
-    pub fn absolutePrevPos(self: *const QueueScroll) usize {
-        return self.prev_pos + self.slice_inc;
+    pub fn absolutePrevPos(q: QueueScroll) usize {
+        return q.prev_pos + q.queue.itopviewport;
     }
 
-    pub fn scroll(self: *QueueScroll, direction: input.cursorDirection, queue_len: usize) bool {
-        const max = self.getMax(queue_len);
+    pub fn scroll(self: *QueueScroll, direction: input.cursorDirection) bool {
         var inc_changed: bool = false;
         self.prev_pos = self.pos;
 
@@ -715,23 +714,19 @@ pub const QueueScroll = struct {
             .up => {
                 if (self.pos > 0) {
                     self.pos -= 1;
-                } else if (self.slice_inc > 0) {
-                    self.slice_inc -= 1;
+                } else if (self.inc > 0) {
+                    self.inc -= 1;
                     inc_changed = true;
                 }
             },
             .down => {
-                if (self.pos < max - 1 and max > 0) {
+                if (self.pos < self.area_height - 1) {
                     self.pos += 1;
-                    // If cursor position exceeds threshold (80% of visible area)
-                    if (self.pos >= self.threshold_pos and self.slice_inc + self.area_height < queue_len) {
-                        self.slice_inc += 1;
+                    if (self.pos >= self.threshold_pos and self.queue.itopviewport + self.area_height < self.queue.pl_len) {
+                        self.inc += 1;
                         self.pos -= 1;
                         inc_changed = true;
                     }
-                } else if (self.slice_inc + self.area_height < queue_len) {
-                    self.slice_inc += 1;
-                    inc_changed = true;
                 }
             },
         }
@@ -740,8 +735,8 @@ pub const QueueScroll = struct {
 
     pub fn jumpTop(self: *QueueScroll) bool {
         var inc_changed = false;
-        if (self.slice_inc > 0) {
-            self.slice_inc = 0;
+        if (self.inc > 0) {
+            self.inc = 0;
             inc_changed = true;
         }
         self.prev_pos = self.pos;
@@ -754,9 +749,9 @@ pub const QueueScroll = struct {
         self.prev_pos = self.pos;
         if (qlen > 0) {
             if (qlen > self.area_height) {
-                const prev_inc = self.slice_inc;
-                self.slice_inc = qlen - self.area_height;
-                if (self.slice_inc != prev_inc) inc_changed = true;
+                const prev_inc = self.inc;
+                self.inc = qlen - self.area_height;
+                if (self.inc != prev_inc) inc_changed = true;
                 self.pos = @intCast(self.area_height - 1);
             } else {
                 self.pos = @intCast(qlen - 1);
@@ -765,8 +760,8 @@ pub const QueueScroll = struct {
         return inc_changed;
     }
 
-    fn getMax(self: *const QueueScroll, queue_len: usize) usize {
-        return @min(queue_len, self.area_height);
+    fn getMax(q: QueueScroll, queue_len: usize) usize {
+        return @min(queue_len, q.area_height);
     }
 };
 
@@ -888,8 +883,8 @@ fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState(n_browse
         .player => {
             app.prev_id = app.song.id;
             _ = app.song.init();
-            try mpd.getCurrentSong(wrkallocator, &alloc.wrkfba.end_index, &app.song);
-            try mpd.getCurrentTrackTime(wrkallocator, &alloc.wrkfba.end_index, &app.song);
+            try mpd.getCurrentSong(wrkallocator, &alloc.wrkfba.end_index, app.song);
+            try mpd.getCurrentTrackTime(wrkallocator, &alloc.wrkfba.end_index, app.song);
             app.last_elapsed = app.song.time.elapsed;
             //lazy
             app.last_second = @divTrunc(time.milliTimestamp(), 1000);
@@ -899,12 +894,10 @@ fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState(n_browse
             render_state.currentTrack = true;
         },
         .queue => {
-            // Clear and rebuild the queue
-            app.queue.array.clearRetainingCapacity();
-            try mpd.getQueue(alloc.respAllocator, &app.queue);
-            app.queue.items = app.queue.getItems();
+            try app.queue.reset(alloc.respAllocator);
+            _ = try mpd.getQueue(alloc.respAllocator, app.queue, .forward, .full);
             _ = alloc.respArena.reset(.free_all);
-            if (app.queue.items.len == 0) app.isPlaying = false;
+            if (app.queue.pl_len == 0) app.isPlaying = false;
             render_state.queue = true;
             render_state.queueEffects = true;
         },

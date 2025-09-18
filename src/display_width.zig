@@ -68,8 +68,8 @@ fn getWidthFromCache(
     return w;
 }
 
-pub fn getDisplayWidth(str: []const u8, cache_type: Which_Cache) !Width {
-    return switch (cache_type) {
+pub fn getDisplayWidth(str: []const u8, which: Which_Cache) !Width {
+    return switch (which) {
         .queue => getWidthFromCache(queue_cache_size, &cache.queue, cache.qw, str),
         .col1 => getWidthFromCache(queue_cache_size, &cache.col1, cache.c1w, str),
         .col2 => getWidthFromCache(queue_cache_size, &cache.col2, cache.c2w, str),

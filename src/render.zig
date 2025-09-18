@@ -8,6 +8,7 @@ const alloc = @import("allocators.zig");
 const sym = @import("symbols.zig");
 const mpd = @import("mpdclient.zig");
 const dw = @import("display_width.zig");
+const QueueIterator = @import("ring.zig").Buffer(state.QUEUE_BUF_SIZE, mpd.QSong).Iterator;
 const Input_State = @import("input.zig").Input_State;
 const io = std.io;
 const fs = std.fs;
@@ -94,8 +95,8 @@ pub fn render(app: *state.State, render_state: *RenderState(n_browse_columns), p
     if (render_state.borders or render_state.find) try drawHeader(panels.find.area, try getFindText());
     if (render_state.currentTrack) try currTrackRender(wrkallocator, panels.curr_song, app.song, &app.first_render, end_index);
     if (render_state.bar) try barRender(panels.curr_song, app.song, wrkallocator);
-    if (render_state.queue) try queueRender(wrkallocator, panels.queue.validArea(), app.queue.items, app.scroll_q.slice_inc);
-    if (render_state.queueEffects) try queueEffectsRender(wrkallocator, panels.queue.validArea(), app.queue.items, app.scroll_q.absolutePos(), app.scroll_q.absolutePrevPos(), app.scroll_q.slice_inc, app.input_state, app.song.id, app.prev_id);
+    if (render_state.queue) try queueRender(wrkallocator, panels.queue.validArea(), app.queue.songbuf.getIterator(app.queue.ring), app.scroll_q.inc);
+    if (render_state.queueEffects) try queueEffectsRender(wrkallocator, panels.queue.validArea(), app.queue.songbuf.getIterator(app.queue.ring), app.scroll_q.absolutePos(), app.scroll_q.absolutePrevPos(), app.scroll_q.inc, app.input_state, app.song.id, app.prev_id);
     if (render_state.find) try findRender(panels.find.validArea());
     if (render_state.find_cursor) try findCursor(panels.find.validArea());
     if (render_state.find_clear) try clear(panels.find.validArea());
@@ -169,7 +170,7 @@ fn formatMilli(allocator: std.mem.Allocator, milli: u64) ![]const u8 {
     );
 }
 
-fn formatSeconds(allocator: std.mem.Allocator, seconds: u64) ![]const u8 {
+fn formatSeconds(allocator: mem.Allocator, seconds: u64) ![]const u8 {
     const minutes = seconds / 60;
     const remainingSeconds = seconds % 60;
 
@@ -181,9 +182,9 @@ fn formatSeconds(allocator: std.mem.Allocator, seconds: u64) ![]const u8 {
 }
 
 fn queueRender(
-    allocator: std.mem.Allocator,
+    allocator: mem.Allocator,
     area: window.Area,
-    items: []mpd.QSong,
+    itq: QueueIterator,
     inc: usize,
 ) !void {
     for (0..area.ylen) |i| {
@@ -191,18 +192,19 @@ fn queueRender(
         try term.writeByteNTimes(' ', area.xlen);
     }
 
-    if (items.len == 0) {
+    if (itq.remaining == 0) {
         try term.moveCursor(area.ylen / 2, area.xlen / 2);
         try writeLineCenter("queue empty", area.ylen / 2, area.xmin, area.xmax);
         return;
     }
 
+    var iterator: QueueIterator = itq;
     for (0..area.ylen) |i| {
-        const queue_index = i + inc;
-        if (queue_index >= items.len) break;
-
-        const item = items[queue_index];
-        const itemTime: []const u8 = formatSeconds(allocator, item.time) catch "";
+        const item = iterator.next(inc) orelse return;
+        const itemTime: []const u8 = if (item.time) |time|
+            formatSeconds(allocator, @as(u64, time)) catch ""
+        else
+            "";
         try writeQueueLine(area, area.ymin + i, item, itemTime);
     }
 }
@@ -210,7 +212,7 @@ fn queueRender(
 fn queueEffectsRender(
     allocator: std.mem.Allocator,
     area: window.Area,
-    items: []mpd.QSong,
+    itq: QueueIterator,
     abs_pos: usize,
     abs_prev_pos: usize,
     inc: usize,
@@ -219,30 +221,41 @@ fn queueEffectsRender(
     prev_song_id: usize,
 ) !void {
     var highlighted = false;
+    var iterator = itq;
 
     for (0..area.ylen) |i| {
-        const queue_index = i + inc;
-        if (queue_index >= items.len) break;
-        const item = items[queue_index];
+        const item = iterator.next(inc) orelse break;
         if (item.pos == abs_prev_pos and input_state == .normal_queue) {
-            const itemTime: []const u8 = formatSeconds(allocator, item.time) catch "";
+            const itemTime: []const u8 = if (item.time) |time|
+                formatSeconds(allocator, @as(u64, time)) catch ""
+            else
+                "";
             try writeQueueLine(area, area.ymin + i, item, itemTime);
         }
         if (item.pos == abs_pos and input_state == .normal_queue) {
-            const itemTime: []const u8 = formatSeconds(allocator, item.time) catch "";
+            const itemTime: []const u8 = if (item.time) |time|
+                formatSeconds(allocator, @as(u64, time)) catch ""
+            else
+                "";
             try term.highlight();
             try writeQueueLine(area, area.ymin + i, item, itemTime);
             try term.attributeReset();
             highlighted = true;
         }
         if ((current_song_id == item.id) and !highlighted) {
-            const itemTime: []const u8 = formatSeconds(allocator, item.time) catch "";
+            const itemTime: []const u8 = if (item.time) |time|
+                formatSeconds(allocator, @as(u64, time)) catch ""
+            else
+                "";
             try term.setColor(.cyan);
             try writeQueueLine(area, area.ymin + i, item, itemTime);
             try term.setColor(.white);
         }
         if ((prev_song_id != current_song_id) and (prev_song_id == item.id) and !highlighted) {
-            const itemTime: []const u8 = formatSeconds(allocator, item.time) catch "";
+            const itemTime: []const u8 = if (item.time) |time|
+                formatSeconds(allocator, @as(u64, time)) catch ""
+            else
+                "";
             try term.setColor(.white);
             try writeQueueLine(area, area.ymin + i, item, itemTime);
         }
@@ -288,7 +301,7 @@ pub fn writeLineCenter(str: []const u8, y: usize, xmin: usize, xmax: usize) !voi
 fn currTrackRender(
     allocator: std.mem.Allocator,
     p: window.Panel,
-    s: mpd.CurrentSong,
+    s: *mpd.CurrentSong,
     fr: *bool,
     end_index: *usize,
 ) !void {
@@ -326,7 +339,7 @@ fn currTrackRender(
     if (fr.*) fr.* = false;
 }
 
-fn barRender(panel: window.Panel, song: mpd.CurrentSong, allocator: std.mem.Allocator) !void {
+fn barRender(panel: window.Panel, song: *mpd.CurrentSong, allocator: std.mem.Allocator) !void {
     const area = panel.validArea();
     const ycent = panel.getYCentre();
 

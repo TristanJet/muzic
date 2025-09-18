@@ -215,13 +215,19 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
     switch (char) {
         'q' => app.quit = true,
         'j' => {
-            const inc_changed = app.scroll_q.scroll(.down, app.queue.items.len);
-            if (inc_changed) render_state.queue = true;
+            const inc_changed = app.scroll_q.scroll(.down);
+            if (inc_changed) {
+                try app.queue.scroll(alloc.respAllocator, .down, &app.scroll_q.inc, app.scroll_q.pos);
+                render_state.queue = true;
+            }
             render_state.queueEffects = true;
         },
         'k' => {
-            const inc_changed = app.scroll_q.scroll(.up, app.queue.items.len);
-            if (inc_changed) render_state.queue = true;
+            const inc_changed = app.scroll_q.scroll(.up);
+            if (inc_changed) {
+                try app.queue.scroll(alloc.respAllocator, .up, &app.scroll_q.inc, app.scroll_q.pos);
+                render_state.queue = true;
+            }
             render_state.queueEffects = true;
         },
         'g' => {
@@ -230,7 +236,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             render_state.queueEffects = true;
         },
         'G' => {
-            const inc_changed = app.scroll_q.jumpBottom(app.queue.items.len);
+            const inc_changed = app.scroll_q.jumpBottom(app.queue.pl_len);
             if (inc_changed) render_state.queue = true;
             render_state.queueEffects = true;
         },
@@ -240,10 +246,10 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             var move_down: usize = 0;
 
             // Determine how many positions we can move down
-            if (app.scroll_q.absolutePos() + half_height < app.queue.items.len) {
+            if (app.scroll_q.absolutePos() + half_height < app.queue.pl_len) {
                 move_down = half_height;
-            } else if (app.scroll_q.absolutePos() < app.queue.items.len) {
-                move_down = app.queue.items.len - app.scroll_q.absolutePos() - 1;
+            } else if (app.scroll_q.absolutePos() < app.queue.pl_len) {
+                move_down = app.queue.pl_len - app.scroll_q.absolutePos() - 1;
             }
 
             if (move_down > 0) {
@@ -257,11 +263,11 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
                     if (app.scroll_q.pos > cursor_target) {
                         // Move cursor to middle position and adjust slice_inc
                         const pos_diff = app.scroll_q.pos - cursor_target;
-                        app.scroll_q.slice_inc += @as(usize, pos_diff) + move_down;
+                        app.scroll_q.inc += @as(usize, pos_diff) + move_down;
                         app.scroll_q.pos = cursor_target;
                     } else {
                         // Just increase slice_inc
-                        app.scroll_q.slice_inc += move_down;
+                        app.scroll_q.inc += move_down;
                     }
                 }
                 render_state.queue = true;
@@ -282,12 +288,12 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
 
             if (move_up > 0) {
                 // First use slice_inc if available
-                if (app.scroll_q.slice_inc >= move_up) {
-                    app.scroll_q.slice_inc -= move_up;
+                if (app.scroll_q.inc >= move_up) {
+                    app.scroll_q.inc -= move_up;
                 } else {
                     // Move cursor position by any remaining amount
-                    const remaining = move_up - app.scroll_q.slice_inc;
-                    app.scroll_q.slice_inc = 0;
+                    const remaining = move_up - app.scroll_q.inc;
+                    app.scroll_q.inc = 0;
                     app.scroll_q.pos -= @intCast(remaining);
                 }
                 render_state.queue = true;
@@ -349,16 +355,16 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             mpd.rmFromPos(wrkallocator, app.scroll_q.absolutePos()) catch |e| switch (e) {
                 error.MpdNotPlaying => return,
                 error.MpdBadIndex => {
-                    if (app.queue.items.len == 0) return;
+                    if (app.queue.pl_len == 0) return;
                     return error.MpdError;
                 },
                 else => return e,
             };
             // If we're deleting the last item in the queue, move cursor up
-            if (app.queue.items.len == 0) return;
-            if (app.scroll_q.absolutePos() >= app.queue.items.len - 1 and app.scroll_q.pos > 0) {
-                if (app.scroll_q.slice_inc > 0)
-                    app.scroll_q.slice_inc -= 1
+            if (app.queue.pl_len == 0) return;
+            if (app.scroll_q.absolutePos() >= app.queue.pl_len - 1 and app.scroll_q.pos > 0) {
+                if (app.scroll_q.inc > 0)
+                    app.scroll_q.inc -= 1
                 else
                     app.scroll_q.pos -= 1;
             }
@@ -372,15 +378,15 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             // Always move cursor up after deleting to the end
             if (app.scroll_q.pos > 0) {
                 app.scroll_q.pos -= 1;
-            } else if (app.scroll_q.slice_inc > 0) {
-                app.scroll_q.slice_inc -= 1;
+            } else if (app.scroll_q.inc > 0) {
+                app.scroll_q.inc -= 1;
             }
 
             render_state.queueEffects = true;
         },
         'X' => {
             try mpd.clearQueue();
-            app.scroll_q.slice_inc = 0;
+            app.scroll_q.inc = 0;
             app.scroll_q.pos = 0;
         },
         '\x1B' => {
@@ -413,7 +419,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             if (debounce()) return;
             mpd.playByPos(wrkallocator, app.scroll_q.absolutePos()) catch |e| switch (e) {
                 error.MpdBadIndex => {
-                    if (app.queue.items.len == 0) return;
+                    if (app.queue.pl_len == 0) return;
                     return error.MpdError;
                 },
                 else => return e,

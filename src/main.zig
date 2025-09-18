@@ -84,8 +84,12 @@ pub fn main() !void {
     initial_song.init();
     try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &initial_song);
     try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &initial_song);
-    var top_queue: mpd.Queue = try mpd.Queue.init(null, alloc.topQueue);
-    try mpd.getQueue(alloc.respAllocator, alloc.persistentAllocator, &top_queue);
+    var queue: mpd.Queue = try mpd.Queue.init(alloc.respAllocator, alloc.persistentAllocator, window.panels.queue.validArea().ylen);
+    _ = try mpd.getQueue(alloc.respAllocator, &queue, .forward, .full);
+    for (0..queue.ring.size) |i| {
+        util.log("{s} - {}", .{ queue.songbuf.buf[i].title.?, i });
+    }
+    util.log("RIng: {}", .{queue.ring});
     _ = alloc.respArena.reset(.free_all);
 
     initial_typing.init();
@@ -111,7 +115,7 @@ pub fn main() !void {
         .first_render = true,
 
         .prev_id = 0,
-        .song = initial_song,
+        .song = &initial_song,
         .isPlaying = try mpd.getPlayState(alloc.respAllocator),
         .last_second = 0,
         .last_elapsed = 0,
@@ -120,11 +124,12 @@ pub fn main() !void {
 
         .last_ping = time.milliTimestamp(),
 
-        .queue = top_queue,
+        .queue = &queue,
         .scroll_q = state.QueueScroll{
             .pos = 0,
             .prev_pos = 0,
-            .slice_inc = 0,
+            .inc = 0,
+            .queue = &queue,
 
             .threshold_pos = state.getThresholdPos(window.panels.queue.validArea().ylen, 0.8),
             .area_height = window.panels.queue.validArea().ylen,

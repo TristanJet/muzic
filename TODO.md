@@ -3,9 +3,7 @@
 ## TO 1.0 !!!!!!!!!!
 ---I, Tristan Lay, will not sleep tomorrow until 1.0 is shipped!---
 
-I, Tristan Lay will ship 1.0 on the 5th of August or else I am a **faggot** and a *loser* and I will never become a great man and I will never marry a gorgeous woman.
-
-7th. Today is the day.
+I will spend 7h 40 min in this code base today, and will not sleep until I do!
 
 - [x] fix search
     - [x] browser search
@@ -13,10 +11,13 @@ I, Tristan Lay will ship 1.0 on the 5th of August or else I am a **faggot** and 
     - [x] rewrite algorithm - no longer uses allocator
 - [ ] remove indefinite dynamic allocation in queue (memory leak)
     - [x] circular buffer
-    - [ ] bring out the increment of the ring
+    - [x] bring out the increment of the ring
+    - [ ] get rendering correct
 - [ ] typing in higher column should have same effect as scroll, resetting later nodes
 
 ## Semi important
+- [ ] should I unify the caches?
+- [ ] nasty bug where size is not correctly handled in 3rd column
 - [ ] return exact matches, this can be done inside the smithwaterman function
 - [ ] convert all apostrophes to same, this can be done inside the smithwaterman function
 - [ ] implement strict max string size at MPD level
