@@ -86,9 +86,6 @@ pub fn main() !void {
     try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &initial_song);
     var queue: mpd.Queue = try mpd.Queue.init(alloc.respAllocator, alloc.persistentAllocator, window.panels.queue.validArea().ylen);
     _ = try mpd.getQueue(alloc.respAllocator, &queue, .forward, .full);
-    for (0..queue.ring.size) |i| {
-        util.log("{s} - {}", .{ queue.songbuf.buf[i].title.?, i });
-    }
     util.log("RIng: {}", .{queue.ring});
     _ = alloc.respArena.reset(.free_all);
 

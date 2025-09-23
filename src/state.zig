@@ -709,12 +709,14 @@ pub const QueueScroll = struct {
     pub fn scroll(self: *QueueScroll, direction: input.cursorDirection) bool {
         var inc_changed: bool = false;
         self.prev_pos = self.pos;
+        log("inc: {}", .{self.inc});
 
         switch (direction) {
             .up => {
                 if (self.pos > 0) {
                     self.pos -= 1;
                 } else if (self.inc > 0) {
+                    log("hereee", .{});
                     self.inc -= 1;
                     inc_changed = true;
                 }

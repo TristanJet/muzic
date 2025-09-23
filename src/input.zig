@@ -217,7 +217,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         'j' => {
             const inc_changed = app.scroll_q.scroll(.down);
             if (inc_changed) {
-                try app.queue.scroll(alloc.respAllocator, .down, &app.scroll_q.inc, app.scroll_q.pos);
+                try app.queue.downScroll(alloc.respAllocator, &app.scroll_q.inc);
                 render_state.queue = true;
             }
             render_state.queueEffects = true;
@@ -225,7 +225,8 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         'k' => {
             const inc_changed = app.scroll_q.scroll(.up);
             if (inc_changed) {
-                try app.queue.scroll(alloc.respAllocator, .up, &app.scroll_q.inc, app.scroll_q.pos);
+                util.log("INC CHANGED", .{});
+                try app.queue.upScroll(alloc.respAllocator, &app.scroll_q.inc);
                 render_state.queue = true;
             }
             render_state.queueEffects = true;

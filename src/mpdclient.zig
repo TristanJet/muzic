@@ -325,6 +325,8 @@ pub const Queue = struct {
     nviewable: usize,
     ring: Ring,
     songbuf: ring.Buffer(NSONGS, QSong),
+    songstart: ?[]QSong,
+    songend: ?[]QSong,
     artistbuf: ring.StrBuffer(NSONGS, QSong.MAXLEN),
     titlebuf: ring.StrBuffer(NSONGS, QSong.MAXLEN),
 
@@ -342,6 +344,8 @@ pub const Queue = struct {
                 .size = NSONGS,
             },
             .songbuf = try ring.Buffer(NSONGS, QSong).init(persAllocator),
+            .songstart = null,
+            .songend = null,
             .artistbuf = try ring.StrBuffer(NSONGS, QSong.MAXLEN).init(persAllocator),
             .titlebuf = try ring.StrBuffer(NSONGS, QSong.MAXLEN).init(persAllocator),
         };
@@ -360,32 +364,38 @@ pub const Queue = struct {
         };
     }
 
-    pub fn scroll(self: *Queue, respAllocator: mem.Allocator, dir: enum { up, down }, inc: *usize, pos: usize) !void {
-        _ = pos;
-        switch (dir) {
-            .down => {
-                self.itopviewport += 1;
-                if (self.itopviewport + self.nviewable > self.ibufferstart + NSONGS) {
-                    const added = try getQueue(respAllocator, self, .forward, .half);
-                    util.log("added: {}", .{added});
-                    self.ibufferstart += added;
-                    inc.* -= added;
-                    for (0..self.ring.size) |i| {
-                        log("{s} - {}", .{ self.songbuf.buf[i].title.?, i });
-                    }
-                }
-            },
-            .up => {
-                self.itopviewport -= 1;
-                if (self.itopviewport < self.ibufferstart) {
-                    const added = try getQueue(respAllocator, self, .backward, .half);
-                    self.ibufferstart -= added;
-                    inc.* += added;
-                    for (0..self.ring.size) |i| {
-                        log("{s} - {}", .{ self.songbuf.buf[i].title.?, i });
-                    }
-                }
-            },
+    pub fn downScroll(self: *Queue, respAllocator: mem.Allocator, inc: *usize) !void {
+        self.itopviewport += 1;
+        if (self.itopviewport + self.nviewable > self.ibufferstart + NSONGS) {
+            const added = try getQueue(respAllocator, self, .forward, .half);
+            util.log("added: {}", .{added});
+            self.ibufferstart += added;
+            inc.* -= added;
+            // for (0..self.ring.size) |i| {
+            //     log("{s} - {}", .{ self.songbuf.buf[i].title.?, i });
+            // }
+        }
+    }
+
+    pub fn upScroll(self: *Queue, respAllocator: mem.Allocator, inc: *usize) !void {
+        self.itopviewport -= 1;
+        log("{} --- {}", .{ self.itopviewport, self.ibufferstart });
+        if (self.itopviewport == self.ibufferstart) {
+            const added = try getQueue(respAllocator, self, .backward, .half);
+            self.ibufferstart -= added;
+            inc.* += added;
+            log("inc after scroll: {}", .{inc.*});
+            // for (0..self.ring.size) |i| {
+            //     log("{s} - {}", .{ self.songbuf.buf[i].title.?, i });
+            // }
+        }
+    }
+
+    fn getEdgeBuffers(len: usize) struct { ?[]QSong, ?[]QSong } {
+        if (len > NSONGS) {
+            return .{};
+        } else {
+            return .{ null, null };
         }
     }
 };
@@ -412,7 +422,6 @@ fn getPlaylistLen(respAllocator: mem.Allocator) !usize {
     return error.NoLength;
 }
 
-//add inc to fetch
 pub fn getQueue(resp: mem.Allocator, queue: *Queue, dir: Queue.Dir, add: Queue.Add) !usize {
     log("GETTING QUEUE", .{});
     var inc: u2 = undefined;
@@ -427,18 +436,37 @@ pub fn getQueue(resp: mem.Allocator, queue: *Queue, dir: Queue.Dir, add: Queue.A
             addsize = Queue.ADD_SIZE;
         },
     }
-    const buf = try fetchQueueBuf(resp, queue.get_start, (queue.get_start + Queue.ADD_SIZE * @as(usize, inc)));
-    var songs = SongIterator{
-        .buffer = buf,
-        .index = 0,
-        .ireverse = 0,
-    };
+
+    var songs: SongIterator = undefined;
+    if (dir == .forward) {
+        songs = SongIterator{
+            .buffer = try fetchQueueBuf(resp, queue.get_start, queue.get_start + addsize),
+            .index = 0,
+            .ireverse = 0,
+        };
+    } else {
+        log("ibufstart: {}\n addsize: {}\n", .{ queue.ibufferstart, addsize });
+        const buf = if (queue.ibufferstart < addsize)
+            try fetchQueueBuf(resp, 0, queue.ibufferstart)
+        else
+            try fetchQueueBuf(resp, queue.ibufferstart - addsize, queue.ibufferstart);
+
+        songs = SongIterator{
+            .buffer = buf,
+            .index = 0,
+            .ireverse = buf.len,
+        };
+        var songs2 = songs;
+        while (songs2.reverseNext()) |song| {
+            const i = mem.indexOfScalar(u8, song, '\n').?;
+            log("song: {s}", .{song[0..i]});
+        }
+    }
     const added = try allocQueue(&songs, dir, &queue.ring, &queue.songbuf, &queue.titlebuf, &queue.artistbuf, addsize);
-    if (dir == .forward) queue.get_start += added;
+    if (dir == .forward) queue.get_start += added else queue.get_start -= added;
     return added;
 }
 
-//I need to fetch the correct range of songs
 fn fetchQueueBuf(respAllocator: mem.Allocator, start: usize, end: usize) ![]const u8 {
     const command = try fmt.allocPrint(respAllocator, "playlistinfo {}:{}\n", .{ start, end });
     return try readLargeResponse(respAllocator, command);
@@ -475,6 +503,7 @@ fn allocQueue(
     }
     var added: usize = 0;
     while (next(songs)) |song| {
+        log("song: {s}", .{song[0..16]});
         lines = mem.splitScalar(u8, song, '\n');
         while (lines.next()) |line| {
             if (mem.startsWith(u8, line, "Title:")) {
