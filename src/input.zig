@@ -133,6 +133,9 @@ fn onTypingExit(app: *state.State, render_state: *RenderState(state.n_browse_col
     // Update rendering state
     render_state.borders = true;
     render_state.find_clear = true;
+    render_state.browse_col[0] = true;
+    render_state.browse_col[1] = true;
+    render_state.browse_col[2] = true;
     render_state.queueEffects = true;
 
     // Reset memory arenas
@@ -331,21 +334,18 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             if (!app.algo_init) try algo.init(window.panels.find.validArea().ylen, searchable.len);
             try app.search_sample_su.update(searchable, uppers);
             app.input_state = .typing_find;
-            render_state.find = true;
+            render_state.find_clear = true;
             render_state.queue = true;
         },
         'b' => {
             const data_init = try mpd_data.init(.albums);
             if (data_init) {
                 if (app.col_arr.getNext()) |next| next.displaying = mpd_data.albums;
+                render_state.browse_col[1] = true;
             }
             app.input_state = .normal_browse;
             app.node_switched = true;
             render_state.browse_cursor[app.col_arr.index] = true;
-            render_state.browse_col[0] = true;
-            render_state.browse_col[1] = true;
-            render_state.browse_col[2] = true;
-            render_state.find = true;
             render_state.queue = true;
         },
         'x' => {
@@ -741,7 +741,7 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
             // }
             current.renderCursor(render_state);
             current.render(render_state);
-            render_state.find = true;
+            render_state.type = true;
         },
         else => {
             app.typing_buffer.append(char) catch return;
@@ -757,7 +757,7 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
             }
             current.renderCursor(render_state);
             current.render(render_state);
-            render_state.find = true;
+            render_state.type = true;
         },
     }
 }

@@ -80,12 +80,24 @@ fn getWindow(tty: *const fs.File) !void {
     };
 }
 
+const Border = union(enum) {
+    all: bool,
+    which: WhichBorder,
+};
+
+const WhichBorder = struct {
+    top: bool = false,
+    right: bool = false,
+    bottom: bool = false,
+    left: bool = false,
+};
+
 pub const Panel = struct {
-    borders: bool,
+    borders: Border,
     area: Area,
 
     fn init(
-        borders: bool,
+        borders: Border,
         shape: PanelShape,
         fractionalBase: ?Area,
     ) Panel {
@@ -137,15 +149,38 @@ pub const Panel = struct {
     }
 
     pub fn validArea(self: *const Panel) Area {
-        if (self.borders) return .{
-            .xmin = self.area.xmin + 1,
-            .xmax = self.area.xmax - 1,
-            .ymin = self.area.ymin + 1,
-            .ymax = self.area.ymax - 1,
-            .xlen = self.area.xlen - 2,
-            .ylen = self.area.ylen - 2,
-        };
-        return self.area;
+        var area: Area = self.area;
+        switch (self.borders) {
+            .all => |all| {
+                if (all) {
+                    area.xmin += 1;
+                    area.ymax -= 1;
+                    area.ymin += 1;
+                    area.xmax -= 1;
+                    area.xlen -= 2;
+                    area.ylen -= 2;
+                }
+            },
+            .which => |which| {
+                if (which.top) {
+                    area.ymin += 1;
+                    area.ylen -= 1;
+                }
+                if (which.right) {
+                    area.xmax -= 1;
+                    area.xlen -= 1;
+                }
+                if (which.bottom) {
+                    area.ymax -= 1;
+                    area.ylen -= 1;
+                }
+                if (which.left) {
+                    area.xmin += 1;
+                    area.xlen -= 1;
+                }
+            },
+        }
+        return area;
     }
 
     pub fn getYCentre(self: *const Panel) usize {
@@ -166,13 +201,13 @@ pub const Panels = struct {
     browse3: Panel,
 
     fn init(self: *Panels, window_area: Area) void {
-        self.curr_song = Panel.init(true, curr_song_shape(window_area), null);
-        self.queue = Panel.init(true, queue_shape(window_area), null);
-        self.find = Panel.init(true, find_shape(window_area), null);
+        self.curr_song = Panel.init(.{ .all = true }, curr_song_shape(window_area), null);
+        self.queue = Panel.init(.{ .all = true }, queue_shape(window_area), null);
+        self.find = Panel.init(.{ .all = true }, find_shape(window_area), null);
         const find_valid = self.find.validArea();
-        self.browse1 = Panel.init(false, browse1_shape(find_valid), find_valid);
-        self.browse2 = Panel.init(false, browse2_shape(find_valid), find_valid);
-        self.browse3 = Panel.init(false, browse3_shape(find_valid), find_valid);
+        self.browse1 = Panel.init(.{ .which = .{ .right = true } }, browse1_shape(find_valid), find_valid);
+        self.browse2 = Panel.init(.{ .which = .{ .right = true } }, browse2_shape(find_valid), find_valid);
+        self.browse3 = Panel.init(.{ .all = false }, browse3_shape(find_valid), find_valid);
     }
 };
 
@@ -194,9 +229,9 @@ fn queue_shape(window_area: Area) PanelShape {
     return .{
         .x_dim = .{
             .fractional = .{
-                .totalfr = 7,
+                .totalfr = 11,
                 .startline = 0,
-                .endline = 4,
+                .endline = 6,
             },
         },
         .y_dim = .{
@@ -212,9 +247,9 @@ fn find_shape(window_area: Area) PanelShape {
     return .{
         .x_dim = .{
             .fractional = .{
-                .totalfr = 7,
-                .startline = 4,
-                .endline = 7,
+                .totalfr = 11,
+                .startline = 6,
+                .endline = 11,
             },
         },
         .y_dim = .{

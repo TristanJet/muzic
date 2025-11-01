@@ -31,7 +31,9 @@ pub fn RenderState(n_col: comptime_int) type {
         find: bool = false,
         find_cursor: bool = false,
         find_clear: bool = false,
+        type: bool = false,
         browse_col: [n_col]bool = .{false} ** n_col,
+        browse_bar: bool = false,
         browse_cursor: [n_col]bool = .{false} ** n_col,
         browse_clear_cursor: [n_col]bool = .{false} ** n_col,
         browse_clear: [n_col]bool = .{false} ** n_col,
@@ -43,10 +45,12 @@ pub fn RenderState(n_col: comptime_int) type {
                 .bar = true,
                 .queue = true,
                 .queueEffects = true,
-                .find = true,
+                .find = false,
                 .find_cursor = false,
                 .find_clear = false,
-                .browse_col = .{false} ** n_col,
+                .type = false,
+                .browse_col = .{true} ** n_col,
+                .browse_bar = true,
                 .browse_cursor = .{false} ** n_col,
                 .browse_clear_cursor = .{false} ** n_col,
                 .browse_clear = .{false} ** n_col,
@@ -62,7 +66,9 @@ pub fn RenderState(n_col: comptime_int) type {
             self.find = false;
             self.find_cursor = false;
             self.find_clear = false;
+            self.type = false;
             self.browse_col = .{false} ** n_col;
+            self.browse_bar = false;
             self.browse_cursor = .{false} ** n_col;
             self.browse_clear_cursor = .{false} ** n_col;
             self.browse_clear = .{false} ** n_col;
@@ -93,7 +99,7 @@ pub fn render(app: *state.State, render_state: *RenderState(n_browse_columns), p
     if (render_state.borders) try drawBorders(panels.queue.area);
     if (render_state.borders) try drawHeader(panels.queue.area, "queue");
     if (render_state.borders) try drawBorders(panels.find.area);
-    if (render_state.borders or render_state.find) try drawHeader(panels.find.area, try getFindText());
+    if (render_state.borders or render_state.type or render_state.find) try drawHeader(panels.find.area, try getFindText());
     if (render_state.currentTrack) try currTrackRender(wrkallocator, panels.curr_song, app.song, &app.first_render, end_index);
     if (render_state.bar) try barRender(panels.curr_song, app.song, wrkallocator);
     if (render_state.queue) try queueRender(wrkallocator, panels.queue.validArea(), app.queue.songbuf.getIterator(app.queue.ring), app.scroll_q.inc);
@@ -104,6 +110,8 @@ pub fn render(app: *state.State, render_state: *RenderState(n_browse_columns), p
     if (render_state.browse_clear[0]) try clear(panels.browse1.validArea());
     if (render_state.browse_clear[1]) try clear(panels.browse2.validArea());
     if (render_state.browse_clear[2]) try clear(panels.browse3.validArea());
+    if (render_state.borders) try drawColBar(panels.browse1.area);
+    if (render_state.borders) try drawColBar(panels.browse2.area);
     if (render_state.browse_col[0]) try browseColumn(panels.browse1.validArea(), app.col_arr.buf[0].displaying, app.col_arr.buf[0].slice_inc, 1);
     if (render_state.browse_col[1]) try browseColumn(panels.browse2.validArea(), app.col_arr.buf[1].displaying, app.col_arr.buf[1].slice_inc, 2);
     if (render_state.browse_col[2]) try browseColumn(panels.browse3.validArea(), app.col_arr.buf[2].displaying, app.col_arr.buf[2].slice_inc, 3);
@@ -142,6 +150,16 @@ fn drawBorders(p: window.Area) !void {
         x += 1;
     }
     try term.writeAll(sym.round_right_down);
+}
+
+fn drawColBar(a: window.Area) !void {
+    const x = a.xmax;
+    var y: usize = a.ymin;
+    while (y <= a.ymax) {
+        try term.moveCursor(y, x);
+        try term.writeAll(sym.v_line);
+        y += 1;
+    }
 }
 
 fn drawHeader(p: window.Area, text: []const u8) !void {
@@ -482,32 +500,21 @@ fn clearCursor(area: window.Area, strings_opt: ?[]const []const u8, pos: u8, inc
 }
 
 fn findRender(area: window.Area) !void {
-    switch (current.input_state) {
-        .typing_find => {
-            if (current.viewable_searchable) |viewable| {
-                for (0..area.ylen) |i| {
-                    try term.moveCursor(area.ymin + i, area.xmin);
-                    try term.writeByteNTimes(' ', area.xlen);
-                }
-                for (viewable, 0..) |song, j| {
-                    const len = if (song.string.len > area.xlen) area.xlen else song.string.len;
-                    try term.moveCursor(area.ymin + j, area.xmin);
-                    try term.writeAll(song.string[0..len]);
-                }
-            } else {
-                for (0..area.ylen) |i| {
-                    try term.moveCursor(area.ymin + i, area.xmin);
-                    try term.writeByteNTimes(' ', area.xlen);
-                }
-            }
-        },
-        .normal_browse => {
-            for (0..area.ylen) |i| {
-                try term.moveCursor(area.ymin + i, area.xmin);
-                try term.writeByteNTimes(' ', area.xlen);
-            }
-        },
-        else => {},
+    if (current.viewable_searchable) |viewable| {
+        for (0..area.ylen) |i| {
+            try term.moveCursor(area.ymin + i, area.xmin);
+            try term.writeByteNTimes(' ', area.xlen);
+        }
+        for (viewable, 0..) |song, j| {
+            const len = if (song.string.len > area.xlen) area.xlen else song.string.len;
+            try term.moveCursor(area.ymin + j, area.xmin);
+            try term.writeAll(song.string[0..len]);
+        }
+    } else {
+        for (0..area.ylen) |i| {
+            try term.moveCursor(area.ymin + i, area.xmin);
+            try term.writeByteNTimes(' ', area.xlen);
+        }
     }
 }
 

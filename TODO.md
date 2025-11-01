@@ -1,4 +1,4 @@
-# muzic
+# muzi
 
 ## TO 1.0 !!!!!!!!!!
 Let's freaking go
@@ -15,9 +15,10 @@ Let's freaking go
     - [ ] g
     - [ ] G
     - [ ] get queue rendering correct
-
-- [ ] FIX/ rewrite window spacing
-    - [ ] columns walls in browser
+- [x] FIX/ rewrite window spacing
+    - [x] columns walls in browser
+- [ ] browser column 1 resets when progress node
+- [ ] BACKSPACE for search algo
 
 - [ ] BUG: typing in higher column should have same effect as scroll, resetting later nodes
 - [ ] next strings in browser should be on press - somehow load next strings for browser
