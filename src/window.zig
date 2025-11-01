@@ -101,14 +101,16 @@ pub const Panel = struct {
         shape: PanelShape,
         fractionalBase: ?Area,
     ) Panel {
-        const base = if (fractionalBase) |base| base else window;
         var x_min: usize = undefined;
         var x_max: usize = undefined;
         var y_min: usize = undefined;
         var y_max: usize = undefined;
 
         switch (shape.x_dim) {
-            DimType.fractional => |fractional| divideFractional(&x_min, &x_max, base.xmin, base.xlen, fractional),
+            DimType.fractional => |fractional| {
+                const base = fractionalBase orelse window;
+                divideFractional(&x_min, &x_max, base.xmin, base.xlen, fractional);
+            },
             DimType.absolute => |absolute| {
                 x_min = absolute.min;
                 x_max = absolute.max;
@@ -116,7 +118,10 @@ pub const Panel = struct {
         }
 
         switch (shape.y_dim) {
-            DimType.fractional => |fractional| divideFractional(&y_min, &y_max, base.ymin, base.ylen, fractional),
+            DimType.fractional => |fractional| {
+                const base = fractionalBase orelse window;
+                divideFractional(&y_min, &y_max, base.ymin, base.ylen, fractional);
+            },
             DimType.absolute => |absolute| {
                 y_min = absolute.min;
                 y_max = absolute.max;

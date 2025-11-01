@@ -7,14 +7,15 @@ Let's freaking go
     - [x] browser search
     - [x] capitalisation in browser search
     - [x] rewrite algorithm - no longer uses allocator
-- [ ] remove indefinite dynamic allocation in queue (memory leak)
+- [x] remove indefinite dynamic allocation in queue (memory leak)
     - [x] circular buffer
     - [x] bring out the increment of the ring
     - [x] half up
     - [x] half down
-    - [ ] g
-    - [ ] G
-    - [ ] get queue rendering correct
+- [ ] g
+- [ ] G
+- [ ] adding song to queue seems to fuck up the scroll
+- [ ] get queue rendering correct
 - [x] FIX/ rewrite window spacing
     - [x] columns walls in browser
 - [ ] browser column 1 resets when progress node
@@ -32,7 +33,7 @@ Let's freaking go
 - [ ] ROBUST NONBLOCK flag handling for mac
 - [ ] set max size for memory
 - [ ] fallback if TTY mode
-- [ ] ROBUST check for terminal features
+- [ ] ROBUST check for terminal features - support ASCII
     - [ ] terminfo
     - [ ] return to original state, whatever was printed before running goes back to being visible
 - [ ] Kitty input protocol?
