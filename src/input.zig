@@ -254,7 +254,6 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             const viewdelta: u8 = @intCast((pos - half_height) + half_height);
             var inc: usize = app.scroll_q.inc;
             if (viewdelta > 0) {
-                util.log("MOVING VIEWPORT", .{});
                 const viewdiff: u8 = app.queue.moveViewportDown(viewdelta, height);
                 inc += viewdelta - viewdiff;
                 if (viewdiff > 0) {
@@ -268,6 +267,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
                 app.scroll_q.inc = inc;
                 render_state.queue = true;
             } else {
+                app.scroll_q.prev_pos = app.scroll_q.pos;
                 app.scroll_q.pos += half_height;
             }
             render_state.queueEffects = true;
@@ -292,6 +292,9 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
                 }
                 app.scroll_q.inc = @intCast(inc);
                 render_state.queue = true;
+            } else {
+                app.scroll_q.prev_pos = app.scroll_q.pos;
+                app.scroll_q.pos += half_height;
             }
             render_state.queueEffects = true;
         },

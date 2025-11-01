@@ -11,7 +11,9 @@ Let's freaking go
     - [x] circular buffer
     - [x] bring out the increment of the ring
     - [x] half up
-    - [ ] half down
+    - [x] half down
+    - [ ] g
+    - [ ] G
     - [ ] get queue rendering correct
 
 - [ ] BUG: typing in higher column should have same effect as scroll, resetting later nodes
