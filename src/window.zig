@@ -2,6 +2,7 @@ const std = @import("std");
 const util = @import("util.zig");
 const terminal = @import("terminal.zig");
 const algoNRanked = &@import("algo.zig").nRanked;
+const debug = std.debug;
 const os = std.os;
 const mem = std.mem;
 const fs = std.fs;
@@ -95,7 +96,7 @@ pub const Panel = struct {
         var y_max: usize = undefined;
 
         switch (shape.x_dim) {
-            DimType.fractional => |fractional| divideFractional(&x_min, &x_max, base.xmin, base.xmax, fractional),
+            DimType.fractional => |fractional| divideFractional(&x_min, &x_max, base.xmin, base.xlen, fractional),
             DimType.absolute => |absolute| {
                 x_min = absolute.min;
                 x_max = absolute.max;
@@ -103,7 +104,7 @@ pub const Panel = struct {
         }
 
         switch (shape.y_dim) {
-            DimType.fractional => |fractional| divideFractional(&y_min, &y_max, base.ymin, base.ymax, fractional),
+            DimType.fractional => |fractional| divideFractional(&y_min, &y_max, base.ymin, base.ylen, fractional),
             DimType.absolute => |absolute| {
                 y_min = absolute.min;
                 y_max = absolute.max;
@@ -126,11 +127,13 @@ pub const Panel = struct {
         };
     }
 
-    fn divideFractional(min: *usize, max: *usize, areamin: usize, areamax: usize, dimensions: anytype) void {
-        const unit = (areamax - areamin + 1) / dimensions.totalfr;
-        const remainder = (areamax + 1) % dimensions.totalfr;
+    fn divideFractional(min: *usize, max: *usize, areamin: usize, len: usize, dimensions: anytype) void {
+        const unit = len / dimensions.totalfr;
+        const remainder = len % dimensions.totalfr;
         min.* = (unit * dimensions.startline) + @min(dimensions.startline, remainder) + areamin;
         max.* = areamin + (unit * dimensions.endline) + @min(dimensions.endline, remainder) - 1;
+        debug.assert(max.* <= areamin + len - 1);
+        debug.assert(min.* >= areamin);
     }
 
     pub fn validArea(self: *const Panel) Area {

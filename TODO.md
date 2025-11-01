@@ -16,10 +16,11 @@ Let's freaking go
     - [ ] G
     - [ ] get queue rendering correct
 
-- [ ] BUG: typing in higher column should have same effect as scroll, resetting later nodes
-- [ ] columns walls in browser
-- [ ] next strings in browser should be on press - somehow load next strings for browser
+- [ ] FIX/ rewrite window spacing
+    - [ ] columns walls in browser
 
+- [ ] BUG: typing in higher column should have same effect as scroll, resetting later nodes
+- [ ] next strings in browser should be on press - somehow load next strings for browser
 
 ## Semi important
 - [ ] should I unify the caches?
