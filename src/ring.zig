@@ -146,7 +146,7 @@ test "ring" {
     var intbuf = try Buffer(size, u8).init(allocator);
     var strbuf = try StrBuffer(size, 32).init(allocator);
 
-    const arr: [7][]const u8 = .{ "Tristan", "Mikael", "Jet", "Lay", "Ngan", "Pow", "Trixie" };
+    const arr: [7][]const u8 = .{ "Luffy", "Zoror", "Nami", "Usopp", "Sanji", "Chopper", "Robin" };
 
     var i: u8 = 0;
     while (i < ring.size + 2) : ({

@@ -706,6 +706,25 @@ pub const QueueScroll = struct {
         return q.prev_pos + q.queue.itopviewport;
     }
 
+    pub fn moveCursorUp(self: *QueueScroll, delta: u8) void {
+        if (self.pos > delta) {
+            self.pos -= delta;
+        } else {
+            self.pos = 0;
+        }
+    }
+
+    pub fn moveCursorDown(self: *QueueScroll, delta: u8, pllen: usize) void {
+        const abspos = self.absolutePos();
+        if (abspos + delta < pllen) {
+            self.pos += delta;
+        } else {
+            const add = pllen - 1 - abspos;
+            const addcast: u8 = @intCast(add);
+            self.pos += addcast;
+        }
+    }
+
     pub fn scroll(self: *QueueScroll, direction: input.cursorDirection) bool {
         var inc_changed: bool = false;
         self.prev_pos = self.pos;
@@ -733,6 +752,58 @@ pub const QueueScroll = struct {
             },
         }
         return inc_changed;
+    }
+
+    pub fn halfDown(self: *QueueScroll, pl_len: usize) usize {
+        const initinc = self.inc;
+        const half_height = self.area_height / 2;
+        var move_down: usize = 0;
+
+        // Determine how many positions we can move down
+        if (self.absolutePos() + half_height < pl_len) {
+            move_down = half_height;
+        } else if (self.absolutePos() < pl_len) {
+            move_down = pl_len - self.absolutePos() - 1;
+        }
+
+        if (move_down > 0) {
+            // Try to keep cursor position in the middle of the screen when possible
+            if (self.pos + move_down < self.area_height) {
+                // If we can move the cursor down without scrolling, do that
+                self.prev_pos = self.pos;
+                self.pos += @intCast(move_down);
+            } else {
+                // Otherwise, move the slice increment (scroll the view)
+                const cursor_target: u8 = @intCast(self.area_height / 2);
+                if (self.pos > cursor_target) {
+                    // Move cursor to middle position and adjust slice_inc
+                    const pos_diff = self.pos - cursor_target;
+                    self.inc += @as(usize, pos_diff) + move_down;
+                    self.prev_pos = self.pos;
+                    self.pos = cursor_target;
+                } else {
+                    // Just increase slice_inc
+                    self.inc += move_down;
+                }
+            }
+        }
+        return self.inc - initinc;
+    }
+
+    pub fn halfUp(self: *const QueueScroll, half_height: u8) struct { u8, u8 } {
+        const abspos = self.absolutePos();
+        var up: i16 = @intCast(self.pos);
+
+        if (abspos >= half_height) {
+            up -= half_height;
+        } else {
+            const castabs: u8 = @intCast(abspos);
+            up -= castabs;
+        }
+
+        const dist: u8 = @intCast(@abs(up - half_height));
+        log("Absup: {} up: {}, Dist: {}", .{ abspos, up, dist });
+        return .{ dist, @abs(up) };
     }
 
     pub fn jumpTop(self: *QueueScroll) bool {

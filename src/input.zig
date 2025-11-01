@@ -217,7 +217,10 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         'j' => {
             const inc_changed = app.scroll_q.scroll(.down);
             if (inc_changed) {
-                try app.queue.downScroll(alloc.respAllocator, &app.scroll_q.inc);
+                app.queue.itopviewport += 1;
+                if (app.queue.itopviewport + app.queue.nviewable > app.queue.ibufferstart + mpd.Queue.NSONGS) {
+                    app.scroll_q.inc -= try app.queue.getForward(alloc.respAllocator);
+                }
                 render_state.queue = true;
             }
             render_state.queueEffects = true;
@@ -225,8 +228,10 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         'k' => {
             const inc_changed = app.scroll_q.scroll(.up);
             if (inc_changed) {
-                util.log("INC CHANGED", .{});
-                try app.queue.upScroll(alloc.respAllocator, &app.scroll_q.inc);
+                app.queue.itopviewport -= 1;
+                if (app.queue.itopviewport <= app.queue.ibufferstart) {
+                    app.scroll_q.inc += try app.queue.getBackward(alloc.respAllocator);
+                }
                 render_state.queue = true;
             }
             render_state.queueEffects = true;
@@ -242,64 +247,53 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             render_state.queueEffects = true;
         },
         'd' & '\x1F' => {
-            // Ctrl-d: Move down half a page (like vim)
-            const half_height = app.scroll_q.area_height / 2;
-            var move_down: usize = 0;
-
-            // Determine how many positions we can move down
-            if (app.scroll_q.absolutePos() + half_height < app.queue.pl_len) {
-                move_down = half_height;
-            } else if (app.scroll_q.absolutePos() < app.queue.pl_len) {
-                move_down = app.queue.pl_len - app.scroll_q.absolutePos() - 1;
-            }
-
-            if (move_down > 0) {
-                // Try to keep cursor position in the middle of the screen when possible
-                if (app.scroll_q.pos + move_down < app.scroll_q.area_height) {
-                    // If we can move the cursor down without scrolling, do that
-                    app.scroll_q.pos += @intCast(move_down);
+            if (app.scroll_q.absolutePos() == app.queue.pl_len - 1) return;
+            const height: u8 = @intCast(window.panels.queue.validArea().ylen);
+            const half_height: u8 = @intCast(height / 2);
+            const pos: i16 = @intCast(app.scroll_q.pos);
+            const viewdelta: u8 = @intCast((pos - half_height) + half_height);
+            var inc: usize = app.scroll_q.inc;
+            if (viewdelta > 0) {
+                util.log("MOVING VIEWPORT", .{});
+                const viewdiff: u8 = app.queue.moveViewportDown(viewdelta, height);
+                inc += viewdelta - viewdiff;
+                if (viewdiff > 0) {
+                    app.scroll_q.moveCursorDown(viewdiff, app.queue.pl_len);
                 } else {
-                    // Otherwise, move the slice increment (scroll the view)
-                    const cursor_target: u8 = @intCast(app.scroll_q.area_height / 2);
-                    if (app.scroll_q.pos > cursor_target) {
-                        // Move cursor to middle position and adjust slice_inc
-                        const pos_diff = app.scroll_q.pos - cursor_target;
-                        app.scroll_q.inc += @as(usize, pos_diff) + move_down;
-                        app.scroll_q.pos = cursor_target;
-                    } else {
-                        // Just increase slice_inc
-                        app.scroll_q.inc += move_down;
-                    }
+                    app.scroll_q.pos = half_height;
                 }
+                if (app.queue.itopviewport + height > app.queue.ibufferstart + mpd.Queue.NSONGS) {
+                    inc -= try app.queue.getForward(alloc.respAllocator);
+                }
+                app.scroll_q.inc = inc;
                 render_state.queue = true;
-                render_state.queueEffects = true;
+            } else {
+                app.scroll_q.pos += half_height;
             }
+            render_state.queueEffects = true;
         },
         'u' & '\x1F' => {
-            // Ctrl-u: Move up half a page (like vim)
-            const half_height = app.scroll_q.area_height / 2;
-            var move_up: usize = 0;
-
-            // Determine how many positions we can move up
-            if (app.scroll_q.absolutePos() >= half_height) {
-                move_up = half_height;
-            } else {
-                move_up = app.scroll_q.absolutePos();
-            }
-
-            if (move_up > 0) {
-                // First use slice_inc if available
-                if (app.scroll_q.inc >= move_up) {
-                    app.scroll_q.inc -= move_up;
+            if (app.scroll_q.absolutePos() == 0) return;
+            const height: u8 = @intCast(window.panels.queue.validArea().ylen);
+            const half_height: u8 = @intCast(height / 2);
+            const pos: i16 = @intCast(app.scroll_q.pos);
+            const viewdelta: u8 = @intCast(@abs(pos - height)); //(pos - half) - half
+            var inc: i128 = app.scroll_q.inc;
+            if (viewdelta > 0) {
+                const viewdiff = app.queue.moveViewportUp(viewdelta);
+                inc -= viewdelta - viewdiff;
+                if (viewdiff > 0) {
+                    app.scroll_q.moveCursorUp(viewdiff);
                 } else {
-                    // Move cursor position by any remaining amount
-                    const remaining = move_up - app.scroll_q.inc;
-                    app.scroll_q.inc = 0;
-                    app.scroll_q.pos -= @intCast(remaining);
+                    app.scroll_q.pos = half_height;
                 }
+                if (app.queue.itopviewport < app.queue.ibufferstart) {
+                    inc += try app.queue.getBackward(alloc.respAllocator);
+                }
+                app.scroll_q.inc = @intCast(inc);
                 render_state.queue = true;
-                render_state.queueEffects = true;
             }
+            render_state.queueEffects = true;
         },
         'p' => {
             if (debounce()) return;

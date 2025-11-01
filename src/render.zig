@@ -13,6 +13,7 @@ const Input_State = @import("input.zig").Input_State;
 const io = std.io;
 const fs = std.fs;
 const mem = std.mem;
+const debug = std.debug;
 const n_browse_columns = state.n_browse_columns;
 
 const wrkallocator = alloc.wrkallocator;

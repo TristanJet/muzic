@@ -41,7 +41,7 @@ pub const MpdError = error{
 const BufferFull = error.BufferFull;
 
 /// Common function to handle setting string values in a fixed buffer
-fn setStringValue(buffer: []u8, value: []const u8, max_len: usize) ![]const u8 {
+fn setStringValue(buffer: []u8, value: []const u8, max_len: usize) []const u8 {
     if (value.len > max_len) {
         mem.copyForwards(u8, buffer, value[0..max_len]);
         return buffer[0..max_len];
@@ -125,20 +125,20 @@ pub const CurrentSong = struct {
         self.trackno = self.bufTrackno[0..0];
     }
 
-    pub fn setTitle(self: *CurrentSong, title: []const u8) !void {
-        self.title = try setStringValue(&self.bufTitle, title, MAX_LEN);
+    pub fn setTitle(self: *CurrentSong, title: []const u8) void {
+        self.title = setStringValue(&self.bufTitle, title, MAX_LEN);
     }
 
-    pub fn setArtist(self: *CurrentSong, artist: []const u8) !void {
-        self.artist = try setStringValue(&self.bufArtist, artist, MAX_LEN);
+    pub fn setArtist(self: *CurrentSong, artist: []const u8) void {
+        self.artist = setStringValue(&self.bufArtist, artist, MAX_LEN);
     }
 
-    pub fn setAlbum(self: *CurrentSong, album: []const u8) !void {
-        self.album = try setStringValue(&self.bufAlbum, album, MAX_LEN);
+    pub fn setAlbum(self: *CurrentSong, album: []const u8) void {
+        self.album = setStringValue(&self.bufAlbum, album, MAX_LEN);
     }
 
-    pub fn setTrackno(self: *CurrentSong, trackno: []const u8) !void {
-        self.trackno = try setStringValue(&self.bufTrackno, trackno, TRACKNO_LEN);
+    pub fn setTrackno(self: *CurrentSong, trackno: []const u8) void {
+        self.trackno = setStringValue(&self.bufTrackno, trackno, TRACKNO_LEN);
     }
 
     pub fn setPos(self: *CurrentSong, pos: []const u8) !void {
@@ -155,13 +155,13 @@ pub const CurrentSong = struct {
         } else if (mem.eql(u8, key, "Pos")) {
             try self.setPos(value);
         } else if (mem.eql(u8, key, "Track")) {
-            try self.setTrackno(value);
+            self.setTrackno(value);
         } else if (mem.eql(u8, key, "Album")) {
-            try self.setAlbum(value);
+            self.setAlbum(value);
         } else if (mem.eql(u8, key, "Title")) {
-            try self.setTitle(value);
+            self.setTitle(value);
         } else if (mem.eql(u8, key, "Artist")) {
-            try self.setArtist(value);
+            self.setArtist(value);
         } else if (mem.eql(u8, key, "time")) {
             if (mem.indexOfScalar(u8, value, ':')) |index| {
                 const elapsedSlice = value[0..index];
@@ -364,23 +364,43 @@ pub const Queue = struct {
         };
     }
 
-    pub fn downScroll(self: *Queue, respAllocator: mem.Allocator, inc: *usize) !void {
-        self.itopviewport += 1;
-        if (self.itopviewport + self.nviewable > self.ibufferstart + NSONGS) {
-            const added = try getQueue(respAllocator, self, .forward, .half);
-            self.ibufferstart += added;
-            self.fill = if (self.fill + added > Queue.NSONGS) Queue.NSONGS else self.fill + added;
-            inc.* -= added;
+    pub fn moveViewportUp(self: *Queue, delta: u8) u8 {
+        if (self.itopviewport > delta) {
+            self.itopviewport -= delta;
+            return 0;
+        } else {
+            const itopcast: u8 = @intCast(self.itopviewport);
+            const diff = delta - itopcast;
+            self.itopviewport = 0;
+            return diff;
         }
     }
 
-    pub fn upScroll(self: *Queue, respAllocator: mem.Allocator, inc: *usize) !void {
-        self.itopviewport -= 1;
-        if (self.itopviewport == self.ibufferstart) {
-            const added = try getQueue(respAllocator, self, .backward, .half);
-            self.ibufferstart -= added;
-            inc.* += added;
+    pub fn moveViewportDown(self: *Queue, delta: u8, height: u8) u8 {
+        if (self.itopviewport + delta < self.pl_len - height) {
+            self.itopviewport += delta;
+            util.log("itop: {}", .{self.itopviewport});
+            return 0;
+        } else {
+            const diff = self.itopviewport + @as(usize, delta) - (self.pl_len - height);
+            self.itopviewport = self.pl_len - height;
+            const castdiff: u8 = @intCast(diff);
+            util.log("castdiff: {}", .{castdiff});
+            return castdiff;
         }
+    }
+
+    pub fn getForward(self: *Queue, respAllocator: mem.Allocator) !usize {
+        const added = try getQueue(respAllocator, self, .forward, .half);
+        self.ibufferstart += added;
+        self.fill = if (self.fill + added > Queue.NSONGS) Queue.NSONGS else self.fill + added;
+        return added;
+    }
+
+    pub fn getBackward(self: *Queue, respAllocator: mem.Allocator) !usize {
+        const added = try getQueue(respAllocator, self, .backward, .half);
+        self.ibufferstart -= added;
+        return added;
     }
 
     fn getEdgeBuffers(len: usize) struct { ?[]QSong, ?[]QSong } {
@@ -442,11 +462,6 @@ pub fn getQueue(resp: mem.Allocator, queue: *Queue, dir: Queue.Dir, add: Queue.A
             .index = 0,
             .ireverse = buf.len,
         };
-        var songs2 = songs;
-        while (songs2.reverseNext()) |song| {
-            const i = mem.indexOfScalar(u8, song, '\n').?;
-            log("song: {s}", .{song[0..i]});
-        }
     }
     return try allocQueue(&songs, dir, &queue.ring, &queue.songbuf, &queue.titlebuf, &queue.artistbuf, addsize);
 }
@@ -487,7 +502,6 @@ fn allocQueue(
     }
     var added: usize = 0;
     while (next(songs)) |song| {
-        log("song: {s}", .{song[0..16]});
         lines = mem.splitScalar(u8, song, '\n');
         while (lines.next()) |line| {
             if (mem.startsWith(u8, line, "Title:")) {

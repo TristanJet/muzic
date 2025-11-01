@@ -1,9 +1,7 @@
 # muzic
 
 ## TO 1.0 !!!!!!!!!!
----I, Tristan Lay, will not sleep tomorrow until 1.0 is shipped!---
-
-I will spend 7h 40 min in this code base today, and will not sleep until I do!
+Let's freaking go
 
 - [x] fix search
     - [x] browser search
@@ -12,8 +10,14 @@ I will spend 7h 40 min in this code base today, and will not sleep until I do!
 - [ ] remove indefinite dynamic allocation in queue (memory leak)
     - [x] circular buffer
     - [x] bring out the increment of the ring
-    - [ ] get rendering correct
-- [ ] typing in higher column should have same effect as scroll, resetting later nodes
+    - [x] half up
+    - [ ] half down
+    - [ ] get queue rendering correct
+
+- [ ] BUG: typing in higher column should have same effect as scroll, resetting later nodes
+- [ ] columns walls in browser
+- [ ] next strings in browser should be on press - somehow load next strings for browser
+
 
 ## Semi important
 - [ ] should I unify the caches?
