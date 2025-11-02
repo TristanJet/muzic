@@ -719,7 +719,7 @@ pub const QueueScroll = struct {
                 }
             },
             .down => {
-                if (self.pos < self.area_height - 1) {
+                if (self.pos < @min(self.area_height - 1, self.queue.pl_len - 1)) {
                     self.pos += 1;
                     if (self.pos >= self.threshold_pos and self.queue.itopviewport + self.area_height < self.queue.pl_len) {
                         self.inc += 1;

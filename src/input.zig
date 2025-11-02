@@ -251,6 +251,16 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             if (app.scroll_q.absolutePos() == app.queue.pl_len - 1) return;
             const height: u8 = @intCast(window.panels.queue.validArea().ylen);
             const half_height: u8 = @intCast(height / 2);
+
+            if (app.queue.pl_len < height) {
+                const pos = app.scroll_q.pos;
+                const len: u8 = @intCast(app.queue.pl_len);
+                app.scroll_q.prev_pos = pos;
+                app.scroll_q.pos = if (pos + half_height < len - 1) pos + half_height else len - 1;
+                render_state.queueEffects = true;
+                return;
+            }
+
             const pos: i16 = @intCast(app.scroll_q.pos);
             const viewdelta: u8 = @intCast((pos - half_height) + half_height);
             var inc: usize = app.scroll_q.inc;
