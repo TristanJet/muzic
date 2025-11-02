@@ -3,25 +3,13 @@
 ## TO 1.0 !!!!!!!!!!
 Let's freaking go
 
-- [x] fix search
-    - [x] browser search
-    - [x] capitalisation in browser search
-    - [x] rewrite algorithm - no longer uses allocator
-- [x] remove indefinite dynamic allocation in queue (memory leak)
-    - [x] circular buffer
-    - [x] bring out the increment of the ring
-    - [x] half up
-    - [x] half down
 - [ ] g
 - [ ] G
 - [ ] adding song to queue seems to fuck up the scroll
 - [ ] get queue rendering correct
-- [x] FIX/ rewrite window spacing
-    - [x] columns walls in browser
+- [ ] BACKSPACE for search algo - save the strings?
 - [ ] browser column 1 resets when progress node
-- [ ] BACKSPACE for search algo
 
-- [ ] BUG: typing in higher column should have same effect as scroll, resetting later nodes
 - [ ] next strings in browser should be on press - somehow load next strings for browser
 
 ## Semi important
@@ -56,6 +44,14 @@ Let's freaking go
 - [ ] Batch HOLD events on release - seeking, skipping through songs
 - [ ] store only visible strings in queue
 - [ ] unset apex problem on col switch l 768 in input
+
+- [x] CRASHING BUG: typing in higher column should have same effect as scroll, resetting later nodes
+- [x] FIX/ rewrite window spacing
+    - [x] columns walls in browser
+- [x] fix search
+    - [x] browser search
+    - [x] capitalisation in browser search
+    - [x] rewrite algorithm - no longer uses allocator
 - [x] add a EMPTY QUEUE screen
 - [x] print error message if fails to connect to MPD
 - [x] invalid argument error message
@@ -101,6 +97,12 @@ Let's freaking go
 - [ ] infinite play without filling queue?
 - [ ] allow browse by files and directories - (no tags set)
 - [ ] moving around in queue, visual mode?
+
+- [x] remove indefinite dynamic allocation in queue (memory leak)
+    - [x] circular buffer
+    - [x] bring out the increment of the ring
+    - [x] half up
+    - [x] half down
 - [x] back takes you to beginning of song
 - [x] backspace on type
 - [x] shift arrow to seek faster

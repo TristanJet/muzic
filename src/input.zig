@@ -715,13 +715,12 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
             const escRead = try term.readEscapeCode(&escBuffer);
 
             if (escRead == 0) {
-                const current = app.col_arr.getCurrent();
-                try onBrowseTypingExit(app, current, render_state);
+                try onBrowseTypingExit(app, app.col_arr.getCurrent(), render_state);
             }
         },
         '\r', '\n' => {
-            const current = app.col_arr.getCurrent();
-            try onBrowseTypingExit(app, current, render_state);
+            try node_buffer.zeroForward();
+            try onBrowseTypingExit(app, app.col_arr.getCurrent(), render_state);
         },
         '\x7F' => {
             util.log("Backspace!!", .{});
