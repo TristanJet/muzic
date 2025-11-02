@@ -3,7 +3,6 @@
 ## TO 1.0 !!!!!!!!!!
 Let's freaking go
 
-- [ ] BUG: scroll continues if queue less than window
 - [ ] BUG: time bar doesn't update on space
 - [ ] g
 - [ ] G
@@ -45,6 +44,8 @@ Let's freaking go
 - [ ] store only visible strings in queue
 - [ ] unset apex problem on col switch l 768 in input
 
+- [x] BUG: Crash on input if queue empty
+- [x] BUG: scroll continues if queue less than window
 - [x] adding song to queue seems to fuck up the scroll
 - [x] CRASHING BUG: typing in higher column should have same effect as scroll, resetting later nodes
 - [x] nasty bug where size is not correctly handled in 3rd column

@@ -215,6 +215,30 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_br
 fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns), mpd_data: *state.Data) !void {
     switch (char) {
         'q' => app.quit = true,
+        'b' => {
+            const data_init = try mpd_data.init(.albums);
+            if (data_init) {
+                if (app.col_arr.getNext()) |next| next.displaying = mpd_data.albums;
+                render_state.browse_col[1] = true;
+            }
+            app.input_state = .normal_browse;
+            app.node_switched = true;
+            render_state.browse_cursor[app.col_arr.index] = true;
+            render_state.queue = true;
+        },
+        'f' => {
+            _ = try mpd_data.init(.searchable);
+            const searchable = mpd_data.searchable orelse return;
+            const uppers = mpd_data.searchable_lower orelse return;
+            if (!app.algo_init) try algo.init(window.panels.find.validArea().ylen, searchable.len);
+            try app.search_sample_su.update(searchable, uppers);
+            app.input_state = .typing_find;
+            render_state.find_clear = true;
+            render_state.queue = true;
+        },
+        else => if (app.queue.pl_len == 0) return,
+    }
+    switch (char) {
         'j' => {
             const inc_changed = app.scroll_q.scroll(.down);
             if (inc_changed) {
@@ -335,27 +359,6 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
                 try mpd.playById(wrkallocator, app.song.id);
             }
         },
-        'f' => {
-            _ = try mpd_data.init(.searchable);
-            const searchable = mpd_data.searchable orelse return;
-            const uppers = mpd_data.searchable_lower orelse return;
-            if (!app.algo_init) try algo.init(window.panels.find.validArea().ylen, searchable.len);
-            try app.search_sample_su.update(searchable, uppers);
-            app.input_state = .typing_find;
-            render_state.find_clear = true;
-            render_state.queue = true;
-        },
-        'b' => {
-            const data_init = try mpd_data.init(.albums);
-            if (data_init) {
-                if (app.col_arr.getNext()) |next| next.displaying = mpd_data.albums;
-                render_state.browse_col[1] = true;
-            }
-            app.input_state = .normal_browse;
-            app.node_switched = true;
-            render_state.browse_cursor[app.col_arr.index] = true;
-            render_state.queue = true;
-        },
         'x' => {
             if (debounce()) return;
             mpd.rmFromPos(wrkallocator, app.scroll_q.absolutePos()) catch |e| switch (e) {
@@ -432,7 +435,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             };
             if (!app.isPlaying) app.isPlaying = true;
         },
-        else => {},
+        else => return,
     }
 }
 
