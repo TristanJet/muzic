@@ -221,7 +221,6 @@ test "display width" {
     // const string = "ペルソナ3 オリジナル･サウンドトラック";
     const width = dw.strWidth(string);
     const zeroes = [_]u8{'0'} ** 1024;
-    util.log("", .{});
     util.log("Width: {}\nString:\n{s}\n{s}", .{ width, string, zeroes[0..width] });
 }
 

@@ -66,7 +66,6 @@ pub fn main() !void {
             return;
         },
         else => {
-            util.log("connection error: {}", .{e});
             return error.MpdConnectionFailed;
         },
     };
@@ -85,10 +84,7 @@ pub fn main() !void {
     try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &initial_song);
     try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &initial_song);
     var queue: mpd.Queue = try mpd.Queue.init(alloc.respAllocator, alloc.persistentAllocator, window.panels.queue.validArea().ylen);
-    const added = try mpd.getQueue(alloc.respAllocator, &queue, .forward, .full);
-    queue.fill += added;
-    util.log("RIng: {}", .{queue.ring});
-    _ = alloc.respArena.reset(.free_all);
+    try queue.fillForward(alloc.respAllocator);
 
     initial_typing.init();
 
@@ -149,13 +145,26 @@ pub fn main() !void {
         .input_state = .normal_queue,
     };
 
+    _ = alloc.respArena.reset(.free_all);
     var app = App.init(initial_state, &mpd_data);
 
     var render_state = RenderState(state.n_browse_columns).init();
 
     while (!app.state.quit) {
-        defer wrkfba.reset();
         const loop_start_time = time.milliTimestamp();
+
+        defer {
+            const frame_time = time.milliTimestamp() - loop_start_time;
+            if (frame_time < target_frame_time_ms) {
+                const sleep_time: u64 = @intCast((target_frame_time_ms - frame_time) * time.ns_per_ms);
+                time.sleep(sleep_time);
+            }
+        }
+
+        defer {
+            _ = alloc.respArena.reset(.{ .retain_with_limit = 1024 });
+            wrkfba.reset();
+        }
 
         const input_event: ?Event = try input.checkInputEvent();
         const released_event: ?Event = try input.checkReleaseEvent(input_event);
@@ -171,12 +180,5 @@ pub fn main() !void {
         app.updateState(&render_state, &mpd_data);
         try render.render(&app.state, &render_state, window.panels, &wrkfba.end_index);
         render_state.reset();
-
-        // Calculate remaining time in frame and sleep if necessary
-        const frame_time = time.milliTimestamp() - loop_start_time;
-        if (frame_time < target_frame_time_ms) {
-            const sleep_time: u64 = @intCast((target_frame_time_ms - frame_time) * time.ns_per_ms);
-            time.sleep(sleep_time);
-        }
     }
 }

@@ -57,7 +57,6 @@ fn sendCommand(command: []const u8) !void {
     if (mem.eql(u8, cmdBuf[0..3], "OK\n")) return;
     if (mem.eql(u8, cmdBuf[0..3], "ACK")) {
         const mpd_err = cmdBuf[5..9];
-        util.log("{s}", .{mpd_err});
         if (mem.eql(u8, mpd_err, "55@0")) return error.MpdNotPlaying;
         if (mem.eql(u8, mpd_err[0..3], "2@0")) return error.MpdBadIndex;
         return error.MpdError;
@@ -395,6 +394,11 @@ pub const Queue = struct {
         self.ibufferstart += added;
         self.fill = if (self.fill + added > Queue.NSONGS) Queue.NSONGS else self.fill + added;
         return added;
+    }
+
+    pub fn fillForward(self: *Queue, respAllocator: mem.Allocator) !void {
+        debug.assert(self.fill == 0);
+        self.fill += try getQueue(respAllocator, self, .forward, .full);
     }
 
     pub fn getBackward(self: *Queue, respAllocator: mem.Allocator) !usize {

@@ -49,7 +49,6 @@ pub fn init() !void {
     const tty = terminal.ttyFile();
     try getWindow(tty);
     panels.init(window);
-    util.log("Queue length: {}", .{panels.queue.validArea().ylen});
     y_len_ptr.* = panels.find.validArea().ylen;
 }
 

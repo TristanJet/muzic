@@ -166,8 +166,6 @@ fn onBrowseExit(app: *state.State, render_state: *RenderState(state.n_browse_col
     var resp: bool = undefined;
     resp = alloc.typingArena.reset(.retain_capacity);
     if (!resp) return error.AllocatorFail;
-    resp = alloc.respArena.reset(.free_all);
-    if (!resp) return error.AllocatorFail;
 }
 
 // ---- Input Mode Handlers ----
@@ -580,7 +578,6 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
             try browserHandleEnter(alloc.typingAllocator, curr_col.absolutePos(), mpd_data);
         },
         ' ' => {
-            util.log("SPACE PRESSED !!", .{});
             const curr_col = app.col_arr.getCurrent();
             try browserHandleSpace(alloc.typingAllocator, curr_col.absolutePos(), mpd_data);
         },
@@ -723,7 +720,6 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
             try onBrowseTypingExit(app, app.col_arr.getCurrent(), render_state);
         },
         '\x7F' => {
-            util.log("Backspace!!", .{});
             app.typing_buffer.pop() catch return;
             browse_typed = true;
             const current = app.col_arr.getCurrent();
@@ -749,7 +745,6 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
             browse_typed = true;
             const best_match: ?[]const u8 = try algo.stringBestMatch(app.typing_buffer.typed, &app.search_sample_str);
             if (best_match) |best| {
-                util.log("best match: {s}", .{best});
                 const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
                 const index = findStringIndex(best, app.search_sample_str.set, app.search_sample_str.uppers, compare_type) orelse return error.NotFound;
                 moveToIndex(index, current, displaying, window.panels.find.validArea().ylen);
@@ -893,7 +888,6 @@ fn handleBrowseKeyRelease(char: u8, app: *state.State, render_state: *RenderStat
             if (!resp) return;
             const next_col = app.col_arr.getNext();
             if (next_col) |next| {
-                util.log("next display: {s}", .{next.displaying.?});
                 next.clear(render_state);
                 next.render(render_state);
             }

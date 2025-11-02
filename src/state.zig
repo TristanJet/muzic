@@ -14,6 +14,7 @@ const mem = std.mem;
 const math = std.math;
 const debug = std.debug;
 const unic = std.unicode;
+const heap = std.heap;
 const log = @import("util.zig").log;
 
 const alloc = @import("allocators.zig");
@@ -23,6 +24,7 @@ const wrkallocator = alloc.wrkallocator;
 const ArrayList = std.ArrayList;
 
 pub const n_browse_columns: u4 = 3;
+//Must be larger than queue window size
 pub const QUEUE_BUF_SIZE = 64;
 
 pub const State = struct {
@@ -91,13 +93,13 @@ pub const Data = struct {
             },
             .albums => {
                 if (self.albums_init) return false;
-                try self.initAlbums(alloc.persistentAllocator, alloc.respAllocator);
+                try self.initAlbums(alloc.persistentAllocator, &alloc.album_artistArena);
                 self.albums_init = true;
                 log("init albums", .{});
             },
             .artists => {
                 if (self.artists_init) return false;
-                try self.initArtists(alloc.persistentAllocator, alloc.respAllocator);
+                try self.initArtists(alloc.persistentAllocator, &alloc.album_artistArena);
                 self.artists_init = true;
                 log("init artists", .{});
             },
@@ -172,60 +174,36 @@ pub const Data = struct {
             alloc.songData.deinit();
             song_data = null;
         }
-        // var buf = try persistentAlloc.alloc(u8, 512);
-        // for (self.song_titles.?, 0..) |a, i| {
-        //     getLowerString(a, self.songs_lower.?[i], buf);
-        //     log("{s} - {s}", .{
-        //         a,
-        //         buf[0..a.len],
-        //     });
-        // }
     }
 
-    fn initAlbums(self: *Data, persistentAllocator: mem.Allocator, tempAllocator: mem.Allocator) !void {
-        const albums = try mpd.getAllAlbums(persistentAllocator, tempAllocator);
+    fn initAlbums(self: *Data, persistentAllocator: mem.Allocator, tempArena: *heap.ArenaAllocator) !void {
+        const tempalloc = tempArena.allocator();
+        const albums = try mpd.getAllAlbums(persistentAllocator, tempalloc);
         sortStringsLex(albums);
         self.albums = albums;
         const lower = try persistentAllocator.alloc([]u16, albums.len);
         try getUpperIndices(albums, lower, persistentAllocator);
         self.albums_lower = lower;
         if (self.artists_init) {
-            _ = alloc.respArena.reset(.free_all);
+            _ = tempArena.reset(.free_all);
         } else {
-            _ = alloc.respArena.reset(.retain_capacity);
+            _ = tempArena.reset(.retain_capacity);
         }
-
-        // var buf = try persistentAllocator.alloc(u8, 512);
-        // for (self.albums.?, 0..) |a, i| {
-        //     getLowerString(a, self.albums_lower.?[i], buf);
-        //     log("{s} - {s}", .{
-        //         a,
-        //         buf[0..a.len],
-        //     });
-        // }
     }
 
-    fn initArtists(self: *Data, persistentAllocator: mem.Allocator, tempAllocator: mem.Allocator) !void {
-        const artists = try mpd.getAllArtists(persistentAllocator, tempAllocator);
+    fn initArtists(self: *Data, persistentAllocator: mem.Allocator, tempArena: *heap.ArenaAllocator) !void {
+        const tempalloc = tempArena.allocator();
+        const artists = try mpd.getAllArtists(persistentAllocator, tempalloc);
         sortStringsLex(artists);
         self.artists = artists;
         const lower = try persistentAllocator.alloc([]u16, artists.len);
         try getUpperIndices(artists, lower, persistentAllocator);
         self.artists_lower = lower;
         if (self.albums_init) {
-            _ = alloc.respArena.reset(.free_all);
+            _ = tempArena.reset(.free_all);
         } else {
-            _ = alloc.respArena.reset(.retain_capacity);
+            _ = tempArena.reset(.retain_capacity);
         }
-
-        // var buf = try persistentAllocator.alloc(u8, 512);
-        // for (self.artists.?, 0..) |a, i| {
-        //     getLowerString(a, self.artists_lower.?[i], buf);
-        //     log("{s} - {s}", .{
-        //         a,
-        //         buf[0..a.len],
-        //     });
-        // }
     }
 };
 
@@ -916,8 +894,7 @@ fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState(n_browse
         },
         .queue => {
             try app.queue.reset(alloc.respAllocator);
-            _ = try mpd.getQueue(alloc.respAllocator, app.queue, .forward, .full);
-            _ = alloc.respArena.reset(.free_all);
+            try app.queue.fillForward(alloc.respAllocator);
             if (app.queue.pl_len == 0) app.isPlaying = false;
             render_state.queue = true;
             render_state.queueEffects = true;
