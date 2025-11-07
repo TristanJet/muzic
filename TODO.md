@@ -3,11 +3,12 @@
 ## TO 1.0 !!!!!!!!!!
 Let's freaking go
 
-- [ ] BUG: time bar doesn't update on space
 - [ ] g
 - [ ] G
 - [ ] remove queue render flashing
 - [ ] BACKSPACE for search algo - save the strings?
+
+- [ ] BUG: time bar doesn't update on space
 - [ ] browser column 1 resets when progress node
 
 - [ ] next strings in browser should be on press - somehow load next strings for browser

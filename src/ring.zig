@@ -65,7 +65,7 @@ pub fn Buffer(size: usize, T: type) type {
 
         //Return an iterator based on the current state of the ring
         //Incrementing or changing the ring will make this iterator invalid
-        pub fn getIterator(self: *Self, ring: Ring) Iterator {
+        pub fn getIterator(self: *const Self, ring: Ring) Iterator {
             return Iterator{
                 .buf = self.buf.ptr,
                 .index = ring.first,

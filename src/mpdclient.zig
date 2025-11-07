@@ -407,14 +407,82 @@ pub const Queue = struct {
         return added;
     }
 
-    fn getEdgeBuffers(len: usize) struct { ?[]QSong, ?[]QSong } {
+    fn getEdgeBuffers(len: usize, wheight: usize, persAllocator: mem.Allocator) !struct { ?[]QSong, ?[]QSong } {
         if (len > NSONGS) {
-            return .{};
+            return .{
+                try persAllocator.alloc(QSong, wheight),
+                try persAllocator.alloc(QSong, wheight),
+            };
         } else {
             return .{ null, null };
         }
     }
+
+    const Iterator = struct {
+        index: usize,
+
+        fn next(it: *Iterator, inc: usize, edge: []QSong, ringit: *ring.Buffer(NSONGS, QSong).Iterator) ?QSong {
+            defer it.index += 1;
+            const index = it.index + inc;
+            if (index < edge.len) {
+                return edge[index];
+            } else {
+                return ringit.next(inc);
+            }
+        }
+    };
 };
+
+test "iter" {
+    const alloc = @import("allocators.zig");
+    const plen = 255;
+    debug.assert(plen > state.QUEUE_BUF_SIZE);
+    const wheight = 5;
+    const edgearr: [5][]const u8 = .{ "Luffy", "Zoro", "Nami", "Sanji", "Usopp" };
+    const ringarr: [5][]const u8 = .{ "Chopper", "Vivi", "Brook", "Franky", "Yamato" };
+
+    var edge: struct { ?[]QSong, ?[]QSong } = try Queue.getEdgeBuffers(plen, wheight, alloc.persistentAllocator);
+    var i: usize = 0;
+    while (i < wheight) : (i += 1) {
+        edge[0].?[i] = QSong{
+            .artist = edgearr[i],
+            .title = null,
+            .time = 0,
+            .pos = 0,
+            .id = 0,
+        };
+    }
+
+    var r = Ring{
+        .size = ringarr.len,
+        .first = 0,
+        .stop = 0,
+        .fill = 0,
+    };
+    var buf = try ring.Buffer(Queue.NSONGS, QSong).init(alloc.persistentAllocator);
+    i = 0;
+    while (i < ringarr.len) : (i += 1) {
+        debug.print("{} - {s}\n", .{ i, ringarr[i] });
+        buf.forwardWrite(r, QSong{
+            .artist = ringarr[i],
+            .title = null,
+            .time = 0,
+            .pos = 0,
+            .id = 0,
+        });
+        r.increment();
+        debug.print("{}\n", .{r});
+    }
+
+    var itring = buf.getIterator(r);
+    var itq = Queue.Iterator{
+        .index = 0,
+    };
+
+    while (itq.next(0, edge[0].?, &itring)) |song| {
+        debug.print("{s}\n", .{song.artist.?});
+    }
+}
 
 pub const QSong = struct {
     pub const MAXLEN = 64;
