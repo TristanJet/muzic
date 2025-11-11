@@ -25,7 +25,7 @@ const ArrayList = std.ArrayList;
 
 pub const n_browse_columns: u4 = 3;
 //Must be larger than queue window size
-pub const QUEUE_BUF_SIZE = 64;
+pub const QUEUE_BUF_SIZE = 32;
 
 pub const State = struct {
     quit: bool,
