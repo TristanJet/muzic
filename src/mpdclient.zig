@@ -407,33 +407,31 @@ pub const Queue = struct {
     }
 
     fn getEdgeBuffers(plen: usize, wheight: usize, persAllocator: mem.Allocator, respAllocator: mem.Allocator) !struct { ?[]QSong, ?[]QSong } {
-        if (plen > NSONGS) {
-            const STR_BUF_SIZE = 2 * 2 * QSong.MAXLEN * wheight;
-            var songbuf = try persAllocator.alloc(QSong, 2 * wheight);
-            var strbuf = try persAllocator.alloc(u8, STR_BUF_SIZE);
+        if (plen <= NSONGS) return .{ null, null };
 
-            var ittop = SongIterator{
-                .buffer = try fetchQueueBuf(respAllocator, 0, wheight),
-                .index = 0,
-                .ireverse = 0,
-            };
+        const STR_BUF_SIZE = 2 * 2 * QSong.MAXLEN * wheight;
+        var songbuf = try persAllocator.alloc(QSong, 2 * wheight);
+        var strbuf = try persAllocator.alloc(u8, STR_BUF_SIZE);
 
-            var itbottom = SongIterator{
-                .buffer = try fetchQueueBuf(respAllocator, plen - wheight, plen),
-                .index = 0,
-                .ireverse = 0,
-            };
+        var ittop = SongIterator{
+            .buffer = try fetchQueueBuf(respAllocator, 0, wheight),
+            .index = 0,
+            .ireverse = 0,
+        };
 
-            try queueToBuf(songbuf[0..wheight], strbuf[0 .. STR_BUF_SIZE / 2], &ittop, plen);
-            try queueToBuf(songbuf[wheight..], strbuf[STR_BUF_SIZE / 2 ..], &itbottom, plen);
+        var itbottom = SongIterator{
+            .buffer = try fetchQueueBuf(respAllocator, plen - wheight, plen),
+            .index = 0,
+            .ireverse = 0,
+        };
 
-            return .{
-                songbuf[0..wheight],
-                songbuf[wheight..],
-            };
-        } else {
-            return .{ null, null };
-        }
+        try queueToBuf(songbuf[0..wheight], strbuf[0 .. STR_BUF_SIZE / 2], &ittop, plen);
+        try queueToBuf(songbuf[wheight..], strbuf[STR_BUF_SIZE / 2 ..], &itbottom, plen);
+
+        return .{
+            songbuf[0..wheight],
+            songbuf[wheight..],
+        };
     }
 
     const Iterator = struct {
