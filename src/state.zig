@@ -894,7 +894,7 @@ fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState(n_browse
         },
         .queue => {
             try app.queue.reset(alloc.respAllocator);
-            try app.queue.fillForward(alloc.respAllocator);
+            try app.queue.fillForward(alloc.respAllocator, alloc.persistentAllocator);
             if (app.queue.pl_len == 0) app.isPlaying = false;
             render_state.queue = true;
             render_state.queueEffects = true;

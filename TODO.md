@@ -10,8 +10,10 @@ Let's freaking go
 
 - [ ] BUG: time bar doesn't update on space
 - [ ] browser column 1 resets when progress node
-
 - [ ] next strings in browser should be on press - somehow load next strings for browser
+
+## notes
+- [ ] do I need to have two edge iterators???
 
 ## Semi important
 - [ ] should I unify the caches?

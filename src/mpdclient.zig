@@ -324,14 +324,15 @@ pub const Queue = struct {
     nviewable: usize,
     ring: Ring,
     songbuf: ring.Buffer(NSONGS, QSong),
-    edgebuf: struct { ?[]QSong, ?[]QSong },
+    edgebuf: ?struct { []QSong, []QSong },
     artistbuf: ring.StrBuffer(NSONGS, QSong.MAXLEN),
     titlebuf: ring.StrBuffer(NSONGS, QSong.MAXLEN),
+    bound: Boundary,
 
     pub fn init(respAllocator: mem.Allocator, persAllocator: mem.Allocator, nviewable: usize) !Queue {
-        const pllen = try getPlaylistLen(respAllocator);
+        const plen = try getPlaylistLen(respAllocator);
         return Queue{
-            .pl_len = pllen,
+            .pl_len = plen,
             .ibufferstart = 0,
             .itopviewport = 0,
             .fill = 0,
@@ -343,22 +344,32 @@ pub const Queue = struct {
                 .size = NSONGS,
             },
             .songbuf = try ring.Buffer(NSONGS, QSong).init(persAllocator),
-            .edgebuf = try getEdgeBuffers(pllen, nviewable, respAllocator),
+            .edgebuf = null,
             .artistbuf = try ring.StrBuffer(NSONGS, QSong.MAXLEN).init(persAllocator),
             .titlebuf = try ring.StrBuffer(NSONGS, QSong.MAXLEN).init(persAllocator),
+            .bound = Boundary{
+                .bstart = 0,
+                .bend = plen,
+            },
         };
     }
 
     pub fn reset(self: *Queue, respAllocator: mem.Allocator) !void {
-        self.pl_len = try getPlaylistLen(respAllocator);
+        const plen = try getPlaylistLen(respAllocator);
+        self.pl_len = plen;
         self.ibufferstart = 0;
         self.itopviewport = 0;
         self.fill = 0;
+        self.edgebuf = null;
         self.ring = Ring{
             .first = 0,
             .stop = 0,
             .fill = 0,
             .size = NSONGS,
+        };
+        self.bound = Boundary{
+            .bstart = 0,
+            .bend = plen,
         };
     }
 
@@ -389,26 +400,32 @@ pub const Queue = struct {
     }
 
     pub fn getForward(self: *Queue, respAllocator: mem.Allocator) !usize {
-        const added = try getQueue(respAllocator, self, .forward, .half);
+        const added = try getQueue(self, .forward, respAllocator, Queue.ADD_SIZE);
         self.ibufferstart += added;
         self.fill = if (self.fill + added > Queue.NSONGS) Queue.NSONGS else self.fill + added;
         return added;
     }
 
-    pub fn fillForward(self: *Queue, respAllocator: mem.Allocator) !void {
+    pub fn fillForward(self: *Queue, ra: mem.Allocator, pa: mem.Allocator) !void {
         debug.assert(self.fill == 0);
-        self.fill += try getQueue(respAllocator, self, .forward, .full);
+        if (self.pl_len > Queue.NSONGS) {
+            self.edgebuf = try getEdgeBuffers(self.pl_len, self.nviewable, pa, ra);
+            self.ibufferstart = self.nviewable;
+            self.bound = Boundary{
+                .bstart = self.nviewable,
+                .bend = self.pl_len - self.nviewable,
+            };
+        }
+        self.fill += try getQueue(self, .forward, ra, Queue.NSONGS);
     }
 
     pub fn getBackward(self: *Queue, respAllocator: mem.Allocator) !usize {
-        const added = try getQueue(respAllocator, self, .backward, .half);
+        const added = try getQueue(self, .backward, respAllocator, Queue.ADD_SIZE);
         self.ibufferstart -= added;
         return added;
     }
 
-    fn getEdgeBuffers(plen: usize, wheight: usize, persAllocator: mem.Allocator, respAllocator: mem.Allocator) !struct { ?[]QSong, ?[]QSong } {
-        if (plen <= NSONGS) return .{ null, null };
-
+    fn getEdgeBuffers(plen: usize, wheight: usize, persAllocator: mem.Allocator, respAllocator: mem.Allocator) !struct { []QSong, []QSong } {
         const STR_BUF_SIZE = 2 * 2 * QSong.MAXLEN * wheight;
         var songbuf = try persAllocator.alloc(QSong, 2 * wheight);
         var strbuf = try persAllocator.alloc(u8, STR_BUF_SIZE);
@@ -449,14 +466,14 @@ pub const Queue = struct {
         if (self.itopviewport < self.nviewable) {
             return Iterator{
                 .index = 0,
-                .edgebuf = self.edgetop[0],
+                .edgebuf = if (self.edgebuf) |edge| edge[0] else null,
                 .itring = itring,
                 .nextfn = &topNext,
             };
         } else {
             return Iterator{
                 .index = 0,
-                .edgebuf = self.edgebot[1],
+                .edgebuf = if (self.edgebuf) |edge| edge[1] else null,
                 .itring = itring,
                 .nextfn = &botNext,
             };
@@ -468,6 +485,7 @@ pub const Queue = struct {
             return song;
         } else {
             if (it.edgebuf) |edge| {
+                debug.print("* ", .{});
                 const index = it.index;
                 it.index += 1;
                 return if (index < edge.len) edge[index] else null;
@@ -479,6 +497,7 @@ pub const Queue = struct {
         if (it.edgebuf) |edge| {
             const index = it.index + inc;
             if (index < edge.len) {
+                debug.print("* ", .{});
                 it.index += 1;
                 return edge[index];
             }
@@ -486,6 +505,47 @@ pub const Queue = struct {
         return it.itring.next(inc);
     }
 };
+
+test "queueinit" {
+    const all = @import("allocators.zig");
+    const pa = all.persistentAllocator;
+    const ra = all.respAllocator;
+
+    try connect(.command, false);
+
+    const plen = try getPlaylistLen(ra);
+    debug.print("plen: {}\n", .{plen});
+
+    const wheight = 2;
+    var queue = try Queue.init(ra, pa, wheight);
+    try queue.fillForward(ra, pa);
+    debug.print("itop: {}\n", .{queue.itopviewport});
+    debug.print("fill: {}\n", .{queue.fill});
+    var ringit = queue.songbuf.getIterator(queue.ring);
+    var itq = try queue.getIterator(&ringit);
+
+    const inc: usize = 0;
+    var count: usize = 0;
+    while (itq.next(inc)) |song| {
+        debug.print("{} ", .{count});
+        count += 1;
+        debug.print("{s}\n", .{song.title.?});
+    }
+    debug.print("-------------\n", .{});
+
+    queue.itopviewport = plen - wheight - Queue.NSONGS;
+    debug.print("itop: {}\n", .{queue.itopviewport});
+    _ = try queue.getForward(ra);
+    debug.print("fill: {}\n", .{queue.fill});
+    ringit = queue.songbuf.getIterator(queue.ring);
+    itq = try queue.getIterator(&ringit);
+    count = 0;
+    while (itq.next(inc)) |song| {
+        debug.print("{} ", .{count});
+        count += 1;
+        debug.print("{s}\n", .{song.title.?});
+    }
+}
 
 test "getedge" {
     const all = @import("allocators.zig");
@@ -611,37 +671,42 @@ fn getPlaylistLen(respAllocator: mem.Allocator) !usize {
     return error.NoLength;
 }
 
-pub fn getQueue(resp: mem.Allocator, queue: *Queue, dir: Queue.Dir, add: Queue.Add) !usize {
+pub fn getQueue(queue: *Queue, dir: Queue.Dir, ra: mem.Allocator, addsize: usize) !usize {
     debug.assert(queue.fill <= Queue.NSONGS);
-    log("GETTING QUEUE", .{});
-    const addsize: usize = switch (add) {
-        .full => Queue.NSONGS,
-        .half => Queue.ADD_SIZE,
-    };
-    const get_start = queue.ibufferstart + queue.fill;
 
     var songs: SongIterator = undefined;
-    if (dir == .forward) {
-        songs = SongIterator{
-            .buffer = try fetchQueueBuf(resp, get_start, get_start + addsize),
-            .index = 0,
-            .ireverse = 0,
-        };
-    } else {
-        log("ibufstart: {}\n addsize: {}\n", .{ queue.ibufferstart, addsize });
-        const buf = if (queue.ibufferstart < addsize)
-            try fetchQueueBuf(resp, 0, queue.ibufferstart)
-        else
-            try fetchQueueBuf(resp, queue.ibufferstart - addsize, queue.ibufferstart);
-
-        songs = SongIterator{
-            .buffer = buf,
-            .index = 0,
-            .ireverse = buf.len,
-        };
+    switch (dir) {
+        .forward => {
+            const start, const end = queue.bound.checkBoundary(queue.ibufferstart + queue.fill, queue.ibufferstart + queue.fill + addsize);
+            songs = SongIterator{
+                .buffer = try fetchQueueBuf(ra, start, end),
+                .index = 0,
+                .ireverse = 0,
+            };
+        },
+        .backward => {
+            const start, const end = queue.bound.checkBoundary(queue.ibufferstart -| addsize, queue.ibufferstart);
+            const buf = try fetchQueueBuf(ra, start, end);
+            songs = SongIterator{
+                .buffer = buf,
+                .index = 0,
+                .ireverse = buf.len,
+            };
+        },
     }
     return try allocQueue(&songs, dir, &queue.ring, &queue.songbuf, &queue.titlebuf, &queue.artistbuf, addsize);
 }
+
+const Boundary = struct {
+    bstart: usize,
+    bend: usize,
+
+    fn checkBoundary(self: Boundary, start: usize, end: usize) struct { usize, usize } {
+        const newstart: usize = if (start < self.bstart) self.bstart else start;
+        const newend: usize = if (end > self.bend) self.bend else end;
+        return .{ newstart, newend };
+    }
+};
 
 fn fetchQueueBuf(respAllocator: mem.Allocator, start: usize, end: usize) ![]const u8 {
     const command = try fmt.allocPrint(respAllocator, "playlistinfo {}:{}\n", .{ start, end });
