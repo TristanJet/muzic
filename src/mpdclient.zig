@@ -451,10 +451,11 @@ pub const Queue = struct {
         };
     }
 
+    // Now that I think about it can I just combine the top and bottom iterators?
     const Iterator = struct {
         index: usize,
         edgebuf: ?[]QSong,
-        itring: *ring.Buffer(NSONGS, QSong).Iterator,
+        itring: ring.Buffer(NSONGS, QSong).Iterator,
         nextfn: *const fn (*Iterator, usize) ?QSong,
 
         fn next(self: *Iterator, inc: usize) ?QSong {
@@ -462,7 +463,7 @@ pub const Queue = struct {
         }
     };
 
-    pub fn getIterator(self: *const Queue, itring: *ring.Buffer(NSONGS, QSong).Iterator) !Iterator {
+    pub fn getIterator(self: *const Queue, itring: ring.Buffer(NSONGS, QSong).Iterator) !Iterator {
         if (self.itopviewport < self.nviewable) {
             return Iterator{
                 .index = 0,
@@ -521,8 +522,8 @@ test "queueinit" {
     try queue.fillForward(ra, pa);
     debug.print("itop: {}\n", .{queue.itopviewport});
     debug.print("fill: {}\n", .{queue.fill});
-    var ringit = queue.songbuf.getIterator(queue.ring);
-    var itq = try queue.getIterator(&ringit);
+    const ringit = queue.songbuf.getIterator(queue.ring);
+    var itq = try queue.getIterator(ringit);
 
     const inc: usize = 0;
     var count: usize = 0;
@@ -537,8 +538,8 @@ test "queueinit" {
     debug.print("itop: {}\n", .{queue.itopviewport});
     _ = try queue.getForward(ra);
     debug.print("fill: {}\n", .{queue.fill});
-    ringit = queue.songbuf.getIterator(queue.ring);
-    itq = try queue.getIterator(&ringit);
+    // ringit = queue.songbuf.getIterator(queue.ring);
+    itq = try queue.getIterator(ringit);
     count = 0;
     while (itq.next(inc)) |song| {
         debug.print("{} ", .{count});
