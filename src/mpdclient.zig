@@ -330,6 +330,7 @@ pub const Queue = struct {
     bound: Boundary,
 
     pub fn init(respAllocator: mem.Allocator, persAllocator: mem.Allocator, nviewable: usize) !Queue {
+        debug.assert(NSONGS >= nviewable);
         const plen = try getPlaylistLen(respAllocator);
         return Queue{
             .pl_len = plen,
@@ -408,7 +409,9 @@ pub const Queue = struct {
 
     pub fn fillForward(self: *Queue, ra: mem.Allocator, pa: mem.Allocator) !void {
         debug.assert(self.fill == 0);
+        // debug.assert((self.pl_len - self.nviewable) - self.nviewable > self.nviewable);
         if (self.pl_len > Queue.NSONGS) {
+            debug.assert(self.pl_len > 3 * self.nviewable);
             self.edgebuf = try getEdgeBuffers(self.pl_len, self.nviewable, pa, ra);
             self.ibufferstart = self.nviewable;
             self.bound = Boundary{
@@ -452,30 +455,30 @@ pub const Queue = struct {
     }
 
     // Now that I think about it can I just combine the top and bottom iterators?
-    const Iterator = struct {
+    pub const Iterator = struct {
         index: usize,
         edgebuf: ?[]QSong,
         itring: ring.Buffer(NSONGS, QSong).Iterator,
         nextfn: *const fn (*Iterator, usize) ?QSong,
 
-        fn next(self: *Iterator, inc: usize) ?QSong {
+        pub fn next(self: *Iterator, inc: usize) ?QSong {
             return self.nextfn(self, inc);
         }
     };
 
-    pub fn getIterator(self: *const Queue, itring: ring.Buffer(NSONGS, QSong).Iterator) !Iterator {
+    pub fn getIterator(self: *const Queue) !Iterator {
         if (self.itopviewport < self.nviewable) {
             return Iterator{
                 .index = 0,
                 .edgebuf = if (self.edgebuf) |edge| edge[0] else null,
-                .itring = itring,
+                .itring = self.songbuf.getIterator(self.ring),
                 .nextfn = &topNext,
             };
         } else {
             return Iterator{
                 .index = 0,
                 .edgebuf = if (self.edgebuf) |edge| edge[1] else null,
-                .itring = itring,
+                .itring = self.songbuf.getIterator(self.ring),
                 .nextfn = &botNext,
             };
         }
@@ -678,7 +681,12 @@ pub fn getQueue(queue: *Queue, dir: Queue.Dir, ra: mem.Allocator, addsize: usize
     var songs: SongIterator = undefined;
     switch (dir) {
         .forward => {
+            util.log("ibufstart: {}", .{queue.ibufferstart});
+            util.log("fill: {}", .{queue.fill});
+            util.log("addsize: {}", .{addsize});
             const start, const end = queue.bound.checkBoundary(queue.ibufferstart + queue.fill, queue.ibufferstart + queue.fill + addsize);
+            util.log("start: {}", .{start});
+            util.log("end: {}", .{end});
             songs = SongIterator{
                 .buffer = try fetchQueueBuf(ra, start, end),
                 .index = 0,

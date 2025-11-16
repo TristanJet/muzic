@@ -8,7 +8,7 @@ const alloc = @import("allocators.zig");
 const sym = @import("symbols.zig");
 const mpd = @import("mpdclient.zig");
 const dw = @import("display_width.zig");
-const QueueIterator = @import("ring.zig").Buffer(state.QUEUE_BUF_SIZE, mpd.QSong).Iterator;
+const QueueIterator = mpd.Queue.Iterator;
 const Input_State = @import("input.zig").Input_State;
 const io = std.io;
 const fs = std.fs;
@@ -102,8 +102,8 @@ pub fn render(app: *state.State, render_state: *RenderState(n_browse_columns), p
     if (render_state.borders or render_state.type or render_state.find) try drawHeader(panels.find.area, try getFindText());
     if (render_state.currentTrack) try currTrackRender(wrkallocator, panels.curr_song, app.song, &app.first_render, end_index);
     if (render_state.bar) try barRender(panels.curr_song, app.song, wrkallocator);
-    if (render_state.queue) try queueRender(wrkallocator, panels.queue.validArea(), app.queue.songbuf.getIterator(app.queue.ring), app.scroll_q.inc);
-    if (render_state.queueEffects) try queueEffectsRender(wrkallocator, panels.queue.validArea(), app.queue.songbuf.getIterator(app.queue.ring), app.scroll_q.absolutePos(), app.scroll_q.absolutePrevPos(), app.scroll_q.inc, app.input_state, app.song.id, app.prev_id);
+    if (render_state.queue) try queueRender(wrkallocator, panels.queue.validArea(), try app.queue.getIterator(), app.scroll_q.inc);
+    if (render_state.queueEffects) try queueEffectsRender(wrkallocator, panels.queue.validArea(), try app.queue.getIterator(), app.scroll_q.absolutePos(), app.scroll_q.absolutePrevPos(), app.scroll_q.inc, app.input_state, app.song.id, app.prev_id);
     if (render_state.find) try findRender(panels.find.validArea());
     if (render_state.find_cursor) try findCursor(panels.find.validArea());
     if (render_state.find_clear) try clear(panels.find.validArea());
@@ -211,20 +211,21 @@ fn queueRender(
         try term.writeByteNTimes(' ', area.xlen);
     }
 
-    if (itq.remaining == 0) {
+    var iterator: QueueIterator = itq;
+    var item = iterator.next(inc);
+    if (item == null) {
         try term.moveCursor(area.ylen / 2, area.xlen / 2);
         try writeLineCenter("queue empty", area.ylen / 2, area.xmin, area.xmax);
         return;
     }
 
-    var iterator: QueueIterator = itq;
     for (0..area.ylen) |i| {
-        const item = iterator.next(inc) orelse return;
-        const itemTime: []const u8 = if (item.time) |time|
+        const itemTime: []const u8 = if (item.?.time) |time|
             formatSeconds(allocator, @as(u64, time)) catch ""
         else
             "";
-        try writeQueueLine(area, area.ymin + i, item, itemTime);
+        try writeQueueLine(area, area.ymin + i, item.?, itemTime);
+        item = iterator.next(inc) orelse return;
     }
 }
 

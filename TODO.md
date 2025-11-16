@@ -3,14 +3,15 @@
 ## TO 1.0 !!!!!!!!!!
 Let's freaking go
 
-- [ ] g
-- [ ] G
+- [ ] g, G 
+    - [ ] variable buffer handling
 - [ ] remove queue render flashing
 - [ ] BACKSPACE for search algo - save the strings?
 
-- [ ] BUG: time bar doesn't update on space
+- [ ] BUG: time bar doesn't update on space add
 - [ ] browser column 1 resets when progress node
 - [ ] next strings in browser should be on press - somehow load next strings for browser
+    - [ ] naive get on press
 
 ## notes
 - [ ] do I need to have two edge iterators???
