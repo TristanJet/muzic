@@ -324,7 +324,8 @@ pub const Queue = struct {
     nviewable: usize,
     ring: Ring,
     songbuf: ring.Buffer(NSONGS, QSong),
-    edgebuf: ?struct { []QSong, []QSong },
+    edgebuf: struct { ?[]QSong, ?[]QSong },
+    edge: ?Edge,
     artistbuf: ring.StrBuffer(NSONGS, QSong.MAXLEN),
     titlebuf: ring.StrBuffer(NSONGS, QSong.MAXLEN),
     bound: Boundary,
@@ -345,7 +346,8 @@ pub const Queue = struct {
                 .size = NSONGS,
             },
             .songbuf = try ring.Buffer(NSONGS, QSong).init(persAllocator),
-            .edgebuf = null,
+            .edgebuf = .{ null, null },
+            .edge = null,
             .artistbuf = try ring.StrBuffer(NSONGS, QSong.MAXLEN).init(persAllocator),
             .titlebuf = try ring.StrBuffer(NSONGS, QSong.MAXLEN).init(persAllocator),
             .bound = Boundary{
@@ -361,7 +363,7 @@ pub const Queue = struct {
         self.ibufferstart = 0;
         self.itopviewport = 0;
         self.fill = 0;
-        self.edgebuf = null;
+        self.edgebuf = struct { null, null };
         self.ring = Ring{
             .first = 0,
             .stop = 0,
@@ -407,16 +409,16 @@ pub const Queue = struct {
         return added;
     }
 
-    pub fn fillForward(self: *Queue, ra: mem.Allocator, pa: mem.Allocator) !void {
+    pub fn initialFill(self: *Queue, ra: mem.Allocator, pa: mem.Allocator) !void {
         debug.assert(self.fill == 0);
         // debug.assert((self.pl_len - self.nviewable) - self.nviewable > self.nviewable);
         if (self.pl_len > Queue.NSONGS) {
-            debug.assert(self.pl_len > 3 * self.nviewable);
-            self.edgebuf = try getEdgeBuffers(self.pl_len, self.nviewable, pa, ra);
+            self.edge = self.edge orelse try Edge.init(self.nviewable, pa);
+            self.edgebuf = try self.edge.?.getEdgeBuffers(self.pl_len, self.nviewable, ra);
             self.ibufferstart = self.nviewable;
             self.bound = Boundary{
                 .bstart = self.nviewable,
-                .bend = self.pl_len - self.nviewable,
+                .bend = if (self.edgebuf[1]) |_| self.pl_len - self.nviewable else self.pl_len,
             };
         }
         self.fill += try getQueue(self, .forward, ra, Queue.NSONGS);
@@ -426,32 +428,6 @@ pub const Queue = struct {
         const added = try getQueue(self, .backward, respAllocator, Queue.ADD_SIZE);
         self.ibufferstart -= added;
         return added;
-    }
-
-    fn getEdgeBuffers(plen: usize, wheight: usize, persAllocator: mem.Allocator, respAllocator: mem.Allocator) !struct { []QSong, []QSong } {
-        const STR_BUF_SIZE = 2 * 2 * QSong.MAXLEN * wheight;
-        var songbuf = try persAllocator.alloc(QSong, 2 * wheight);
-        var strbuf = try persAllocator.alloc(u8, STR_BUF_SIZE);
-
-        var ittop = SongIterator{
-            .buffer = try fetchQueueBuf(respAllocator, 0, wheight),
-            .index = 0,
-            .ireverse = 0,
-        };
-
-        var itbottom = SongIterator{
-            .buffer = try fetchQueueBuf(respAllocator, plen - wheight, plen),
-            .index = 0,
-            .ireverse = 0,
-        };
-
-        try queueToBuf(songbuf[0..wheight], strbuf[0 .. STR_BUF_SIZE / 2], &ittop, plen);
-        try queueToBuf(songbuf[wheight..], strbuf[STR_BUF_SIZE / 2 ..], &itbottom, plen);
-
-        return .{
-            songbuf[0..wheight],
-            songbuf[wheight..],
-        };
     }
 
     // Now that I think about it can I just combine the top and bottom iterators?
@@ -470,14 +446,14 @@ pub const Queue = struct {
         if (self.itopviewport < self.nviewable) {
             return Iterator{
                 .index = 0,
-                .edgebuf = if (self.edgebuf) |edge| edge[0] else null,
+                .edgebuf = self.edgebuf[0],
                 .itring = self.songbuf.getIterator(self.ring),
                 .nextfn = &topNext,
             };
         } else {
             return Iterator{
                 .index = 0,
-                .edgebuf = if (self.edgebuf) |edge| edge[1] else null,
+                .edgebuf = self.edgebuf[1],
                 .itring = self.songbuf.getIterator(self.ring),
                 .nextfn = &botNext,
             };
@@ -510,6 +486,48 @@ pub const Queue = struct {
     }
 };
 
+const Edge = struct {
+    songbuf: []QSong,
+    strbuf: []u8,
+
+    //Need to reset this if window height changes
+    fn init(wheight: usize, pa: mem.Allocator) !Edge {
+        return .{
+            .songbuf = try pa.alloc(QSong, 2 * wheight),
+            .strbuf = try pa.alloc(u8, 2 * 2 * QSong.MAXLEN * wheight),
+        };
+    }
+
+    fn getEdgeBuffers(self: *Edge, plen: usize, wheight: usize, ra: mem.Allocator) !struct { []QSong, ?[]QSong } {
+        debug.assert(plen > Queue.NSONGS);
+        if (self.songbuf.len != 2 * wheight or self.strbuf.len != 2 * 2 * QSong.MAXLEN * wheight) return error.WindowHeightMismatch;
+
+        var ittop = SongIterator{
+            .buffer = try fetchQueueBuf(ra, 0, wheight),
+            .index = 0,
+            .ireverse = 0,
+        };
+        try queueToBuf(self.songbuf[0..wheight], self.strbuf[0 .. self.strbuf.len / 2], &ittop, plen);
+
+        if (plen <= Queue.NSONGS + wheight) return .{
+            self.songbuf[0..wheight],
+            null,
+        };
+
+        var itbottom = SongIterator{
+            .buffer = try fetchQueueBuf(ra, plen - wheight, plen),
+            .index = 0,
+            .ireverse = 0,
+        };
+        try queueToBuf(self.songbuf[wheight..], self.strbuf[self.strbuf.len / 2 ..], &itbottom, plen);
+
+        return .{
+            self.songbuf[0..wheight],
+            self.songbuf[wheight..],
+        };
+    }
+};
+
 test "queueinit" {
     const all = @import("allocators.zig");
     const pa = all.persistentAllocator;
@@ -522,11 +540,10 @@ test "queueinit" {
 
     const wheight = 2;
     var queue = try Queue.init(ra, pa, wheight);
-    try queue.fillForward(ra, pa);
+    try queue.initialFill(ra, pa);
     debug.print("itop: {}\n", .{queue.itopviewport});
     debug.print("fill: {}\n", .{queue.fill});
-    const ringit = queue.songbuf.getIterator(queue.ring);
-    var itq = try queue.getIterator(ringit);
+    var itq = try queue.getIterator();
 
     const inc: usize = 0;
     var count: usize = 0;
@@ -537,12 +554,12 @@ test "queueinit" {
     }
     debug.print("-------------\n", .{});
 
-    queue.itopviewport = plen - wheight - Queue.NSONGS;
+    queue.itopviewport = plen -| wheight -| Queue.NSONGS;
     debug.print("itop: {}\n", .{queue.itopviewport});
     _ = try queue.getForward(ra);
     debug.print("fill: {}\n", .{queue.fill});
     // ringit = queue.songbuf.getIterator(queue.ring);
-    itq = try queue.getIterator(ringit);
+    itq = try queue.getIterator();
     count = 0;
     while (itq.next(inc)) |song| {
         debug.print("{} ", .{count});
