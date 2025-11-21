@@ -430,59 +430,51 @@ pub const Queue = struct {
         return added;
     }
 
-    // Now that I think about it can I just combine the top and bottom iterators?
+    //Iterator just returns songs in buffers - not responsible for guaranteeing correct position.
     pub const Iterator = struct {
         index: usize,
-        edgebuf: ?[]QSong,
+        remaining: ?usize,
+        edgebuf: *const struct { ?[]QSong, ?[]QSong },
         itring: ring.Buffer(NSONGS, QSong).Iterator,
-        nextfn: *const fn (*Iterator, usize) ?QSong,
 
-        pub fn next(self: *Iterator, inc: usize) ?QSong {
-            return self.nextfn(self, inc);
+        pub fn next(it: *Iterator, inc: usize) ?QSong {
+            if (it.edgebuf[0]) |top| {
+                var index = it.index + inc;
+                if (index < top.len) {
+                    it.index += 1;
+                    return top[index];
+                }
+                if (it.itring.next(inc -| top.len)) |song| {
+                    it.index += 1;
+                    return song;
+                }
+                if (it.edgebuf[1]) |bot| {
+                    const rem = it.remaining orelse bot.len;
+                    index = bot.len - rem;
+                    if (index < bot.len) {
+                        it.index += 1;
+                        it.remaining = rem - 1;
+                        return bot[index];
+                    }
+                }
+            }
+
+            if (it.itring.next(inc)) |song| {
+                it.index += 1;
+                return song;
+            }
+
+            return null;
         }
     };
 
     pub fn getIterator(self: *const Queue) !Iterator {
-        if (self.itopviewport < self.nviewable) {
-            return Iterator{
-                .index = 0,
-                .edgebuf = self.edgebuf[0],
-                .itring = self.songbuf.getIterator(self.ring),
-                .nextfn = &topNext,
-            };
-        } else {
-            return Iterator{
-                .index = 0,
-                .edgebuf = self.edgebuf[1],
-                .itring = self.songbuf.getIterator(self.ring),
-                .nextfn = &botNext,
-            };
-        }
-    }
-
-    fn botNext(it: *Iterator, inc: usize) ?QSong {
-        if (it.itring.next(inc)) |song| {
-            return song;
-        } else {
-            if (it.edgebuf) |edge| {
-                debug.print("* ", .{});
-                const index = it.index;
-                it.index += 1;
-                return if (index < edge.len) edge[index] else null;
-            } else return null;
-        }
-    }
-
-    fn topNext(it: *Iterator, inc: usize) ?QSong {
-        if (it.edgebuf) |edge| {
-            const index = it.index + inc;
-            if (index < edge.len) {
-                debug.print("* ", .{});
-                it.index += 1;
-                return edge[index];
-            }
-        }
-        return it.itring.next(inc);
+        return Iterator{
+            .index = 0,
+            .remaining = null,
+            .edgebuf = &self.edgebuf,
+            .itring = self.songbuf.getIterator(self.ring),
+        };
     }
 };
 

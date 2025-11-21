@@ -69,9 +69,6 @@ fn compareStrings(context: S, mid_item: []const u8, index: usize) math.Order {
         lowerItem = ascii.lowerString(context.lowerBuf, lowerItem);
     }
     const order = std.mem.order(u8, context.key, lowerItem);
-    log("key: {s}", .{context.key});
-    log("item: {s}", .{lowerItem});
-    log("{}", .{order});
     return order;
 }
 
