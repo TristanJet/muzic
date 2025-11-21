@@ -14,8 +14,6 @@ Let's freaking go
 - [ ] next strings in browser should be on press - somehow load next strings for browser
     - [ ] naive get on press
 
-## notes
-- [ ] do I need to have two edge iterators???
 
 ## Semi important
 - [ ] should I unify the caches?
@@ -49,6 +47,7 @@ Let's freaking go
 - [ ] store only visible strings in queue
 - [ ] unset apex problem on col switch l 768 in input
 
+- [x] do I need to have two edge iterators???
 - [x] BUG: Crash on input if queue empty
 - [x] BUG: scroll continues if queue less than window
 - [x] adding song to queue seems to fuck up the scroll

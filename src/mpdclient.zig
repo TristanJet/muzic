@@ -814,7 +814,7 @@ fn queueToBuf(buf: []QSong, strbuf: []u8, songs: *SongIterator, N: usize) !void 
                 current.time = try fmt.parseInt(u16, time_str, 10);
             } else if (mem.startsWith(u8, line, "Pos:")) {
                 const pos_str = mem.trimLeft(u8, line[4..], " ");
-                current.pos = try fmt.parseInt(u8, pos_str, 10);
+                current.pos = try fmt.parseInt(usize, pos_str, 10);
             } else if (mem.startsWith(u8, line, "Id:")) {
                 const id_str = mem.trimLeft(u8, line[3..], " ");
                 current.id = try fmt.parseInt(usize, id_str, 10);
