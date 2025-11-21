@@ -5,6 +5,7 @@ Let's freaking go
 
 - [ ] g, G 
     - [ ] variable buffer handling
+    - [ ] parse int to current pos is u8 !
 - [ ] remove queue render flashing
 - [ ] BACKSPACE for search algo - save the strings?
 

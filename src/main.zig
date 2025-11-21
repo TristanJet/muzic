@@ -84,7 +84,7 @@ pub fn main() !void {
     try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &initial_song);
     try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &initial_song);
     var queue: mpd.Queue = try mpd.Queue.init(alloc.respAllocator, alloc.persistentAllocator, window.panels.queue.validArea().ylen);
-    try queue.fillForward(alloc.respAllocator, alloc.persistentAllocator);
+    try queue.initialFill(alloc.respAllocator, alloc.persistentAllocator);
 
     initial_typing.init();
 
