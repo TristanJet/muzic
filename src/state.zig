@@ -24,8 +24,8 @@ const wrkallocator = alloc.wrkallocator;
 const ArrayList = std.ArrayList;
 
 pub const n_browse_columns: u4 = 3;
-//Must be larger than queue window size
-pub const QUEUE_BUF_SIZE = 32;
+//Must be 2x the window size
+pub const QUEUE_BUF_SIZE = 64;
 
 pub const State = struct {
     quit: bool,
@@ -729,37 +729,6 @@ pub const QueueScroll = struct {
             },
         }
         return inc_changed;
-    }
-
-    pub fn jumpTop(self: *QueueScroll) bool {
-        var inc_changed = false;
-        if (self.inc > 0) {
-            self.inc = 0;
-            inc_changed = true;
-        }
-        self.prev_pos = self.pos;
-        self.pos = 0;
-        return inc_changed;
-    }
-
-    pub fn jumpBottom(self: *QueueScroll, qlen: usize) bool {
-        var inc_changed = false;
-        self.prev_pos = self.pos;
-        if (qlen > 0) {
-            if (qlen > self.area_height) {
-                const prev_inc = self.inc;
-                self.inc = qlen - self.area_height;
-                if (self.inc != prev_inc) inc_changed = true;
-                self.pos = @intCast(self.area_height - 1);
-            } else {
-                self.pos = @intCast(qlen - 1);
-            }
-        }
-        return inc_changed;
-    }
-
-    fn getMax(q: QueueScroll, queue_len: usize) usize {
-        return @min(queue_len, q.area_height);
     }
 };
 

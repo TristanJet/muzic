@@ -434,14 +434,16 @@ pub const Queue = struct {
     pub const Iterator = struct {
         index: usize,
         remaining: ?usize,
+        ntop: usize,
         edgebuf: *const struct { ?[]QSong, ?[]QSong },
         itring: ring.Buffer(NSONGS, QSong).Iterator,
 
         pub fn next(it: *Iterator, inc: usize) ?QSong {
             if (it.edgebuf[0]) |top| {
                 var index = it.index + inc;
-                if (index < top.len) {
+                if (index < top.len and it.ntop > 0) {
                     it.index += 1;
+                    it.ntop -= 1;
                     return top[index];
                 }
                 if (it.itring.next(inc -| top.len)) |song| {
@@ -469,9 +471,11 @@ pub const Queue = struct {
     };
 
     pub fn getIterator(self: *const Queue) !Iterator {
+        util.log("ntop: {}", .{self.nviewable -| self.itopviewport});
         return Iterator{
             .index = 0,
             .remaining = null,
+            .ntop = self.nviewable -| self.itopviewport,
             .edgebuf = &self.edgebuf,
             .itring = self.songbuf.getIterator(self.ring),
         };

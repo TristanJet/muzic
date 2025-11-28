@@ -262,14 +262,19 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             render_state.queueEffects = true;
         },
         'g' => {
-            const inc_changed = app.scroll_q.jumpTop();
-            if (inc_changed) render_state.queue = true;
+            if (app.scroll_q.inc > 0) render_state.queue = true;
+            app.scroll_q.inc = 0;
+            app.scroll_q.prev_pos = app.scroll_q.pos;
+            app.scroll_q.pos = 0;
+            app.queue.itopviewport = 0;
+            app.queue.fill = 0;
+            app.queue.ibufferstart = app.queue.nviewable;
             render_state.queueEffects = true;
         },
         'G' => {
-            const inc_changed = app.scroll_q.jumpBottom(app.queue.pl_len);
-            if (inc_changed) render_state.queue = true;
-            render_state.queueEffects = true;
+            // const inc_changed = app.scroll_q.jumpBottom(app.queue.pl_len);
+            // if (inc_changed) render_state.queue = true;
+            // render_state.queueEffects = true;
         },
         'd' & '\x1F' => {
             if (app.scroll_q.absolutePos() == app.queue.pl_len - 1) return;

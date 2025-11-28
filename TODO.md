@@ -4,8 +4,9 @@
 Let's freaking go
 
 - [ ] g, G 
-    - [ ] variable buffer handling
-    - [ ] parse int to current pos is u8 !
+    - [x] variable buffer handling
+    - [x] parse int to current pos is u8 !
+- [ ] make queue adding, deleting work again
 - [ ] remove queue render flashing
 - [ ] BACKSPACE for search algo - save the strings?
 
