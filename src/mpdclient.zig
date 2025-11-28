@@ -471,7 +471,6 @@ pub const Queue = struct {
     };
 
     pub fn getIterator(self: *const Queue) !Iterator {
-        util.log("ntop: {}", .{self.nviewable -| self.itopviewport});
         return Iterator{
             .index = 0,
             .remaining = null,
