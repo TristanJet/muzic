@@ -388,14 +388,14 @@ pub const Queue = struct {
         }
     }
 
-    pub fn moveViewportDown(self: *Queue, delta: u8, height: u8) u8 {
-        if (self.itopviewport + delta < self.pl_len - height) {
+    pub fn moveViewportDown(self: *Queue, delta: u8) u8 {
+        if (self.itopviewport + delta < self.pl_len - self.nviewable) {
             self.itopviewport += delta;
             util.log("itop: {}", .{self.itopviewport});
             return 0;
         } else {
-            const diff = self.itopviewport + @as(usize, delta) - (self.pl_len - height);
-            self.itopviewport = self.pl_len - height;
+            const diff = self.itopviewport + @as(usize, delta) - (self.pl_len - self.nviewable);
+            self.itopviewport = self.pl_len - self.nviewable;
             const castdiff: u8 = @intCast(diff);
             util.log("castdiff: {}", .{castdiff});
             return castdiff;

@@ -240,7 +240,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
     }
     switch (char) {
         'j' => {
-            const inc_changed = app.scroll_q.scroll(.down);
+            const inc_changed = app.scroll_q.scrollDown(app.queue.nviewable, app.queue.pl_len, app.queue.itopviewport);
             if (inc_changed) {
                 app.queue.itopviewport += 1;
 
@@ -267,7 +267,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             render_state.queueEffects = true;
         },
         'k' => {
-            const inc_changed = app.scroll_q.scroll(.up);
+            const inc_changed = app.scroll_q.scrollUp();
             if (inc_changed) {
                 app.queue.itopviewport -= 1;
                 if (app.queue.itopviewport < app.queue.ibufferstart) {
@@ -312,7 +312,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             render_state.queueEffects = true;
         },
         'd' & '\x1F' => {
-            if (app.scroll_q.absolutePos() == app.queue.pl_len - 1) return;
+            if (app.scroll_q.pos + app.queue.itopviewport == app.queue.pl_len - 1) return;
             const height: u8 = @intCast(window.panels.queue.validArea().ylen);
             const half_height: u8 = @intCast(height / 2);
 
@@ -329,10 +329,10 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             const viewdelta: u8 = @intCast((pos - half_height) + half_height);
             var inc: usize = app.scroll_q.inc;
             if (viewdelta > 0) {
-                const viewdiff: u8 = app.queue.moveViewportDown(viewdelta, height);
+                const viewdiff: u8 = app.queue.moveViewportDown(viewdelta);
                 inc += viewdelta - viewdiff;
                 if (viewdiff > 0) {
-                    app.scroll_q.moveCursorDown(viewdiff, app.queue.pl_len);
+                    app.scroll_q.moveCursorDown(viewdiff, app.queue.pl_len, app.queue.itopviewport);
                 } else {
                     app.scroll_q.pos = half_height;
                 }
@@ -348,7 +348,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             render_state.queueEffects = true;
         },
         'u' & '\x1F' => {
-            if (app.scroll_q.absolutePos() == 0) return;
+            if (app.scroll_q.pos + app.queue.itopviewport == 0) return;
             const height: u8 = @intCast(window.panels.queue.validArea().ylen);
             const half_height: u8 = @intCast(height / 2);
             const pos: i16 = @intCast(app.scroll_q.pos);
@@ -401,7 +401,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         },
         'x' => {
             if (debounce()) return;
-            mpd.rmFromPos(wrkallocator, app.scroll_q.absolutePos()) catch |e| switch (e) {
+            mpd.rmFromPos(wrkallocator, app.scroll_q.pos + app.queue.itopviewport) catch |e| switch (e) {
                 error.MpdNotPlaying => return,
                 error.MpdBadIndex => {
                     if (app.queue.pl_len == 0) return;
@@ -411,7 +411,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             };
             // If we're deleting the last item in the queue, move cursor up
             if (app.queue.pl_len == 0) return;
-            if (app.scroll_q.absolutePos() >= app.queue.pl_len - 1 and app.scroll_q.pos > 0) {
+            if (app.scroll_q.pos + app.queue.itopviewport >= app.queue.pl_len - 1 and app.scroll_q.pos > 0) {
                 if (app.scroll_q.inc > 0)
                     app.scroll_q.inc -= 1
                 else
@@ -421,7 +421,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         },
         'D' => {
             if (debounce()) return;
-            const position: usize = app.scroll_q.absolutePos();
+            const position: usize = app.scroll_q.pos + app.queue.itopviewport;
             try mpd.rmRangeFromPos(wrkallocator, position);
 
             // Always move cursor up after deleting to the end
@@ -466,7 +466,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         },
         '\n', '\r' => {
             if (debounce()) return;
-            mpd.playByPos(wrkallocator, app.scroll_q.absolutePos()) catch |e| switch (e) {
+            mpd.playByPos(wrkallocator, app.scroll_q.pos + app.queue.itopviewport) catch |e| switch (e) {
                 error.MpdBadIndex => {
                     if (app.queue.pl_len == 0) return;
                     return error.MpdError;

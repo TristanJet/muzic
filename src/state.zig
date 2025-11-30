@@ -671,18 +671,7 @@ pub const QueueScroll = struct {
     pos: u8,
     prev_pos: u8,
     inc: usize,
-
-    queue: *const mpd.Queue,
     threshold_pos: u8,
-    area_height: usize,
-
-    pub fn absolutePos(q: QueueScroll) usize {
-        return q.pos + q.queue.itopviewport;
-    }
-
-    pub fn absolutePrevPos(q: QueueScroll) usize {
-        return q.prev_pos + q.queue.itopviewport;
-    }
 
     pub fn moveCursorUp(self: *QueueScroll, delta: u8) void {
         if (self.pos > delta) {
@@ -692,8 +681,8 @@ pub const QueueScroll = struct {
         }
     }
 
-    pub fn moveCursorDown(self: *QueueScroll, delta: u8, pllen: usize) void {
-        const abspos = self.absolutePos();
+    pub fn moveCursorDown(self: *QueueScroll, delta: u8, pllen: usize, itopv: usize) void {
+        const abspos = self.pos + itopv;
         if (abspos + delta < pllen) {
             self.pos += delta;
         } else {
@@ -703,29 +692,28 @@ pub const QueueScroll = struct {
         }
     }
 
-    pub fn scroll(self: *QueueScroll, direction: input.cursorDirection) bool {
+    pub fn scrollUp(self: *QueueScroll) bool {
         var inc_changed: bool = false;
-        self.prev_pos = self.pos;
+        if (self.pos > 0) {
+            self.prev_pos = self.pos;
+            self.pos -= 1;
+        } else if (self.inc > 0) {
+            self.inc -= 1;
+            inc_changed = true;
+        }
+        return inc_changed;
+    }
 
-        switch (direction) {
-            .up => {
-                if (self.pos > 0) {
-                    self.pos -= 1;
-                } else if (self.inc > 0) {
-                    self.inc -= 1;
-                    inc_changed = true;
-                }
-            },
-            .down => {
-                if (self.pos < @min(self.area_height - 1, self.queue.pl_len - 1)) {
-                    self.pos += 1;
-                    if (self.pos >= self.threshold_pos and self.queue.itopviewport + self.area_height < self.queue.pl_len) {
-                        self.inc += 1;
-                        self.pos -= 1;
-                        inc_changed = true;
-                    }
-                }
-            },
+    pub fn scrollDown(self: *QueueScroll, height: usize, pl_len: usize, itopv: usize) bool {
+        var inc_changed: bool = false;
+        if (self.pos < @min(height - 1, pl_len - 1)) {
+            self.prev_pos = self.pos;
+            self.pos += 1;
+            if (self.pos >= self.threshold_pos and itopv + height < pl_len) {
+                self.inc += 1;
+                self.pos -= 1;
+                inc_changed = true;
+            }
         }
         return inc_changed;
     }

@@ -103,7 +103,7 @@ pub fn render(app: *state.State, render_state: *RenderState(n_browse_columns), p
     if (render_state.currentTrack) try currTrackRender(wrkallocator, panels.curr_song, app.song, &app.first_render, end_index);
     if (render_state.bar) try barRender(panels.curr_song, app.song, wrkallocator);
     if (render_state.queue) try queueRender(wrkallocator, panels.queue.validArea(), try app.queue.getIterator(), app.scroll_q.inc);
-    if (render_state.queueEffects) try queueEffectsRender(wrkallocator, panels.queue.validArea(), try app.queue.getIterator(), app.scroll_q.absolutePos(), app.scroll_q.absolutePrevPos(), app.scroll_q.inc, app.input_state, app.song.id, app.prev_id);
+    if (render_state.queueEffects) try queueEffectsRender(wrkallocator, panels.queue.validArea(), try app.queue.getIterator(), app.scroll_q.pos + app.queue.itopviewport, app.scroll_q.prev_pos + app.queue.itopviewport, app.scroll_q.inc, app.input_state, app.song.id, app.prev_id);
     if (render_state.find) try findRender(panels.find.validArea());
     if (render_state.find_cursor) try findCursor(panels.find.validArea());
     if (render_state.find_clear) try clear(panels.find.validArea());

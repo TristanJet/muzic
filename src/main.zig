@@ -123,10 +123,7 @@ pub fn main() !void {
             .pos = 0,
             .prev_pos = 0,
             .inc = 0,
-            .queue = &queue,
-
             .threshold_pos = state.getThresholdPos(window.panels.queue.validArea().ylen, 0.8),
-            .area_height = window.panels.queue.validArea().ylen,
         },
 
         .typing_buffer = initial_typing,
