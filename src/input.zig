@@ -243,8 +243,24 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             const inc_changed = app.scroll_q.scroll(.down);
             if (inc_changed) {
                 app.queue.itopviewport += 1;
+
                 if (app.queue.itopviewport + app.queue.nviewable > app.queue.ibufferstart + mpd.Queue.NSONGS) {
                     app.scroll_q.inc -= try app.queue.getForward(alloc.respAllocator);
+                } else {
+                    var buffer_wrong: bool = false;
+                    if (app.queue.edgebuf[0]) |edge| {
+                        if (app.queue.itopviewport + app.queue.nviewable == edge.len + 1 and
+                            app.queue.ibufferstart != edge.len)
+                        {
+                            app.queue.ibufferstart = edge.len;
+                            app.queue.fill = 0;
+                            buffer_wrong = true;
+                        }
+                    }
+                    if (buffer_wrong) {
+                        util.log("buffer wrong - resetting", .{});
+                        app.queue.fill += try mpd.getQueue(app.queue, .forward, alloc.respAllocator, mpd.Queue.NSONGS);
+                    }
                 }
                 render_state.queue = true;
             }
@@ -254,8 +270,25 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             const inc_changed = app.scroll_q.scroll(.up);
             if (inc_changed) {
                 app.queue.itopviewport -= 1;
-                if (app.queue.itopviewport <= app.queue.ibufferstart) {
+                if (app.queue.itopviewport < app.queue.ibufferstart) {
                     app.scroll_q.inc += try app.queue.getBackward(alloc.respAllocator);
+                } else {
+                    var buffer_wrong: bool = false;
+                    if (app.queue.edgebuf[1]) |edge| {
+                        if (app.queue.itopviewport == app.queue.pl_len - 1 - edge.len and
+                            app.queue.ibufferstart + mpd.Queue.NSONGS - 1 != app.queue.itopviewport)
+                        {
+                            app.queue.ibufferstart = app.queue.itopviewport + 1;
+                            app.queue.fill = 0;
+                            app.scroll_q.inc = mpd.Queue.NSONGS - 1 + edge.len;
+                            buffer_wrong = true;
+                        }
+                    }
+                    if (buffer_wrong) {
+                        util.log("buffer wrong - resetting", .{});
+                        app.queue.fill += try mpd.getQueue(app.queue, .backward, alloc.respAllocator, mpd.Queue.NSONGS);
+                        app.queue.ibufferstart -= mpd.Queue.NSONGS;
+                    }
                 }
                 render_state.queue = true;
             }
@@ -267,14 +300,16 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             app.scroll_q.prev_pos = app.scroll_q.pos;
             app.scroll_q.pos = 0;
             app.queue.itopviewport = 0;
-            app.queue.fill = 0;
-            app.queue.ibufferstart = app.queue.nviewable;
             render_state.queueEffects = true;
         },
         'G' => {
-            // const inc_changed = app.scroll_q.jumpBottom(app.queue.pl_len);
-            // if (inc_changed) render_state.queue = true;
-            // render_state.queueEffects = true;
+            const max_inc = app.queue.pl_len - app.queue.nviewable;
+            if (app.scroll_q.inc != max_inc) render_state.queue = true;
+            app.scroll_q.inc = max_inc; // this is kinda hacky
+            app.scroll_q.prev_pos = app.scroll_q.pos;
+            app.scroll_q.pos = @intCast(app.queue.nviewable - 1);
+            app.queue.itopviewport = app.queue.pl_len - app.queue.nviewable;
+            render_state.queueEffects = true;
         },
         'd' & '\x1F' => {
             if (app.scroll_q.absolutePos() == app.queue.pl_len - 1) return;

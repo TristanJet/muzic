@@ -693,12 +693,7 @@ pub fn getQueue(queue: *Queue, dir: Queue.Dir, ra: mem.Allocator, addsize: usize
     var songs: SongIterator = undefined;
     switch (dir) {
         .forward => {
-            util.log("ibufstart: {}", .{queue.ibufferstart});
-            util.log("fill: {}", .{queue.fill});
-            util.log("addsize: {}", .{addsize});
             const start, const end = queue.bound.checkBoundary(queue.ibufferstart + queue.fill, queue.ibufferstart + queue.fill + addsize);
-            util.log("start: {}", .{start});
-            util.log("end: {}", .{end});
             songs = SongIterator{
                 .buffer = try fetchQueueBuf(ra, start, end),
                 .index = 0,

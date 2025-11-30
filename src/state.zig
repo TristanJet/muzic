@@ -712,7 +712,6 @@ pub const QueueScroll = struct {
                 if (self.pos > 0) {
                     self.pos -= 1;
                 } else if (self.inc > 0) {
-                    log("hereee", .{});
                     self.inc -= 1;
                     inc_changed = true;
                 }

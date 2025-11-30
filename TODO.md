@@ -3,17 +3,22 @@
 ## TO 1.0 !!!!!!!!!!
 Let's freaking go
 
-- [ ] g, G 
+- [x] g, G 
     - [x] variable buffer handling
     - [x] parse int to current pos is u8 !
+- [ ] ctrl d and u work again
 - [ ] make queue adding, deleting work again
+- [ ] Queue breaks after adding song in the middle
 - [ ] remove queue render flashing
+- [ ] next strings in browser should be on press - somehow load next strings for browser
+    - [ ] naive get on press
 - [ ] BACKSPACE for search algo - save the strings?
+- [ ] Queue buffer adapts to window size
+- [ ] delete and put and yank in queue
+- [ ] enter after search to find next best option
 
 - [ ] BUG: time bar doesn't update on space add
 - [ ] browser column 1 resets when progress node
-- [ ] next strings in browser should be on press - somehow load next strings for browser
-    - [ ] naive get on press
 
 
 ## Semi important
