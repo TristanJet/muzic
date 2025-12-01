@@ -3,24 +3,30 @@
 ## TO 1.0 !!!!!!!!!!
 Let's freaking go
 
+- [x] remove queue render flashing
 - [x] g, G 
     - [x] variable buffer handling
     - [x] parse int to current pos is u8 !
 - [x] ctrl d and u work again
-- [ ] make queue adding, deleting work again
-- [ ] Queue breaks after adding song in the middle
+- [ ] jump to currently playing
+    - [ ] make queue adding, deleting work again
+        - [ ] investigate cause
+        - [ ] Queue breaks after adding song in the middle
+- [ ] n/plen indicator on queue
+- [ ] crash when I search lotus juice
 - [ ] initial queue position should be currently playing
-- [ ] remove queue render flashing
+- [ ] BACKSPACE for search algo - save the strings?
+- [ ] enter after search to find next best option
+- [ ] Queue buffer adapts to window size
 - [ ] next strings in browser should be on press - somehow load next strings for browser
     - [ ] naive get on press
-- [ ] BACKSPACE for search algo - save the strings?
-- [ ] Queue buffer adapts to window size
 - [ ] delete and put and yank in queue
-- [ ] enter after search to find next best option
 
 - [ ] BUG: time bar doesn't update on space add
 - [ ] browser column 1 resets when progress node
-
+- [ ] allow browse by files and directories - (no tags set)
+- [ ] moving around in queue, visual mode?
+    - [ ] when delete from q, store the song ids
 
 ## Semi important
 - [ ] should I unify the caches?
@@ -109,8 +115,6 @@ Let's freaking go
 ## Features 
 
 - [ ] infinite play without filling queue?
-- [ ] allow browse by files and directories - (no tags set)
-- [ ] moving around in queue, visual mode?
 
 - [x] remove indefinite dynamic allocation in queue (memory leak)
     - [x] circular buffer

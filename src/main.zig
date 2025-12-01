@@ -83,9 +83,11 @@ pub fn main() !void {
     initial_song.init();
     try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &initial_song);
     try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &initial_song);
+    var initial_inc: usize = 0;
     var queue: mpd.Queue = try mpd.Queue.init(alloc.respAllocator, alloc.persistentAllocator, window.panels.queue.validArea().ylen);
+    queue.jumpToPos(initial_song.pos, &initial_inc);
     try queue.initialFill(alloc.respAllocator, alloc.persistentAllocator);
-
+    util.log("post fill: itop: {}, songpos: {}, inc: {}, ibuf: {}, endbuf: {}", .{ queue.itopviewport, initial_song.pos, initial_inc, queue.ibufferstart, queue.ibufferstart + mpd.Queue.NSONGS - 1 });
     initial_typing.init();
 
     var mpd_data = state.Data{
@@ -122,7 +124,7 @@ pub fn main() !void {
         .scroll_q = state.QueueScroll{
             .pos = 0,
             .prev_pos = 0,
-            .inc = 0,
+            .inc = initial_inc,
             .threshold_pos = state.getThresholdPos(window.panels.queue.validArea().ylen, 0.8),
         },
 
@@ -147,6 +149,7 @@ pub fn main() !void {
 
     var render_state = RenderState(state.n_browse_columns).init();
 
+    var initialloop = true;
     while (!app.state.quit) {
         const loop_start_time = time.milliTimestamp();
 
@@ -173,7 +176,10 @@ pub fn main() !void {
         if (idle_event[0]) |event| app.appendEvent(event);
         if (idle_event[1]) |event| app.appendEvent(event);
         app.appendEvent(time_event);
-
+        if (initialloop) {
+            util.log("ACTUAL: itop: {}, songpos: {}, inc: {}, ibuf: {}, endbuf: {}", .{ app.state.queue.itopviewport, app.state.song.pos, app.state.scroll_q.inc, app.state.queue.ibufferstart, app.state.queue.ibufferstart + mpd.Queue.NSONGS - 1 });
+            initialloop = false;
+        }
         app.updateState(&render_state, &mpd_data);
         try render.render(&app.state, &render_state, window.panels, &wrkfba.end_index);
         render_state.reset();

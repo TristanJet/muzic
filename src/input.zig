@@ -250,6 +250,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
                     app.queue.fill += try mpd.getQueue(app.queue, .forward, alloc.respAllocator, mpd.Queue.NSONGS);
                 }
 
+                util.log("itop: {}, songpos: {}, inc: {}, ibuf: {}", .{ app.queue.itopviewport, app.song.pos, app.scroll_q.inc, app.queue.ibufferstart });
                 render_state.queue = true;
             }
             render_state.queueEffects = true;

@@ -333,9 +333,13 @@ pub const Queue = struct {
     pub fn init(respAllocator: mem.Allocator, persAllocator: mem.Allocator, nviewable: usize) !Queue {
         debug.assert(NSONGS >= nviewable);
         const plen = try getPlaylistLen(respAllocator);
+        var bstart: usize = 0;
+        if (plen > NSONGS) {
+            bstart = nviewable;
+        }
         return Queue{
             .pl_len = plen,
-            .ibufferstart = 0,
+            .ibufferstart = bstart,
             .itopviewport = 0,
             .fill = 0,
             .nviewable = nviewable,
@@ -351,7 +355,7 @@ pub const Queue = struct {
             .artistbuf = try ring.StrBuffer(NSONGS, QSong.MAXLEN).init(persAllocator),
             .titlebuf = try ring.StrBuffer(NSONGS, QSong.MAXLEN).init(persAllocator),
             .bound = Boundary{
-                .bstart = 0,
+                .bstart = bstart,
                 .bend = plen,
             },
         };
@@ -360,8 +364,6 @@ pub const Queue = struct {
     pub fn reset(self: *Queue, respAllocator: mem.Allocator) !void {
         const plen = try getPlaylistLen(respAllocator);
         self.pl_len = plen;
-        self.ibufferstart = 0;
-        self.itopviewport = 0;
         self.fill = 0;
         self.edgebuf = .{ null, null };
         self.ring = Ring{
@@ -411,11 +413,9 @@ pub const Queue = struct {
 
     pub fn initialFill(self: *Queue, ra: mem.Allocator, pa: mem.Allocator) !void {
         debug.assert(self.fill == 0);
-        // debug.assert((self.pl_len - self.nviewable) - self.nviewable > self.nviewable);
         if (self.pl_len > Queue.NSONGS) {
             self.edge = self.edge orelse try Edge.init(self.nviewable, pa);
             self.edgebuf = try self.edge.?.getEdgeBuffers(self.pl_len, self.nviewable, ra);
-            self.ibufferstart = self.nviewable;
             self.bound = Boundary{
                 .bstart = self.nviewable,
                 .bend = if (self.edgebuf[1]) |_| self.pl_len - self.nviewable else self.pl_len,
@@ -456,6 +456,32 @@ pub const Queue = struct {
             }
         }
         return buffer_wrong;
+    }
+
+    pub fn jumpToPos(self: *Queue, songpos: usize, inc: *usize) void {
+        debug.assert(songpos <= self.pl_len - 1);
+        if (songpos < (self.nviewable / 2)) {
+            util.log("top edge", .{});
+            inc.* = 0;
+            self.itopviewport = 0;
+            self.ibufferstart = self.bound.bstart;
+            return;
+        }
+
+        if (self.pl_len - songpos < self.nviewable / 2) {
+            util.log("bottom edge", .{});
+            inc.* = self.pl_len - self.nviewable;
+            self.itopviewport = self.pl_len - self.nviewable;
+            return;
+        }
+
+        self.itopviewport = songpos -| ((self.nviewable / 2) - 1);
+        if (self.itopviewport < self.ibufferstart or self.itopviewport + self.nviewable - 1 > self.ibufferstart + NSONGS - 1) {
+            util.log("update ibuf", .{});
+            self.ibufferstart = @max(songpos -| (NSONGS / 2), self.bound.bstart);
+        }
+        inc.* = self.nviewable + (self.itopviewport - self.ibufferstart);
+        util.log("EXPECTED: itop: {}, songpos: {}, inc: {}, ibuf: {}", .{ self.itopviewport, songpos, inc.*, self.ibufferstart });
     }
 
     //Iterator just returns songs in buffers - not responsible for guaranteeing correct position.
