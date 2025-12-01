@@ -206,11 +206,6 @@ fn queueRender(
     itq: QueueIterator,
     inc: usize,
 ) !void {
-    for (0..area.ylen) |i| {
-        try term.moveCursor(area.ymin + i, area.xmin);
-        try term.writeByteNTimes(' ', area.xlen);
-    }
-
     var iterator: QueueIterator = itq;
     var item = iterator.next(inc);
     if (item == null) {
@@ -219,13 +214,19 @@ fn queueRender(
         return;
     }
 
-    for (0..area.ylen) |i| {
-        const itemTime: []const u8 = if (item.?.time) |time|
-            formatSeconds(allocator, @as(u64, time)) catch ""
-        else
-            "";
-        try writeQueueLine(area, area.ymin + i, item.?, itemTime);
-        item = iterator.next(inc) orelse return;
+    var i: usize = 0;
+    while (i < area.ylen) : (item = iterator.next(inc)) {
+        if (item) |x| {
+            const itemTime: []const u8 = if (x.time) |time|
+                formatSeconds(allocator, @as(u64, time)) catch ""
+            else
+                "";
+            try writeQueueLine(area, area.ymin + i, x, itemTime);
+        } else {
+            try term.moveCursor(area.ymin + i, area.xmin);
+            try term.writeByteNTimes(' ', area.xlen);
+        }
+        i += 1;
     }
 }
 

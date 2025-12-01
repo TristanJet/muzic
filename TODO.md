@@ -6,9 +6,10 @@ Let's freaking go
 - [x] g, G 
     - [x] variable buffer handling
     - [x] parse int to current pos is u8 !
-- [ ] ctrl d and u work again
+- [x] ctrl d and u work again
 - [ ] make queue adding, deleting work again
 - [ ] Queue breaks after adding song in the middle
+- [ ] initial queue position should be currently playing
 - [ ] remove queue render flashing
 - [ ] next strings in browser should be on press - somehow load next strings for browser
     - [ ] naive get on press
