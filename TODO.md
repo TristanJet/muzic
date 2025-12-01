@@ -8,13 +8,13 @@ Let's freaking go
     - [x] variable buffer handling
     - [x] parse int to current pos is u8 !
 - [x] ctrl d and u work again
-- [ ] jump to currently playing
-    - [ ] make queue adding, deleting work again
-        - [ ] investigate cause
-        - [ ] Queue breaks after adding song in the middle
+- [x] jump to currently playing
+    - [x] make queue adding, deleting work again
+        - [x] investigate cause
+        - [x] Queue breaks after adding song in the middle
 - [ ] n/plen indicator on queue
 - [ ] crash when I search lotus juice
-- [ ] initial queue position should be currently playing
+- [x] initial queue position should be currently playing
 - [ ] BACKSPACE for search algo - save the strings?
 - [ ] enter after search to find next best option
 - [ ] Queue buffer adapts to window size

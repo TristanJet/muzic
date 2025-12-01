@@ -458,30 +458,28 @@ pub const Queue = struct {
         return buffer_wrong;
     }
 
-    pub fn jumpToPos(self: *Queue, songpos: usize, inc: *usize) void {
-        debug.assert(songpos <= self.pl_len - 1);
-        if (songpos < (self.nviewable / 2)) {
+    pub fn jumpToPos(self: *Queue, itoppos: usize, inc: *usize) void {
+        debug.assert(itoppos <= self.pl_len - 1 and itoppos >= 0);
+        self.itopviewport = itoppos;
+        if (itoppos == 0) {
             util.log("top edge", .{});
             inc.* = 0;
-            self.itopviewport = 0;
             self.ibufferstart = self.bound.bstart;
             return;
         }
 
-        if (self.pl_len - songpos < self.nviewable / 2) {
+        if (self.pl_len - itoppos <= self.nviewable) {
             util.log("bottom edge", .{});
             inc.* = self.pl_len - self.nviewable;
-            self.itopviewport = self.pl_len - self.nviewable;
             return;
         }
 
-        self.itopviewport = songpos -| ((self.nviewable / 2) - 1);
         if (self.itopviewport < self.ibufferstart or self.itopviewport + self.nviewable - 1 > self.ibufferstart + NSONGS - 1) {
             util.log("update ibuf", .{});
-            self.ibufferstart = @max(songpos -| (NSONGS / 2), self.bound.bstart);
+            self.ibufferstart = @max(itoppos -| (NSONGS / 2), self.bound.bstart);
         }
-        inc.* = self.nviewable + (self.itopviewport - self.ibufferstart);
-        util.log("EXPECTED: itop: {}, songpos: {}, inc: {}, ibuf: {}", .{ self.itopviewport, songpos, inc.*, self.ibufferstart });
+        inc.* = self.nviewable + self.itopviewport - self.ibufferstart;
+        util.log("EXPECTED: itop: {}, itoppos: {}, inc: {}, ibuf: {}", .{ self.itopviewport, itoppos, inc.*, self.ibufferstart });
     }
 
     //Iterator just returns songs in buffers - not responsible for guaranteeing correct position.
