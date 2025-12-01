@@ -250,7 +250,6 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
                     app.queue.fill += try mpd.getQueue(app.queue, .forward, alloc.respAllocator, mpd.Queue.NSONGS);
                 }
 
-                util.log("itop: {}, songpos: {}, inc: {}, ibuf: {}", .{ app.queue.itopviewport, app.song.pos, app.scroll_q.inc, app.queue.ibufferstart });
                 render_state.queue = true;
             }
             render_state.queueEffects = true;
@@ -410,13 +409,6 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             if (debounce()) return;
             const position: usize = app.scroll_q.pos + app.queue.itopviewport;
             try mpd.rmRangeFromPos(wrkallocator, position);
-
-            // Always move cursor up after deleting to the end
-            if (app.scroll_q.pos > 0) {
-                app.scroll_q.pos -= 1;
-            } else if (app.scroll_q.inc > 0) {
-                app.scroll_q.inc -= 1;
-            }
 
             render_state.queueEffects = true;
         },

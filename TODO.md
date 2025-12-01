@@ -12,9 +12,9 @@ Let's freaking go
     - [x] make queue adding, deleting work again
         - [x] investigate cause
         - [x] Queue breaks after adding song in the middle
+- [x] initial queue position should be currently playing
 - [ ] n/plen indicator on queue
 - [ ] crash when I search lotus juice
-- [x] initial queue position should be currently playing
 - [ ] BACKSPACE for search algo - save the strings?
 - [ ] enter after search to find next best option
 - [ ] Queue buffer adapts to window size

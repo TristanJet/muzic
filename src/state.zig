@@ -848,12 +848,12 @@ fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState(n_browse
             render_state.currentTrack = true;
         },
         .queue => {
-            log("Prior to update:\ninc: {}, itop: {}, ibuf: {}", .{ app.scroll_q.inc, app.queue.itopviewport, app.queue.ibufferstart });
             try app.queue.reset(alloc.respAllocator);
-            app.queue.jumpToPos(app.song.pos, &app.scroll_q.inc);
+            app.queue.jumpToPos(app.queue.pl_len -| app.queue.nviewable, &app.scroll_q.inc);
             try app.queue.initialFill(alloc.respAllocator, alloc.persistentAllocator);
-            log("Post update:\ninc: {}, itop: {}, ibuf: {}", .{ app.scroll_q.inc, app.queue.itopviewport, app.queue.ibufferstart });
             if (app.queue.pl_len == 0) app.isPlaying = false;
+            app.scroll_q.prev_pos = app.scroll_q.pos;
+            app.scroll_q.pos = @intCast(@min(app.queue.pl_len - 1, app.queue.nviewable - 1));
             render_state.queue = true;
             render_state.queueEffects = true;
         },

@@ -87,7 +87,6 @@ pub fn main() !void {
     var queue: mpd.Queue = try mpd.Queue.init(alloc.respAllocator, alloc.persistentAllocator, window.panels.queue.validArea().ylen);
     queue.jumpToPos(initial_song.pos, &initial_inc);
     try queue.initialFill(alloc.respAllocator, alloc.persistentAllocator);
-    util.log("post fill: itop: {}, songpos: {}, inc: {}, ibuf: {}, endbuf: {}", .{ queue.itopviewport, initial_song.pos, initial_inc, queue.ibufferstart, queue.ibufferstart + mpd.Queue.NSONGS - 1 });
     initial_typing.init();
 
     var mpd_data = state.Data{
@@ -149,7 +148,6 @@ pub fn main() !void {
 
     var render_state = RenderState(state.n_browse_columns).init();
 
-    var initialloop = true;
     while (!app.state.quit) {
         const loop_start_time = time.milliTimestamp();
 
@@ -176,10 +174,6 @@ pub fn main() !void {
         if (idle_event[0]) |event| app.appendEvent(event);
         if (idle_event[1]) |event| app.appendEvent(event);
         app.appendEvent(time_event);
-        if (initialloop) {
-            util.log("ACTUAL: itop: {}, songpos: {}, inc: {}, ibuf: {}, endbuf: {}", .{ app.state.queue.itopviewport, app.state.song.pos, app.state.scroll_q.inc, app.state.queue.ibufferstart, app.state.queue.ibufferstart + mpd.Queue.NSONGS - 1 });
-            initialloop = false;
-        }
         app.updateState(&render_state, &mpd_data);
         try render.render(&app.state, &render_state, window.panels, &wrkfba.end_index);
         render_state.reset();
