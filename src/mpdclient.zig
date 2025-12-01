@@ -430,6 +430,34 @@ pub const Queue = struct {
         return added;
     }
 
+    pub fn downBufferWrong(self: *Queue) bool {
+        var buffer_wrong: bool = false;
+        if (self.edgebuf[0]) |edge| {
+            if (self.itopviewport + self.nviewable >= edge.len + 1 and
+                self.itopviewport + self.nviewable < self.ibufferstart)
+            {
+                self.ibufferstart = edge.len;
+                self.fill = 0;
+                buffer_wrong = true;
+            }
+        }
+        return buffer_wrong;
+    }
+
+    pub fn upBufferWrong(self: *Queue) bool {
+        var buffer_wrong: bool = false;
+        if (self.edgebuf[1]) |edge| {
+            if (self.itopviewport <= self.pl_len - 1 - edge.len and
+                self.itopviewport > self.ibufferstart + NSONGS - 1)
+            {
+                self.ibufferstart = self.itopviewport + 1;
+                self.fill = 0;
+                buffer_wrong = true;
+            }
+        }
+        return buffer_wrong;
+    }
+
     //Iterator just returns songs in buffers - not responsible for guaranteeing correct position.
     pub const Iterator = struct {
         index: usize,
