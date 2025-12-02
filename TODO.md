@@ -15,15 +15,15 @@ Let's freaking go
 - [x] initial queue position should be currently playing
 - [x] n/plen indicator on queue
 - [x] crash when I search lotus juice
+- [x] BUG: time bar doesn't update on space add if paused
 - [ ] BACKSPACE for search algo - save the strings?
-- [ ] enter after search to find next best option
+- [ ] n after search to find next best match
 - [ ] Queue buffer adapts to window size
 - [ ] delete and put and yank in queue
-- [ ] BUG: time bar doesn't update on space add
-- [ ] browser column 1 resets when progress node
-- [ ] allow browse by files and directories - (no tags set)
 - [ ] moving around in queue, visual mode?
     - [ ] when delete from q, store the song ids
+- [ ] browser column 1 resets when progress node
+- [ ] allow browse by files and directories - (no tags set)
 - [ ] next strings in browser should be on press - somehow load next strings for browser
     - [ ] naive get on press
 

@@ -835,10 +835,12 @@ fn handleTime(time_: i64, app: *State, _render_state: *RenderState(n_browse_colu
 fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState(n_browse_columns)) !void {
     switch (idle_event) {
         .player => {
+            log("Player event", .{});
             app.prev_id = app.song.id;
             _ = app.song.init();
             try mpd.getCurrentSong(wrkallocator, &alloc.wrkfba.end_index, app.song);
             try mpd.getCurrentTrackTime(wrkallocator, &alloc.wrkfba.end_index, app.song);
+            app.isPlaying = try mpd.getPlayState(alloc.respAllocator);
             app.last_elapsed = app.song.time.elapsed;
             //lazy
             app.last_second = @divTrunc(time.milliTimestamp(), 1000);
@@ -848,6 +850,7 @@ fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState(n_browse
             render_state.currentTrack = true;
         },
         .queue => {
+            log("Queue event", .{});
             try app.queue.reset(alloc.respAllocator);
             app.queue.jumpToPos(app.queue.pl_len -| app.queue.nviewable, &app.scroll_q.inc);
             try app.queue.initialFill(alloc.respAllocator, alloc.persistentAllocator);
