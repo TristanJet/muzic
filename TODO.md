@@ -14,19 +14,18 @@ Let's freaking go
         - [x] Queue breaks after adding song in the middle
 - [x] initial queue position should be currently playing
 - [x] n/plen indicator on queue
-- [ ] crash when I search lotus juice
+- [x] crash when I search lotus juice
 - [ ] BACKSPACE for search algo - save the strings?
 - [ ] enter after search to find next best option
 - [ ] Queue buffer adapts to window size
-- [ ] next strings in browser should be on press - somehow load next strings for browser
-    - [ ] naive get on press
 - [ ] delete and put and yank in queue
-
 - [ ] BUG: time bar doesn't update on space add
 - [ ] browser column 1 resets when progress node
 - [ ] allow browse by files and directories - (no tags set)
 - [ ] moving around in queue, visual mode?
     - [ ] when delete from q, store the song ids
+- [ ] next strings in browser should be on press - somehow load next strings for browser
+    - [ ] naive get on press
 
 ## Semi important
 - [ ] should I unify the caches?

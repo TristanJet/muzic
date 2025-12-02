@@ -779,7 +779,7 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
             if (best_match) |best| {
                 const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
                 const index = findStringIndex(best, app.search_sample_str.set, app.search_sample_str.uppers, compare_type) orelse return error.NotFound;
-                moveToIndex(index, current, displaying, window.panels.find.validArea().ylen);
+                current.pos, current.slice_inc = moveToIndex(index, displaying.len, window.panels.find.validArea().ylen);
             }
             current.renderCursor(render_state);
             current.render(render_state);
@@ -788,12 +788,13 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
     }
 }
 
-fn moveToIndex(index: usize, col: *state.BrowseColumn, displaying: []const []const u8, ylen: usize) void {
-    if (ylen >= displaying.len) {
-        col.pos = @intCast(index);
-        return;
-    }
-    col.setPos(0, index);
+fn moveToIndex(index: usize, len: usize, height: usize) struct { u8, usize } {
+    const inc = @min(index, len -| height);
+    debug.assert(index - inc <= 255 and index - inc >= 0);
+    return .{
+        @intCast(index - inc),
+        inc,
+    };
 }
 
 // Browser vertical scrolling - handles all three columns in one place
