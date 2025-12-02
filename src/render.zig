@@ -97,9 +97,9 @@ pub fn render(app: *state.State, render_state: *RenderState(n_browse_columns), p
     current = app.*;
     if (render_state.borders) try drawBorders(panels.curr_song.area);
     if (render_state.borders) try drawBorders(panels.queue.area);
-    if (render_state.borders) try drawHeader(panels.queue.area, "queue");
     if (render_state.borders) try drawBorders(panels.find.area);
-    if (render_state.borders or render_state.type or render_state.find) try drawHeader(panels.find.area, try getFindText());
+    if (render_state.borders or render_state.queue) try drawHeader(panels.queue.area, try getQueueText(wrkallocator, @min(app.queue.itopviewport + app.queue.nviewable, app.queue.pl_len), app.queue.pl_len));
+    if (render_state.borders or render_state.type or render_state.find) try drawHeader(panels.find.area, try getFindText(wrkallocator));
     if (render_state.currentTrack) try currTrackRender(wrkallocator, panels.curr_song, app.song, &app.first_render, end_index);
     if (render_state.bar) try barRender(panels.curr_song, app.song, wrkallocator);
     if (render_state.queue) try queueRender(wrkallocator, panels.queue.validArea(), try app.queue.getIterator(), app.scroll_q.inc);
@@ -533,11 +533,15 @@ fn findCursor(area: window.Area) !void {
     }
 }
 
-fn getFindText() ![]const u8 {
+fn getQueueText(wa: mem.Allocator, viewend: usize, plen: usize) ![]const u8 {
+    return std.fmt.allocPrint(wa, "queue ({}/{})", .{ viewend, plen });
+}
+
+fn getFindText(wa: mem.Allocator) ![]const u8 {
     return switch (current.input_state) {
-        .normal_queue => try std.fmt.allocPrint(wrkallocator, "b{s}{s}find", .{ sym.left_up, sym.right_up }),
-        .typing_find => try std.fmt.allocPrint(wrkallocator, "b{s}{s}find: {s}_", .{ sym.left_up, sym.right_up, current.typing_buffer.typed }),
-        .normal_browse => try std.fmt.allocPrint(wrkallocator, "f{s}{s}browse", .{ sym.left_up, sym.right_up }),
-        .typing_browse => try std.fmt.allocPrint(wrkallocator, "f{s}{s}browse: {s}_", .{ sym.left_up, sym.right_up, current.typing_buffer.typed }),
+        .normal_queue => try std.fmt.allocPrint(wa, "b{s}{s}find", .{ sym.left_up, sym.right_up }),
+        .typing_find => try std.fmt.allocPrint(wa, "b{s}{s}find: {s}_", .{ sym.left_up, sym.right_up, current.typing_buffer.typed }),
+        .normal_browse => try std.fmt.allocPrint(wa, "f{s}{s}browse", .{ sym.left_up, sym.right_up }),
+        .typing_browse => try std.fmt.allocPrint(wa, "f{s}{s}browse: {s}_", .{ sym.left_up, sym.right_up, current.typing_buffer.typed }),
     };
 }
