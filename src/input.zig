@@ -147,6 +147,7 @@ fn onTypingExit(app: *state.State, render_state: *RenderState(state.n_browse_col
 fn onBrowseTypingExit(app: *state.State, current: *state.BrowseColumn, render_state: *RenderState(state.n_browse_columns)) !void {
     app.typing_buffer.reset();
     app.input_state = .normal_browse;
+    app.search_state.reset();
 
     if (browse_typed) render_state.borders = true;
     current.render(render_state);
@@ -171,7 +172,6 @@ fn onBrowseExit(app: *state.State, render_state: *RenderState(state.n_browse_col
 
 // ---- Input Mode Handlers ----
 
-var find_matches: []mpd.SongStringAndUri = undefined;
 fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
     switch (char) {
         '\x1B' => {
@@ -199,23 +199,25 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_br
             app.search_sample_su.indices = std.ArrayList(usize).fromOwnedSlice(alloc.persistentAllocator, @constCast(previ));
             const imatches = app.search_state.imatch.pop() orelse return;
             util.log("imatch 0: {}", .{imatches[0]});
-            const n = app.search_sample_su.itemsFromIndices(imatches, find_matches);
-            util.log("best match: {s}", .{find_matches[0].string});
+            const n = app.search_sample_su.itemsFromIndices(imatches, app.find_matches);
+            util.log("best match: {s}", .{app.find_matches[0].string});
 
-            app.viewable_searchable = find_matches[0..n];
+            app.viewable_searchable = app.find_matches[0..n];
             render_state.find_cursor = true;
             render_state.find = true;
         },
         else => {
-            try app.search_state.isearch.append(try app.search_state.dupe(app.search_sample_su.indices.items));
+            if (app.search_sample_su.indices.items.len == 0) return;
             app.typing_buffer.append(char) catch return;
-            const imatches = try algo.suTopNranked(app.typing_buffer.typed, &app.search_sample_su, window.panels.find.validArea().ylen) orelse return;
+
+            try app.search_state.isearch.append(try app.search_state.dupe(app.search_sample_su.indices.items));
+            const imatches = try algo.stringUriBest(app.typing_buffer.typed, &app.search_sample_su, window.panels.find.validArea().ylen);
             util.log("imatch 0: {}", .{imatches[0]});
             try app.search_state.imatch.append(try app.search_state.dupe(imatches));
-            const n = app.search_sample_su.itemsFromIndices(imatches, find_matches);
-            util.log("best match: {s}", .{find_matches[0].string});
+            const n = app.search_sample_su.itemsFromIndices(imatches, app.find_matches);
+            util.log("best match: {s}", .{app.find_matches[0].string});
 
-            app.viewable_searchable = find_matches[0..n];
+            app.viewable_searchable = app.find_matches[0..n];
             render_state.find_cursor = true;
             render_state.find = true;
         },
@@ -604,7 +606,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
             if (node.type == .Select) return;
             app.input_state = .typing_browse;
             const curr_col = app.col_arr.getCurrent();
-            try switchToTyping(node.type, node_buffer.apex, curr_col, mpd_data, &app.search_sample_str);
+            try switchToTyping(node.type, node_buffer.apex, curr_col, mpd_data, &app.algo_init, &app.search_sample_str);
             curr_col.render(render_state);
             curr_col.clearCursor(render_state);
         },
@@ -631,11 +633,10 @@ fn onFind(
     const searchable = mpd_data.searchable orelse return;
     const uppers = mpd_data.searchable_lower orelse return;
     if (!algo_init.*) {
-        try algo.init(window.panels.find.validArea().ylen, searchable.len);
+        try algo.init(@max(window.panels.find.validArea().ylen, state.n_browse_matches));
         algo_init.* = true;
     }
     try search_sample.update(searchable, uppers);
-    find_matches = try alloc.persistentAllocator.alloc(mpd.SongStringAndUri, window.panels.find.validArea().ylen);
     input_state.* = .typing_find;
     rs.find_clear = true;
     rs.queue = true;
@@ -646,9 +647,13 @@ fn switchToTyping(
     apex: state.NodeApex,
     col: *const state.BrowseColumn,
     data: *const state.Data,
+    algo_init: *bool,
     search_sample: *algo.SearchSample([]const u8),
 ) !void {
-    // This is a very fragile solution
+    if (!algo_init.*) {
+        try algo.init(@max(window.panels.find.validArea().ylen, state.n_browse_matches));
+        algo_init.* = true;
+    }
     if (@intFromEnum(apex) == @intFromEnum(node_type)) {
         var set: []const []const u8 = undefined;
         var uppers: []const []const u16 = undefined;
@@ -756,11 +761,6 @@ fn goBottom(current: *state.BrowseColumn) !void {
     }
 }
 
-// fn switchToTyping(curr_col: *state.BrowseColumn) !void {
-//     const displaying = curr_col.displaying orelse return error.NoDisplaying;
-//     search_strings = try getSearchStrings(displaying, alloc.browserAllocator);
-// }
-
 fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
     switch (char) {
         '\x1B' => {
@@ -779,22 +779,39 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
             app.typing_buffer.pop() catch return;
             browse_typed = true;
             const current = app.col_arr.getCurrent();
+            const displaying = current.displaying orelse return;
+
+            const previ = app.search_state.isearch.pop() orelse return;
+            app.search_sample_str.indices = std.ArrayList(usize).fromOwnedSlice(alloc.persistentAllocator, @constCast(previ));
+            const imatches = app.search_state.imatch.pop() orelse return;
+            util.log("imatch 0: {}", .{imatches[0]});
+            _ = app.search_sample_str.itemsFromIndices(imatches, app.str_matches);
+            util.log("best match: {s}", .{app.str_matches[0]});
+
+            const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
+            const index = findStringIndex(app.str_matches[0], app.search_sample_str.set, app.search_sample_str.uppers, compare_type) orelse return error.NotFound;
+            current.pos, current.slice_inc = moveToIndex(index, displaying.len, window.panels.find.validArea().ylen);
 
             current.renderCursor(render_state);
             current.render(render_state);
             render_state.type = true;
         },
         else => {
+            if (app.search_sample_str.indices.items.len == 0) return;
             app.typing_buffer.append(char) catch return;
             const current = app.col_arr.getCurrent();
             const displaying = current.displaying orelse return;
             browse_typed = true;
-            const best_match: ?[]const u8 = try algo.stringBestMatch(app.typing_buffer.typed, &app.search_sample_str);
-            if (best_match) |best| {
-                const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
-                const index = findStringIndex(best, app.search_sample_str.set, app.search_sample_str.uppers, compare_type) orelse return error.NotFound;
-                current.pos, current.slice_inc = moveToIndex(index, displaying.len, window.panels.find.validArea().ylen);
-            }
+
+            try app.search_state.isearch.append(try app.search_state.dupe(app.search_sample_str.indices.items));
+            const imatches = try algo.stringBest(app.typing_buffer.typed, &app.search_sample_str, state.n_browse_matches);
+            try app.search_state.imatch.append(try app.search_state.dupe(imatches));
+            _ = app.search_sample_str.itemsFromIndices(imatches, app.str_matches);
+
+            const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
+            const index = findStringIndex(app.str_matches[0], app.search_sample_str.set, app.search_sample_str.uppers, compare_type) orelse return error.NotFound;
+            current.pos, current.slice_inc = moveToIndex(index, displaying.len, window.panels.find.validArea().ylen);
+
             current.renderCursor(render_state);
             current.render(render_state);
             render_state.type = true;

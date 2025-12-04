@@ -72,8 +72,8 @@ pub const SearchState = struct {
     }
 };
 
-var result_su: []usize = undefined;
-var scored_su = ArrayList(ScoredSu).init(persistentAllocator);
+var result: []usize = undefined;
+var scored = ArrayList(ScoredIndex).init(persistentAllocator);
 
 const match_score: i8 = 2;
 const mismatch_penalty: i8 = -1;
@@ -83,13 +83,8 @@ const exact_word_multiplier: u16 = 100;
 const MAX_INPUT_LEN = 32;
 const MAX_ITEM_LEN = 256;
 
-const ScoredSu = struct {
+const ScoredIndex = struct {
     isong: usize,
-    score: u16,
-};
-
-const ScoredString = struct {
-    string: []const u8,
     score: u16,
 };
 
@@ -98,21 +93,23 @@ const AlgoError = error{
     OutOfMemory,
     BadIndex,
     NoUpper,
+    ResultTooLong,
 };
 
-pub fn init(window_h: usize, nsearchable: usize) AlgoError!void {
-    assert(window_h > 0);
-    result_su = try persistentAllocator.alloc(usize, window_h);
-    try scored_su.ensureTotalCapacityPrecise(nsearchable);
+pub fn init(max_result: usize) AlgoError!void {
+    assert(max_result > 0);
+    result = try persistentAllocator.alloc(usize, max_result);
 }
 
-pub fn suTopNranked(
+pub fn stringUriBest(
     input: []const u8,
     search_sample: *SearchSample(mpd.SongStringAndUri),
     nresult: usize,
-) AlgoError!?[]const usize {
-    if (search_sample.indices.items.len == 0) return null;
-    scored_su.shrinkRetainingCapacity(0);
+) AlgoError![]const usize {
+    assert(search_sample.indices.items.len > 0);
+    if (nresult > result.len) return error.ResultTooLong;
+
+    scored.shrinkRetainingCapacity(0);
     const inputLower = ascii.lowerString(inputLowerBuf, input);
     if (inputLower.len == 1) return suContained(inputLower[0], search_sample, nresult);
 
@@ -125,7 +122,7 @@ pub fn suTopNranked(
         item.string = fastLowerString(item.string, uppers[j], stringLowerBuf1);
         const score = calculateScore(inputLower, item.string, &matrix);
         if (score >= inputLower.len) {
-            try scored_su.append(.{ .isong = j, .score = score });
+            try scored.append(.{ .isong = j, .score = score });
         } else {
             _ = search_sample.indices.orderedRemove(i);
             continue;
@@ -133,25 +130,14 @@ pub fn suTopNranked(
         i += 1;
     }
 
-    std.sort.pdq(ScoredSu, scored_su.items, {}, struct {
-        fn lessThan(_: void, a: ScoredSu, b: ScoredSu) bool {
-            return a.score > b.score;
-        }
-    }.lessThan);
-
-    const n = @min(scored_su.items.len, nresult);
-    for (scored_su.items[0..n], 0..) |scored, index| {
-        result_su[index] = scored.isong;
-    }
-
-    return result_su[0..n];
+    return sort(nresult);
 }
 
 fn suContained(
     input: u8,
     search_sample: *SearchSample(mpd.SongStringAndUri),
     nresult: usize,
-) AlgoError!?[]usize {
+) AlgoError![]usize {
     var i: usize = 0;
     while (i < search_sample.indices.items.len) {
         const j = search_sample.indices.items[i];
@@ -168,16 +154,17 @@ fn suContained(
     return search_sample.indices.items[0..@min(nresult, search_sample.indices.items.len)];
 }
 
-pub fn stringBestMatch(
+pub fn stringBest(
     input: []const u8,
     search_sample: *SearchSample([]const u8),
-) !?[]const u8 {
+    nresult: usize,
+) ![]const usize {
+    assert(search_sample.indices.items.len > 0);
+    if (nresult > result.len) return error.ResultTooLong;
+
+    scored.shrinkRetainingCapacity(0);
     const inputLower = ascii.lowerString(inputLowerBuf, input);
-    if (inputLower.len == 1) {
-        return try stringContained(input[0], search_sample);
-    }
-    var best_match: ?[]const u8 = null;
-    var highestScore: u16 = 0;
+    if (inputLower.len == 1) return try stringContained(input[0], search_sample, nresult);
 
     var matrix = Matrix.init(inputLower.len);
     var i: usize = 0;
@@ -191,10 +178,7 @@ pub fn stringBestMatch(
         }
         const score = calculateScore(inputLower, item, &matrix);
         if (score >= inputLower.len) {
-            if (score > highestScore) {
-                best_match = search_sample.set[j];
-                highestScore = score;
-            }
+            try scored.append(.{ .isong = j, .score = score });
         } else {
             _ = search_sample.indices.orderedRemove(i);
             continue;
@@ -202,13 +186,14 @@ pub fn stringBestMatch(
         i += 1;
     }
 
-    return best_match;
+    return sort(nresult);
 }
 
 fn stringContained(
     input: u8,
     search_sample: *SearchSample([]const u8),
-) !?[]const u8 {
+    nresult: usize,
+) ![]const usize {
     var i: usize = 0;
     while (i < search_sample.indices.items.len) {
         const j = search_sample.indices.items[i];
@@ -226,7 +211,22 @@ fn stringContained(
         i += 1;
     }
 
-    return search_sample.set[search_sample.indices.items[0]];
+    return search_sample.indices.items[0..@min(nresult, search_sample.indices.items.len)];
+}
+
+fn sort(nresult: usize) []const usize {
+    std.sort.pdq(ScoredIndex, scored.items, {}, struct {
+        fn lessThan(_: void, a: ScoredIndex, b: ScoredIndex) bool {
+            return a.score > b.score;
+        }
+    }.lessThan);
+
+    const n = @min(scored.items.len, nresult);
+    for (scored.items[0..n], 0..) |item, index| {
+        result[index] = item.isong;
+    }
+
+    return result[0..n];
 }
 
 var mbuf1: [MAX_INPUT_LEN + 1][]u16 = undefined;

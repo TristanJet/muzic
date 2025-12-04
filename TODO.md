@@ -16,8 +16,8 @@ Let's freaking go
 - [x] n/plen indicator on queue
 - [x] crash when I search lotus juice
 - [x] BUG: time bar doesn't update on space add if paused
-- [ ] BACKSPACE for search algo - save the strings?
-    - [ ] buggy af
+- [x] BACKSPACE for search algo - save the strings?
+    - [x] buggy af
 - [ ] n after search to find next best match
 - [ ] Queue buffer adapts to window size
 - [ ] delete and put and yank in queue

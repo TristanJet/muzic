@@ -24,6 +24,7 @@ const wrkallocator = alloc.wrkallocator;
 const ArrayList = std.ArrayList;
 
 pub const n_browse_columns: u4 = 3;
+pub const n_browse_matches = 10;
 //Must be 2x the window size
 pub const QUEUE_BUF_SIZE = 64;
 
@@ -53,6 +54,8 @@ pub const State = struct {
     search_sample_str: algo.SearchSample([]const u8),
     search_sample_su: algo.SearchSample(mpd.SongStringAndUri),
     search_state: algo.SearchState,
+    find_matches: []mpd.SongStringAndUri,
+    str_matches: [][]const u8,
 
     col_arr: ColumnArray(n_browse_columns),
     node_switched: bool,

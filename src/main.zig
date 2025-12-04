@@ -136,6 +136,8 @@ pub fn main() !void {
         .search_sample_str = algo.SearchSample([]const u8).init(alloc.persistentAllocator),
         .search_sample_su = algo.SearchSample(mpd.SongStringAndUri).init(alloc.persistentAllocator),
         .search_state = algo.SearchState.init(alloc.persistentAllocator, alloc.typingAllocator),
+        .find_matches = try alloc.persistentAllocator.alloc(mpd.SongStringAndUri, window.panels.find.validArea().ylen),
+        .str_matches = try alloc.persistentAllocator.alloc([]const u8, state.n_browse_matches),
 
         .col_arr = state.ColumnArray(state.n_browse_columns).init(mpd_data.albums),
         .node_switched = false,
