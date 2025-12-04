@@ -158,13 +158,12 @@ fn onBrowseTypingExit(app: *state.State, current: *state.BrowseColumn, render_st
 }
 
 fn onBrowseExit(app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
-    // Update rendering state
     render_state.queueEffects = true;
     render_state.browse_clear_cursor[app.col_arr.index] = true;
+    app.n_str_matches = 0;
 
-    // Reset application state
     app.input_state = .normal_queue;
-    // Reset memory arenas - keep these together
+
     var resp: bool = undefined;
     resp = alloc.typingArena.reset(.retain_capacity);
     if (!resp) return error.AllocatorFail;
@@ -601,6 +600,35 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
             }
             if (node_buffer.index == 1) next_col_ready = false;
         },
+        'n' => {
+            if (app.n_str_matches == 0) return;
+            const current = app.col_arr.getCurrent();
+            const displaying = current.displaying orelse return;
+
+            app.istr_match = (app.istr_match + 1) % app.n_str_matches;
+            const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
+            const index = findStringIndex(app.str_matches[app.istr_match], app.search_sample_str.set, app.search_sample_str.uppers, compare_type) orelse return error.NotFound;
+            current.pos, current.slice_inc = moveToIndex(index, displaying.len, window.panels.find.validArea().ylen);
+
+            current.renderCursor(render_state);
+            current.render(render_state);
+        },
+        'N' => {
+            if (app.n_str_matches == 0) return;
+            const current = app.col_arr.getCurrent();
+            const displaying = current.displaying orelse return;
+
+            var istr: isize = @intCast(app.istr_match);
+            istr -= 1;
+            const n: isize = @intCast(app.n_str_matches);
+            app.istr_match = @intCast(@mod(istr, n));
+            const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
+            const index = findStringIndex(app.str_matches[app.istr_match], app.search_sample_str.set, app.search_sample_str.uppers, compare_type) orelse return error.NotFound;
+            current.pos, current.slice_inc = moveToIndex(index, displaying.len, window.panels.find.validArea().ylen);
+
+            current.renderCursor(render_state);
+            current.render(render_state);
+        },
         '/' => {
             const node = try node_buffer.getCurrentNode();
             if (node.type == .Select) return;
@@ -785,8 +813,9 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
             app.search_sample_str.indices = std.ArrayList(usize).fromOwnedSlice(alloc.persistentAllocator, @constCast(previ));
             const imatches = app.search_state.imatch.pop() orelse return;
             util.log("imatch 0: {}", .{imatches[0]});
-            _ = app.search_sample_str.itemsFromIndices(imatches, app.str_matches);
+            app.n_str_matches = app.search_sample_str.itemsFromIndices(imatches, app.str_matches);
             util.log("best match: {s}", .{app.str_matches[0]});
+            app.istr_match = 0;
 
             const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
             const index = findStringIndex(app.str_matches[0], app.search_sample_str.set, app.search_sample_str.uppers, compare_type) orelse return error.NotFound;
@@ -806,7 +835,8 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
             try app.search_state.isearch.append(try app.search_state.dupe(app.search_sample_str.indices.items));
             const imatches = try algo.stringBest(app.typing_buffer.typed, &app.search_sample_str, state.n_browse_matches);
             try app.search_state.imatch.append(try app.search_state.dupe(imatches));
-            _ = app.search_sample_str.itemsFromIndices(imatches, app.str_matches);
+            app.n_str_matches = app.search_sample_str.itemsFromIndices(imatches, app.str_matches);
+            app.istr_match = 0;
 
             const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
             const index = findStringIndex(app.str_matches[0], app.search_sample_str.set, app.search_sample_str.uppers, compare_type) orelse return error.NotFound;
@@ -934,7 +964,7 @@ fn browserHandleSpace(allocator: mem.Allocator, abs_pos: usize, mpd_data: *const
 // Handle key release events specifically for the browser
 fn handleBrowseKeyRelease(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
     switch (char) {
-        'j', 'k', 'g', 'G', 'd' & '\x1F', 'u' & '\x1F', '\n', '\r' => {
+        'j', 'k', 'g', 'G', 'd' & '\x1F', 'u' & '\x1F', '\n', '\r', 'n', 'N' => {
             if (node_buffer.index == 0) return;
             const curr_node = try node_buffer.getCurrentNode();
             const curr_col = app.col_arr.getCurrent();

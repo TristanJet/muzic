@@ -18,7 +18,7 @@ Let's freaking go
 - [x] BUG: time bar doesn't update on space add if paused
 - [x] BACKSPACE for search algo - save the strings?
     - [x] buggy af
-- [ ] n after search to find next best match
+- [x] n after search to find next best match
 - [ ] Queue buffer adapts to window size
 - [ ] delete and put and yank in queue
 - [ ] moving around in queue, visual mode?

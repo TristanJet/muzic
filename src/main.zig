@@ -138,6 +138,8 @@ pub fn main() !void {
         .search_state = algo.SearchState.init(alloc.persistentAllocator, alloc.typingAllocator),
         .find_matches = try alloc.persistentAllocator.alloc(mpd.SongStringAndUri, window.panels.find.validArea().ylen),
         .str_matches = try alloc.persistentAllocator.alloc([]const u8, state.n_browse_matches),
+        .n_str_matches = 0,
+        .istr_match = 0,
 
         .col_arr = state.ColumnArray(state.n_browse_columns).init(mpd_data.albums),
         .node_switched = false,

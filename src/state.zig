@@ -56,6 +56,8 @@ pub const State = struct {
     search_state: algo.SearchState,
     find_matches: []mpd.SongStringAndUri,
     str_matches: [][]const u8,
+    n_str_matches: usize,
+    istr_match: usize,
 
     col_arr: ColumnArray(n_browse_columns),
     node_switched: bool,
