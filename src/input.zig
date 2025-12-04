@@ -129,6 +129,7 @@ fn onTypingExit(app: *state.State, render_state: *RenderState(state.n_browse_col
     app.viewable_searchable = null;
     app.input_state = .normal_queue;
     app.find_cursor_pos = 0;
+    app.search_state.reset();
 
     // Update rendering state
     render_state.borders = true;
@@ -170,6 +171,7 @@ fn onBrowseExit(app: *state.State, render_state: *RenderState(state.n_browse_col
 
 // ---- Input Mode Handlers ----
 
+var find_matches: []mpd.SongStringAndUri = undefined;
 fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
     switch (char) {
         '\x1B' => {
@@ -193,19 +195,27 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_br
         },
         '\x7F' => {
             app.typing_buffer.pop() catch return;
-            // if (searchable_items) |_| {
-            //     app.viewable_searchable = try algo.suTopNranked(
-            //         alloc.typingAllocator,
-            //         app.typing_buffer.typed,
-            //         &searchable_items.?,
-            //     );
-            // } else return;
+            const previ = app.search_state.isearch.pop() orelse return;
+            app.search_sample_su.indices = std.ArrayList(usize).fromOwnedSlice(alloc.persistentAllocator, @constCast(previ));
+            const imatches = app.search_state.imatch.pop() orelse return;
+            util.log("imatch 0: {}", .{imatches[0]});
+            const n = app.search_sample_su.itemsFromI(imatches, find_matches);
+            util.log("best match: {s}", .{find_matches[0].string});
+
+            app.viewable_searchable = find_matches[0..n];
             render_state.find_cursor = true;
             render_state.find = true;
         },
         else => {
+            try app.search_state.isearch.append(try app.search_state.add(app.search_sample_su.indices.items));
             app.typing_buffer.append(char) catch return;
-            app.viewable_searchable = try algo.suTopNranked(app.typing_buffer.typed, &app.search_sample_su);
+            const imatches = try algo.suTopNranked(app.typing_buffer.typed, &app.search_sample_su, window.panels.find.validArea().ylen) orelse return;
+            util.log("imatch 0: {}", .{imatches[0]});
+            try app.search_state.imatch.append(try app.search_state.add(imatches));
+            const n = app.search_sample_su.itemsFromI(imatches, find_matches);
+            util.log("best match: {s}", .{find_matches[0].string});
+
+            app.viewable_searchable = find_matches[0..n];
             render_state.find_cursor = true;
             render_state.find = true;
         },
@@ -227,14 +237,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             render_state.queue = true;
         },
         'f' => {
-            _ = try mpd_data.init(.searchable);
-            const searchable = mpd_data.searchable orelse return;
-            const uppers = mpd_data.searchable_lower orelse return;
-            if (!app.algo_init) try algo.init(window.panels.find.validArea().ylen, searchable.len);
-            try app.search_sample_su.update(searchable, uppers);
-            app.input_state = .typing_find;
-            render_state.find_clear = true;
-            render_state.queue = true;
+            try onFind(render_state, mpd_data, &app.algo_init, &app.search_sample_su, &app.input_state);
         },
         else => if (app.queue.pl_len == 0) return,
     }
@@ -617,6 +620,27 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
     }
 }
 
+fn onFind(
+    rs: *RenderState(state.n_browse_columns),
+    mpd_data: *state.Data,
+    algo_init: *bool,
+    search_sample: *algo.SearchSample(mpd.SongStringAndUri),
+    input_state: *Input_State,
+) !void {
+    _ = try mpd_data.init(.searchable);
+    const searchable = mpd_data.searchable orelse return;
+    const uppers = mpd_data.searchable_lower orelse return;
+    if (!algo_init.*) {
+        try algo.init(window.panels.find.validArea().ylen, searchable.len);
+        algo_init.* = true;
+    }
+    try search_sample.update(searchable, uppers);
+    find_matches = try alloc.persistentAllocator.alloc(mpd.SongStringAndUri, window.panels.find.validArea().ylen);
+    input_state.* = .typing_find;
+    rs.find_clear = true;
+    rs.queue = true;
+}
+
 fn switchToTyping(
     node_type: state.Column_Type,
     apex: state.NodeApex,
@@ -755,17 +779,7 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
             app.typing_buffer.pop() catch return;
             browse_typed = true;
             const current = app.col_arr.getCurrent();
-            // const displaying = current.displaying orelse return;
-            // const best_match: ?[]const u8 = try algo.stringBestMatch(
-            //     alloc.typingAllocator,
-            //     app.typing_buffer.typed,
-            //     &search_strings,
-            // );
-            // if (best_match) |best| {
-            //     const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
-            //     const index = findStringIndex(best, displaying, compare_type);
-            //     if (index) |unwrap| moveToIndex(unwrap, current, displaying, window.panels.find.validArea().ylen);
-            // }
+
             current.renderCursor(render_state);
             current.render(render_state);
             render_state.type = true;

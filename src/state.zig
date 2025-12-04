@@ -52,6 +52,7 @@ pub const State = struct {
     algo_init: bool,
     search_sample_str: algo.SearchSample([]const u8),
     search_sample_su: algo.SearchSample(mpd.SongStringAndUri),
+    search_state: algo.SearchState,
 
     col_arr: ColumnArray(n_browse_columns),
     node_switched: bool,

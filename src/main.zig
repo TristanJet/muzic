@@ -135,6 +135,7 @@ pub fn main() !void {
         .algo_init = false,
         .search_sample_str = algo.SearchSample([]const u8).init(alloc.persistentAllocator),
         .search_sample_su = algo.SearchSample(mpd.SongStringAndUri).init(alloc.persistentAllocator),
+        .search_state = algo.SearchState.init(alloc.persistentAllocator, alloc.typingAllocator),
 
         .col_arr = state.ColumnArray(state.n_browse_columns).init(mpd_data.albums),
         .node_switched = false,

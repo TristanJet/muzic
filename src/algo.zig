@@ -24,8 +24,8 @@ pub fn SearchSample(comptime T: type) type {
         pub fn init(allocator: mem.Allocator) Self {
             return Self{
                 .indices = ArrayList(usize).init(allocator),
-                .set = undefined,
-                .uppers = undefined,
+                .set = &[_]T{},
+                .uppers = null,
             };
         }
 
@@ -36,36 +36,56 @@ pub fn SearchSample(comptime T: type) type {
                 self.indices.items[i] = i;
             }
             self.set = set;
-            if (uppers) |upp| {
-                self.uppers = upp;
-            } else {
-                self.uppers = null;
-            }
+            self.uppers = uppers;
         }
 
-        fn itemFromI(self: *const Self, j: usize) !T {
-            if (j < self.indices.items.len) {
-                return self.set[self.indices.items[j]];
-            } else {
-                return error.BadIndex;
-            }
+        fn itemFromI(self: Self, j: usize) T {
+            assert(j >= 0 and j < self.indices.items.len);
+            assert(self.indices.items[j] >= 0 and self.indices.items[j] < self.set.len);
+            return self.set[self.indices.items[j]];
         }
 
-        pub fn upperFromI(self: *const Self, j: usize) ![]const u16 {
-            if (self.uppers) |uppers| {
-                if (j < self.indices.items.len) {
-                    return uppers[self.indices.items[j]];
-                }
+        pub fn itemsFromI(self: Self, j: []const usize, out: []T) usize {
+            assert(out.len >= j.len);
+            for (j, 0..) |x, i| {
+                out[i] = self.itemFromI(x);
             }
-            return error.BadIndex;
+            return j.len;
+        }
+
+        pub fn upperFromI(self: Self, j: usize) ![]const u16 {
+            assert(j >= 0 and j < self.indices.items.len);
+            const uppers = self.uppers orelse return AlgoError.NoUpper;
+            return uppers[self.indices.items[j]];
         }
     };
 }
 
-var result_su = ArrayList(mpd.SongStringAndUri).init(persistentAllocator);
-var scoredSongs: ArrayList(ScoredStringAndUri) = undefined;
+pub const SearchState = struct {
+    isearch: ArrayList([]const usize),
+    imatch: ArrayList([]const usize),
+    index_arena: mem.Allocator,
 
-var nRanked: usize = undefined;
+    pub fn init(allocator: mem.Allocator, arena: mem.Allocator) SearchState {
+        return .{
+            .isearch = ArrayList([]const usize).init(allocator),
+            .imatch = ArrayList([]const usize).init(allocator),
+            .index_arena = arena,
+        };
+    }
+
+    pub fn add(self: *SearchState, src: []const usize) ![]const usize {
+        return try self.index_arena.dupe(usize, src);
+    }
+
+    pub fn reset(self: *SearchState) void {
+        self.isearch.shrinkRetainingCapacity(0);
+        self.imatch.shrinkRetainingCapacity(0);
+    }
+};
+
+var result_su: []usize = undefined;
+var scored_su = ArrayList(ScoredSu).init(persistentAllocator);
 
 const match_score: i8 = 2;
 const mismatch_penalty: i8 = -1;
@@ -75,8 +95,8 @@ const exact_word_multiplier: u16 = 100;
 const MAX_INPUT_LEN = 32;
 const MAX_ITEM_LEN = 256;
 
-const ScoredStringAndUri = struct {
-    song: mpd.SongStringAndUri,
+const ScoredSu = struct {
+    isong: usize,
     score: u16,
 };
 
@@ -89,39 +109,33 @@ const AlgoError = error{
     NoWindowLength,
     OutOfMemory,
     BadIndex,
+    NoUpper,
 };
 
-pub fn init(n: usize, nsearchable: usize) AlgoError!void {
-    if (n == 0) return AlgoError.NoWindowLength;
-    nRanked = n;
-    try result_su.ensureTotalCapacityPrecise(nRanked);
-    result_su.expandToCapacity();
-    scoredSongs = ArrayList(ScoredStringAndUri).init(persistentAllocator);
-    try scoredSongs.ensureTotalCapacityPrecise(nsearchable);
+pub fn init(window_h: usize, nsearchable: usize) AlgoError!void {
+    assert(window_h > 0);
+    result_su = try persistentAllocator.alloc(usize, window_h);
+    try scored_su.ensureTotalCapacityPrecise(nsearchable);
 }
 
 pub fn suTopNranked(
     input: []const u8,
     search_sample: *SearchSample(mpd.SongStringAndUri),
-) AlgoError!?[]const mpd.SongStringAndUri {
-    scoredSongs.shrinkRetainingCapacity(0);
+    nresult: usize,
+) AlgoError!?[]const usize {
+    if (search_sample.indices.items.len == 0) return null;
+    scored_su.shrinkRetainingCapacity(0);
     const inputLower = ascii.lowerString(inputLowerBuf, input);
-    if (inputLower.len == 1) return suContained(inputLower[0], search_sample);
+    if (inputLower.len == 1) return suContained(inputLower[0], search_sample, nresult);
 
     var matrix = Matrix.init(inputLower.len);
     var i: usize = 0;
     while (i < search_sample.indices.items.len) {
-        const item = search_sample.itemFromI(i) catch |e| {
-            if (i == 0) {
-                return null;
-            } else {
-                return e;
-            }
-        };
-        const stringLower = fastLowerString(item.string, try search_sample.upperFromI(i), stringLowerBuf1);
-        const score = calculateScore(inputLower, stringLower, &matrix);
+        var item = search_sample.itemFromI(i);
+        item.string = fastLowerString(item.string, try search_sample.upperFromI(i), stringLowerBuf1);
+        const score = calculateScore(inputLower, item.string, &matrix);
         if (score >= inputLower.len) {
-            try scoredSongs.append(.{ .song = item, .score = score });
+            try scored_su.append(.{ .isong = i, .score = score });
         } else {
             _ = search_sample.indices.orderedRemove(i);
             continue;
@@ -129,33 +143,28 @@ pub fn suTopNranked(
         i += 1;
     }
     // Sort by score
-    std.sort.pdq(ScoredStringAndUri, scoredSongs.items, {}, struct {
-        fn lessThan(_: void, a: ScoredStringAndUri, b: ScoredStringAndUri) bool {
+    std.sort.pdq(ScoredSu, scored_su.items, {}, struct {
+        fn lessThan(_: void, a: ScoredSu, b: ScoredSu) bool {
             return a.score > b.score;
         }
     }.lessThan);
 
-    const numResults = @min(scoredSongs.items.len, nRanked);
-    for (scoredSongs.items[0..numResults], 0..) |scored, j| {
-        result_su.items[j] = scored.song;
+    const n = @min(scored_su.items.len, nresult);
+    for (scored_su.items[0..n], 0..) |scored, j| {
+        result_su[j] = scored.isong;
     }
 
-    return result_su.items[0..numResults];
+    return result_su[0..n];
 }
 
 fn suContained(
     input: u8,
     search_sample: *SearchSample(mpd.SongStringAndUri),
-) AlgoError!?[]const mpd.SongStringAndUri {
+    nresult: usize,
+) AlgoError!?[]usize {
     var i: usize = 0;
     while (i < search_sample.indices.items.len) {
-        const item = search_sample.itemFromI(i) catch |e| {
-            if (i == 0) {
-                return null;
-            } else {
-                return e;
-            }
-        };
+        const item = search_sample.itemFromI(i);
         const stringLower = fastLowerString(item.string, try search_sample.upperFromI(i), stringLowerBuf1);
         if (mem.indexOfScalar(u8, stringLower, input) == null) {
             _ = search_sample.indices.orderedRemove(i);
@@ -164,12 +173,7 @@ fn suContained(
         i += 1;
     }
 
-    const nresult = @min(nRanked, search_sample.indices.items.len);
-    for (0..nresult) |j| {
-        result_su.items[j] = try search_sample.itemFromI(j);
-    }
-
-    return result_su.items[0..nresult];
+    return search_sample.indices.items[0..@min(nresult, search_sample.indices.items.len)];
 }
 
 pub fn stringBestMatch(
@@ -188,14 +192,14 @@ pub fn stringBestMatch(
     while (i < search_sample.indices.items.len) {
         var item: []const u8 = undefined;
         if (search_sample.uppers) |_| {
-            item = fastLowerString(try search_sample.itemFromI(i), try search_sample.upperFromI(i), stringLowerBuf1);
+            item = fastLowerString(search_sample.itemFromI(i), try search_sample.upperFromI(i), stringLowerBuf1);
         } else {
-            item = ascii.lowerString(stringLowerBuf1, try search_sample.itemFromI(i));
+            item = ascii.lowerString(stringLowerBuf1, search_sample.itemFromI(i));
         }
         const score = calculateScore(inputLower, item, &matrix);
         if (score >= inputLower.len) {
             if (score > highestScore) {
-                best_match = try search_sample.itemFromI(i);
+                best_match = search_sample.itemFromI(i);
                 highestScore = score;
             }
         } else {
@@ -213,13 +217,7 @@ fn stringContained(
 ) !?[]const u8 {
     var i: usize = 0;
     while (i < search_sample.indices.items.len) {
-        const item = search_sample.itemFromI(i) catch |e| {
-            if (i == 0) {
-                return null;
-            } else {
-                return e;
-            }
-        };
+        const item = search_sample.itemFromI(i);
         var stringLower: []const u8 = undefined;
         if (search_sample.uppers) |_| {
             stringLower = fastLowerString(item, try search_sample.upperFromI(i), stringLowerBuf1);
@@ -233,7 +231,7 @@ fn stringContained(
         i += 1;
     }
 
-    return search_sample.itemFromI(0) catch unreachable;
+    return search_sample.itemFromI(0);
 }
 
 var mbuf1: [MAX_INPUT_LEN + 1][]u16 = undefined;
