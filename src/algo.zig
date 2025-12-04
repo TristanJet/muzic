@@ -39,24 +39,12 @@ pub fn SearchSample(comptime T: type) type {
             self.uppers = uppers;
         }
 
-        fn itemFromI(self: Self, j: usize) T {
-            assert(j >= 0 and j < self.indices.items.len);
-            assert(self.indices.items[j] >= 0 and self.indices.items[j] < self.set.len);
-            return self.set[self.indices.items[j]];
-        }
-
-        pub fn itemsFromI(self: Self, j: []const usize, out: []T) usize {
-            assert(out.len >= j.len);
-            for (j, 0..) |x, i| {
-                out[i] = self.itemFromI(x);
+        pub fn itemsFromIndices(self: Self, js: []const usize, out: []T) usize {
+            assert(out.len >= js.len);
+            for (js, 0..) |j, i| {
+                out[i] = self.set[j];
             }
-            return j.len;
-        }
-
-        pub fn upperFromI(self: Self, j: usize) ![]const u16 {
-            assert(j >= 0 and j < self.indices.items.len);
-            const uppers = self.uppers orelse return AlgoError.NoUpper;
-            return uppers[self.indices.items[j]];
+            return js.len;
         }
     };
 }
@@ -74,7 +62,7 @@ pub const SearchState = struct {
         };
     }
 
-    pub fn add(self: *SearchState, src: []const usize) ![]const usize {
+    pub fn dupe(self: *SearchState, src: []const usize) ![]const usize {
         return try self.index_arena.dupe(usize, src);
     }
 
@@ -131,18 +119,20 @@ pub fn suTopNranked(
     var matrix = Matrix.init(inputLower.len);
     var i: usize = 0;
     while (i < search_sample.indices.items.len) {
-        var item = search_sample.itemFromI(i);
-        item.string = fastLowerString(item.string, try search_sample.upperFromI(i), stringLowerBuf1);
+        const j = search_sample.indices.items[i];
+        var item = search_sample.set[j];
+        const uppers = search_sample.uppers orelse return error.NoUpper;
+        item.string = fastLowerString(item.string, uppers[j], stringLowerBuf1);
         const score = calculateScore(inputLower, item.string, &matrix);
         if (score >= inputLower.len) {
-            try scored_su.append(.{ .isong = i, .score = score });
+            try scored_su.append(.{ .isong = j, .score = score });
         } else {
             _ = search_sample.indices.orderedRemove(i);
             continue;
         }
         i += 1;
     }
-    // Sort by score
+
     std.sort.pdq(ScoredSu, scored_su.items, {}, struct {
         fn lessThan(_: void, a: ScoredSu, b: ScoredSu) bool {
             return a.score > b.score;
@@ -150,8 +140,8 @@ pub fn suTopNranked(
     }.lessThan);
 
     const n = @min(scored_su.items.len, nresult);
-    for (scored_su.items[0..n], 0..) |scored, j| {
-        result_su[j] = scored.isong;
+    for (scored_su.items[0..n], 0..) |scored, index| {
+        result_su[index] = scored.isong;
     }
 
     return result_su[0..n];
@@ -164,8 +154,10 @@ fn suContained(
 ) AlgoError!?[]usize {
     var i: usize = 0;
     while (i < search_sample.indices.items.len) {
-        const item = search_sample.itemFromI(i);
-        const stringLower = fastLowerString(item.string, try search_sample.upperFromI(i), stringLowerBuf1);
+        const j = search_sample.indices.items[i];
+        const item = search_sample.set[j];
+        const uppers = search_sample.uppers orelse return error.NoUpper;
+        const stringLower = fastLowerString(item.string, uppers[j], stringLowerBuf1);
         if (mem.indexOfScalar(u8, stringLower, input) == null) {
             _ = search_sample.indices.orderedRemove(i);
             continue;
@@ -190,16 +182,17 @@ pub fn stringBestMatch(
     var matrix = Matrix.init(inputLower.len);
     var i: usize = 0;
     while (i < search_sample.indices.items.len) {
-        var item: []const u8 = undefined;
-        if (search_sample.uppers) |_| {
-            item = fastLowerString(search_sample.itemFromI(i), try search_sample.upperFromI(i), stringLowerBuf1);
+        const j = search_sample.indices.items[i];
+        var item = search_sample.set[j];
+        if (search_sample.uppers) |uppers| {
+            item = fastLowerString(item, uppers[j], stringLowerBuf1);
         } else {
-            item = ascii.lowerString(stringLowerBuf1, search_sample.itemFromI(i));
+            item = ascii.lowerString(stringLowerBuf1, item);
         }
         const score = calculateScore(inputLower, item, &matrix);
         if (score >= inputLower.len) {
             if (score > highestScore) {
-                best_match = search_sample.itemFromI(i);
+                best_match = search_sample.set[j];
                 highestScore = score;
             }
         } else {
@@ -208,6 +201,7 @@ pub fn stringBestMatch(
         }
         i += 1;
     }
+
     return best_match;
 }
 
@@ -217,10 +211,11 @@ fn stringContained(
 ) !?[]const u8 {
     var i: usize = 0;
     while (i < search_sample.indices.items.len) {
-        const item = search_sample.itemFromI(i);
+        const j = search_sample.indices.items[i];
+        const item = search_sample.set[j];
         var stringLower: []const u8 = undefined;
-        if (search_sample.uppers) |_| {
-            stringLower = fastLowerString(item, try search_sample.upperFromI(i), stringLowerBuf1);
+        if (search_sample.uppers) |uppers| {
+            stringLower = fastLowerString(item, uppers[j], stringLowerBuf1);
         } else {
             stringLower = ascii.lowerString(stringLowerBuf1, item);
         }
@@ -231,7 +226,7 @@ fn stringContained(
         i += 1;
     }
 
-    return search_sample.itemFromI(0);
+    return search_sample.set[search_sample.indices.items[0]];
 }
 
 var mbuf1: [MAX_INPUT_LEN + 1][]u16 = undefined;

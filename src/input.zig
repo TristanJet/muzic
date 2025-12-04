@@ -199,7 +199,7 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_br
             app.search_sample_su.indices = std.ArrayList(usize).fromOwnedSlice(alloc.persistentAllocator, @constCast(previ));
             const imatches = app.search_state.imatch.pop() orelse return;
             util.log("imatch 0: {}", .{imatches[0]});
-            const n = app.search_sample_su.itemsFromI(imatches, find_matches);
+            const n = app.search_sample_su.itemsFromIndices(imatches, find_matches);
             util.log("best match: {s}", .{find_matches[0].string});
 
             app.viewable_searchable = find_matches[0..n];
@@ -207,12 +207,12 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_br
             render_state.find = true;
         },
         else => {
-            try app.search_state.isearch.append(try app.search_state.add(app.search_sample_su.indices.items));
+            try app.search_state.isearch.append(try app.search_state.dupe(app.search_sample_su.indices.items));
             app.typing_buffer.append(char) catch return;
             const imatches = try algo.suTopNranked(app.typing_buffer.typed, &app.search_sample_su, window.panels.find.validArea().ylen) orelse return;
             util.log("imatch 0: {}", .{imatches[0]});
-            try app.search_state.imatch.append(try app.search_state.add(imatches));
-            const n = app.search_sample_su.itemsFromI(imatches, find_matches);
+            try app.search_state.imatch.append(try app.search_state.dupe(imatches));
+            const n = app.search_sample_su.itemsFromIndices(imatches, find_matches);
             util.log("best match: {s}", .{find_matches[0].string});
 
             app.viewable_searchable = find_matches[0..n];
