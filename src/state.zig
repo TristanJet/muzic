@@ -479,9 +479,11 @@ pub const Browser = struct {
     pub fn incrementNode(self: *Browser, columns: *ColumnArray(n_browse_columns)) !bool {
         const init_col: *BrowseColumn = &columns.buf[columns.index];
         const init_node = try self.getCurrentNode();
+        const prev = columns.getPrev();
         init_node.posFromColumn(init_col);
         const next_node = try self.getNextNode();
         if (self.len > columns.len and columns.index == (columns.len / 2) and (self.len - self.index) == columns.len) {
+            if (prev) |col| col.setPos(init_col.pos, init_col.slice_inc);
             init_col.setPos(next_node.pos, next_node.slice_inc);
             columns.inc += 1;
             self.index += 1;
@@ -498,18 +500,24 @@ pub const Browser = struct {
 
     pub fn decrementNode(self: *Browser, columns: *ColumnArray(n_browse_columns)) !bool {
         const init_col: *BrowseColumn = &columns.buf[columns.index];
+        const prev_col = columns.getPrev();
         const init_node = try self.getCurrentNode();
         init_node.posFromColumn(init_col);
         const prev_node = self.buf[self.index - 1].?;
+        const two_prev: ?BrowseNode = if (self.index > 1) self.buf[self.index - 2] else null;
         if (self.len > columns.len and columns.index == (columns.len / 2) and (self.len - self.index) != columns.len) {
+            if (prev_col) |col| {
+                if (two_prev) |node| {
+                    col.setPos(node.pos, node.slice_inc);
+                }
+            }
             init_col.setPos(prev_node.pos, prev_node.slice_inc);
             columns.inc -= 1;
             self.index -= 1;
             try columns.setAllDisplaying(self);
             return false;
         } else {
-            const prev_col: *BrowseColumn = &columns.buf[columns.index - 1];
-            prev_col.setPos(prev_node.pos, prev_node.slice_inc);
+            prev_col.?.setPos(prev_node.pos, prev_node.slice_inc);
             columns.index -= 1;
             self.index -= 1;
             return true;

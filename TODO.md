@@ -19,16 +19,18 @@ Let's freaking go
 - [x] BACKSPACE for search algo - save the strings?
     - [x] buggy af
 - [x] n after search to find next best match
-- [ ] Queue buffer adapts to window size
+- [x] browser column 1 resets when progress node
 - [ ] delete and put and yank in queue
 - [ ] moving around in queue, visual mode?
     - [ ] when delete from q, store the song ids
-- [ ] browser column 1 resets when progress node
-- [ ] allow browse by files and directories - (no tags set)
+- [ ] Queue buffer adapts to window size
 - [ ] next strings in browser should be on press - somehow load next strings for browser
     - [ ] naive get on press
 
 ## Semi important
+- [ ] allow browse by files and directories - (no tags set)
+- [ ] I don't want to touch browser code anymore, needs a full rewrite
+- [ ] reset resets final
 - [ ] should I unify the caches?
 - [ ] return exact matches, this can be done inside the smithwaterman function
 - [ ] convert all apostrophes to same, this can be done inside the smithwaterman function
