@@ -20,6 +20,7 @@ Let's freaking go
     - [x] buggy af
 - [x] n after search to find next best match
 - [x] browser column 1 resets when progress node
+- [x] BUG: Going to initial column resets final
 - [ ] delete and put and yank in queue
 - [ ] moving around in queue, visual mode?
     - [ ] when delete from q, store the song ids
@@ -30,7 +31,6 @@ Let's freaking go
 ## Semi important
 - [ ] allow browse by files and directories - (no tags set)
 - [ ] I don't want to touch browser code anymore, needs a full rewrite
-- [ ] reset resets final
 - [ ] should I unify the caches?
 - [ ] return exact matches, this can be done inside the smithwaterman function
 - [ ] convert all apostrophes to same, this can be done inside the smithwaterman function

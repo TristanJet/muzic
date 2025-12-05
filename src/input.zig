@@ -17,7 +17,7 @@ const wrkallocator = alloc.wrkallocator;
 const n_browse_col = state.n_browse_columns;
 
 var last_input: i64 = 0;
-const release_threshold: u8 = 15;
+const release_threshold: u8 = 5;
 var nloops: u8 = 0;
 
 pub var y_len: usize = undefined;
@@ -987,17 +987,15 @@ fn handleBrowseKeyRelease(char: u8, app: *state.State, render_state: *RenderStat
             }
         },
         'l' => {
-            const resp = node_buffer.setNodes(&app.col_arr, alloc.respAllocator, alloc.browserAllocator) catch |e| {
-                switch (e) {
-                    // error.UnsetApex => {
-                    //     util.log("uset apex!!!", .{});
-                    //     return;
-                    // },
-                    error.UnsetApex => return,
-                    else => return error.NodeError,
-                }
-            };
-            if (!resp) return;
+            if (node_buffer.buf[node_buffer.len - 1].?.displaying == null) {
+                const resp = node_buffer.setNodes(&app.col_arr, alloc.respAllocator, alloc.browserAllocator) catch |e| {
+                    switch (e) {
+                        error.UnsetApex => return,
+                        else => return error.NodeError,
+                    }
+                };
+                if (!resp) return;
+            }
             const next_col = app.col_arr.getNext();
             if (next_col) |next| {
                 next.clear(render_state);

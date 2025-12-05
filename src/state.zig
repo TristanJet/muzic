@@ -582,7 +582,7 @@ pub fn ColumnArray(n_col: u8) type {
         fn setAllDisplaying(self: *Self, browser: *const Browser) !void {
             var i: u8 = 0;
             while (i < self.len) : (i += 1) {
-                const browse_node = if (browser.buf[self.inc + i]) |node| node else return error.NoNode;
+                const browse_node = browser.buf[self.inc + i] orelse return error.NoNode;
                 const displaying: []const []const u8 = browse_node.displaying orelse return error.NoDisplaying;
                 self.buf[i].displaying = displaying;
             }
