@@ -24,25 +24,30 @@ Let's freaking go
 - [ ] delete and put and yank in queue
 - [ ] moving around in queue, visual mode?
     - [ ] when delete from q, store the song ids
+- [ ] go to current playing
+- [ ] hold to batch inputs
+- [ ] return to previous terminal state
 - [ ] Queue buffer adapts to window size
+
+## next update
+- [ ] **rewrite** - make maintaineable
+- [ ] allow browse by files and directories - (no tags set)
 - [ ] next strings in browser should be on press - somehow load next strings for browser
     - [ ] naive get on press
+- [ ] I don't want to touch browser code anymore, needs a full rewrite
+- [ ] unify the caches
+- [ ] fallback if TTY mode
+- [ ] ROBUST check for terminal features - support ASCII only
+    - [ ] terminfo
+    - [ ] return to original state, whatever was printed before running goes back to being visible
+- [ ] return exact matches, this can be done inside the smithwaterman function
 
 ## Semi important
-- [ ] allow browse by files and directories - (no tags set)
-- [ ] I don't want to touch browser code anymore, needs a full rewrite
-- [ ] should I unify the caches?
-- [ ] return exact matches, this can be done inside the smithwaterman function
 - [ ] convert all apostrophes to same, this can be done inside the smithwaterman function
 - [ ] implement strict max string size at MPD level
 - [ ] ROBUST NONBLOCK flag handling for mac
 - [ ] set max size for memory
-- [ ] fallback if TTY mode
-- [ ] ROBUST check for terminal features - support ASCII
-    - [ ] terminfo
-    - [ ] return to original state, whatever was printed before running goes back to being visible
 - [ ] Kitty input protocol?
-- [ ] handle no mp3 tags?
 
 ## Bugs/fixes
 - [ ] better error handling, I should only run the search algorithms IF there is a valid search set right, so its not the responsibility of algorithm to return error over that

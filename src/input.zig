@@ -284,13 +284,14 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             render_state.queueEffects = true;
         },
         'G' => {
-            const max_inc = app.queue.pl_len - app.queue.nviewable;
+            const max_inc = app.queue.pl_len -| app.queue.nviewable;
             if (app.scroll_q.inc != max_inc) render_state.queue = true;
             app.scroll_q.inc = max_inc; // this is kinda hacky
             app.scroll_q.prev_pos = app.scroll_q.pos;
-            app.scroll_q.pos = @intCast(app.queue.nviewable - 1);
-            app.queue.itopviewport = app.queue.pl_len - app.queue.nviewable;
+            app.scroll_q.pos = @intCast(@min(app.queue.nviewable - 1, app.queue.pl_len - 1));
+            app.queue.itopviewport = app.queue.pl_len -| app.queue.nviewable;
             render_state.queueEffects = true;
+            util.log("itop: {} - inc: {} - pos: {}", .{ app.queue.itopviewport, app.scroll_q.inc, app.scroll_q.pos });
         },
         'd' & '\x1F' => {
             if (app.scroll_q.pos + app.queue.itopviewport == app.queue.pl_len - 1) return;
@@ -477,6 +478,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
             const next: ?*state.BrowseColumn = app.col_arr.getNext();
             const scrolled = &app.current_scrolled;
             const reset = try browserScrollVertical(.down, current, next, scrolled, mpd_data);
+            node_buffer.zeroForward(&app.col_arr);
             if (reset) {
                 try resetBrowser(next);
                 app.col_arr.clear(render_state);
@@ -495,6 +497,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
             const next: ?*state.BrowseColumn = app.col_arr.getNext();
             const scrolled = &app.current_scrolled;
             const reset = try browserScrollVertical(.up, current, next, scrolled, mpd_data);
+            node_buffer.zeroForward(&app.col_arr);
             if (reset) {
                 try resetBrowser(next);
                 app.col_arr.clear(render_state);
@@ -511,24 +514,36 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
         'd' & '\x1F' => {
             const current: *state.BrowseColumn = app.col_arr.getCurrent();
             try halfDown(current);
+            node_buffer.zeroForward(&app.col_arr);
             current.render(render_state);
             current.renderCursor(render_state);
         },
         'u' & '\x1F' => {
             const current: *state.BrowseColumn = app.col_arr.getCurrent();
             try halfUp(current);
+            node_buffer.zeroForward(&app.col_arr);
             current.render(render_state);
             current.renderCursor(render_state);
         },
         'g' => {
             const current: *state.BrowseColumn = app.col_arr.getCurrent();
-            current.setPos(0, 0);
+            const displaying = current.displaying orelse return;
+            current.prev_pos = current.pos;
+            current.pos, current.slice_inc = moveToIndex(0, displaying.len, window.panels.find.validArea().ylen);
+            node_buffer.zeroForward(&app.col_arr);
+
             current.render(render_state);
             current.renderCursor(render_state);
         },
         'G' => {
             const current: *state.BrowseColumn = app.col_arr.getCurrent();
-            try goBottom(current);
+            if (current.displaying == null) return;
+            const slicelen = current.displaying.?.len;
+            const windowlen = window.panels.find.validArea().ylen;
+            current.prev_pos = current.pos;
+            current.pos, current.slice_inc = moveToIndex(slicelen - 1, slicelen, windowlen);
+            util.log("pos: {}, slice-inc: {}", .{ current.pos, current.slice_inc });
+            node_buffer.zeroForward(&app.col_arr);
             current.render(render_state);
             current.renderCursor(render_state);
         },
@@ -608,6 +623,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
             app.istr_match = (app.istr_match + 1) % app.n_str_matches;
             const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
             const index = findStringIndex(app.str_matches[app.istr_match], app.search_sample_str.set, app.search_sample_str.uppers, compare_type) orelse return error.NotFound;
+            current.prev_pos = current.pos;
             current.pos, current.slice_inc = moveToIndex(index, displaying.len, window.panels.find.validArea().ylen);
 
             current.renderCursor(render_state);
@@ -624,6 +640,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
             app.istr_match = @intCast(@mod(istr, n));
             const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
             const index = findStringIndex(app.str_matches[app.istr_match], app.search_sample_str.set, app.search_sample_str.uppers, compare_type) orelse return error.NotFound;
+            current.prev_pos = current.pos;
             current.pos, current.slice_inc = moveToIndex(index, displaying.len, window.panels.find.validArea().ylen);
 
             current.renderCursor(render_state);
@@ -775,20 +792,6 @@ fn halfDown(current: *state.BrowseColumn) !void {
     }
 }
 
-fn goBottom(current: *state.BrowseColumn) !void {
-    const displaying = current.displaying orelse return;
-    // Go to bottom of current column
-    if (displaying.len > 0) {
-        if (displaying.len > y_len) {
-            current.slice_inc = displaying.len - y_len;
-            current.pos = @intCast(@min(y_len - 1, displaying.len - 1));
-        } else {
-            current.slice_inc = 0;
-            current.pos = @intCast(displaying.len - 1);
-        }
-    }
-}
-
 fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
     switch (char) {
         '\x1B' => {
@@ -800,7 +803,7 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
             }
         },
         '\r', '\n' => {
-            try node_buffer.zeroForward();
+            node_buffer.zeroForward(&app.col_arr);
             try onBrowseTypingExit(app, app.col_arr.getCurrent(), render_state);
         },
         '\x7F' => {
@@ -819,6 +822,7 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
 
             const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
             const index = findStringIndex(app.str_matches[0], app.search_sample_str.set, app.search_sample_str.uppers, compare_type) orelse return error.NotFound;
+            current.prev_pos = current.pos;
             current.pos, current.slice_inc = moveToIndex(index, displaying.len, window.panels.find.validArea().ylen);
 
             current.renderCursor(render_state);
@@ -840,6 +844,7 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
 
             const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
             const index = findStringIndex(app.str_matches[0], app.search_sample_str.set, app.search_sample_str.uppers, compare_type) orelse return error.NotFound;
+            current.prev_pos = current.pos;
             current.pos, current.slice_inc = moveToIndex(index, displaying.len, window.panels.find.validArea().ylen);
 
             current.renderCursor(render_state);
@@ -885,7 +890,6 @@ fn browserScrollVertical(dir: cursorDirection, current: *state.BrowseColumn, nex
         }
         if (node_buffer.apex != .UNSET) return true;
     }
-    try node_buffer.zeroForward();
     return false;
 }
 

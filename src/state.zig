@@ -524,9 +524,15 @@ pub const Browser = struct {
         }
     }
 
-    pub fn zeroForward(self: *Browser) !void {
+    pub fn zeroForward(self: *Browser, columns: *ColumnArray(n_browse_columns)) void {
         for (self.index + 1..self.len) |i| {
-            self.buf[i].?.resetPos();
+            self.buf[i].?.pos = 0;
+            self.buf[i].?.slice_inc = 0;
+            if (i < columns.len) {
+                columns.buf[i].pos = 0;
+                columns.buf[i].prev_pos = 0;
+                columns.buf[i].slice_inc = 0;
+            }
         }
     }
 
@@ -619,6 +625,7 @@ pub const BrowseColumn = struct {
     index: u8,
 
     pub fn setPos(self: *BrowseColumn, pos: u8, slice_inc: usize) void {
+        self.prev_pos = self.pos;
         self.pos = pos;
         self.slice_inc = slice_inc;
     }
