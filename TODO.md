@@ -21,7 +21,8 @@ Let's freaking go
 - [x] n after search to find next best match
 - [x] browser column 1 resets when progress node
 - [x] BUG: Going to initial column resets final
-- [ ] delete and put and yank in queue
+- [x] delete and put and yank in queue
+- [ ] fix jump
 - [ ] moving around in queue, visual mode?
     - [ ] when delete from q, store the song ids
 - [ ] go to current playing

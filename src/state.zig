@@ -44,6 +44,8 @@ pub const State = struct {
     queue: *mpd.Queue,
     scroll_q: QueueScroll,
     prev_id: usize,
+    yanked: mpd.Yanked,
+    addedpos: ?usize,
 
     typing_buffer: TypingBuffer,
     find_cursor_pos: u8,
@@ -873,11 +875,12 @@ fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState(n_browse
         .queue => {
             log("Queue event", .{});
             try app.queue.reset(alloc.respAllocator);
-            app.queue.jumpToPos(app.queue.pl_len -| app.queue.nviewable, &app.scroll_q.inc);
+            const jumppos = app.addedpos orelse app.queue.pl_len;
+            if (app.queue.pl_len > 0) app.queue.jumpToPos(jumppos -| app.queue.nviewable, &app.scroll_q.inc);
             try app.queue.initialFill(alloc.respAllocator, alloc.persistentAllocator);
             if (app.queue.pl_len == 0) app.isPlaying = false;
             app.scroll_q.prev_pos = app.scroll_q.pos;
-            app.scroll_q.pos = @intCast(@min(app.queue.pl_len - 1, app.queue.nviewable - 1));
+            app.scroll_q.pos = @intCast(@min(app.queue.pl_len -| 1, app.queue.nviewable -| 1, jumppos));
             render_state.queue = true;
             render_state.queueEffects = true;
         },

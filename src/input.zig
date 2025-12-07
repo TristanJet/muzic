@@ -364,9 +364,15 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             }
             render_state.queueEffects = true;
         },
-        'p' => {
+        'P' => {
             if (debounce()) return;
             app.isPlaying = try mpd.togglePlaystate(app.isPlaying);
+        },
+        'p' => {
+            if (debounce()) return;
+            const pos = app.queue.itopviewport + app.scroll_q.pos;
+            try mpd.batchInsertUri(app.yanked.refs.items, pos, alloc.respAllocator);
+            app.addedpos = pos + app.yanked.refs.items.len - 1;
         },
         'l' => {
             if (debounce()) return;
@@ -392,7 +398,11 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         },
         'x' => {
             if (debounce()) return;
-            mpd.rmFromPos(wrkallocator, app.scroll_q.pos + app.queue.itopviewport) catch |e| switch (e) {
+            const position: usize = app.scroll_q.pos + app.queue.itopviewport;
+            try app.yanked.reset();
+            app.addedpos = null;
+            try mpd.getYanked(position, position + 1, &app.yanked, alloc.respAllocator);
+            mpd.rmFromPos(wrkallocator, position) catch |e| switch (e) {
                 error.MpdNotPlaying => return,
                 error.MpdBadIndex => {
                     if (app.queue.pl_len == 0) return;
@@ -413,11 +423,33 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         'D' => {
             if (debounce()) return;
             const position: usize = app.scroll_q.pos + app.queue.itopviewport;
-            try mpd.rmRangeFromPos(wrkallocator, position);
+            try app.yanked.reset();
+            app.addedpos = null;
+            try mpd.getYanked(position, app.queue.pl_len, &app.yanked, alloc.respAllocator);
+            try mpd.rmRange(position, app.queue.pl_len, alloc.respAllocator);
+
+            render_state.queueEffects = true;
+        },
+        'y' => {
+            if (debounce()) return;
+            const position: usize = app.scroll_q.pos + app.queue.itopviewport;
+            try app.yanked.reset();
+            try mpd.getYanked(position, position + 1, &app.yanked, alloc.respAllocator);
+
+            render_state.queueEffects = true;
+        },
+        'Y' => {
+            if (debounce()) return;
+            const position: usize = app.scroll_q.pos + app.queue.itopviewport;
+            try app.yanked.reset();
+            try mpd.getYanked(position, app.queue.pl_len, &app.yanked, alloc.respAllocator);
 
             render_state.queueEffects = true;
         },
         'X' => {
+            try app.yanked.reset();
+            app.addedpos = null;
+            try mpd.getYanked(0, app.queue.pl_len, &app.yanked, alloc.respAllocator);
             try mpd.clearQueue();
             app.scroll_q.inc = 0;
             app.scroll_q.pos = 0;
@@ -658,10 +690,12 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
         '\n', '\r' => {
             const curr_col = app.col_arr.getCurrent();
             try browserHandleEnter(alloc.typingAllocator, curr_col.absolutePos(), mpd_data);
+            app.addedpos = null;
         },
         ' ' => {
             const curr_col = app.col_arr.getCurrent();
             try browserHandleSpace(alloc.typingAllocator, curr_col.absolutePos(), mpd_data);
+            app.addedpos = null;
         },
         else => return,
     }

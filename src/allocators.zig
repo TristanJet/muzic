@@ -31,6 +31,8 @@ pub const songDataAllocator = songData.allocator();
 
 pub var album_artistArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 
+pub var delArena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+
 pub fn deinit() void {
     persistentArena.deinit();
     algoArena.deinit();

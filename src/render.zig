@@ -209,6 +209,7 @@ fn queueRender(
     var iterator: QueueIterator = itq;
     var item = iterator.next(inc);
     if (item == null) {
+        try clear(area);
         try term.moveCursor(area.ylen / 2, area.xlen / 2);
         try writeLineCenter("queue empty", area.ylen / 2, area.xmin, area.xmax);
         return;

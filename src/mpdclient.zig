@@ -724,7 +724,7 @@ pub const QSong = struct {
     id: ?usize,
 };
 
-fn getPlaylistLen(respAllocator: mem.Allocator) !usize {
+pub fn getPlaylistLen(respAllocator: mem.Allocator) !usize {
     const command = "status\n";
     const data = try readLargeResponse(respAllocator, command);
     var lines = try processLargeResponse(data);
@@ -1393,6 +1393,15 @@ pub fn addFromUri(allocator: mem.Allocator, uri: []const u8) !void {
     try sendCommand(command);
 }
 
+pub fn batchInsertUri(uris: []const []const u8, pos: usize, ra: mem.Allocator) !void {
+    try connSend("command_list_begin\n", &cmdStream);
+    for (uris, 0..uris.len) |item, i| {
+        const command = try fmt.allocPrint(ra, "add \"{s}\" {}\n", .{ item, pos + i });
+        try connSend(command, &cmdStream);
+    }
+    try sendCommand("command_list_end\n");
+}
+
 pub fn addList(allocator: mem.Allocator, list: []const SongStringAndUri) !void {
     try connSend("command_list_begin\n", &cmdStream);
     for (list) |item| {
@@ -1410,9 +1419,65 @@ pub fn rmFromPos(allocator: mem.Allocator, pos: usize) !void {
     };
 }
 
-pub fn rmRangeFromPos(allocator: mem.Allocator, pos: usize) !void {
-    const command = try fmt.allocPrint(allocator, "delete {}:\n", .{pos});
+pub fn rmRange(start: usize, stop: usize, ra: mem.Allocator) !void {
+    const command = try fmt.allocPrint(ra, "delete {}:{}\n", .{ start, stop });
     try sendCommand(command);
+}
+
+pub const Yanked = struct {
+    refs: ArrayList([]const u8),
+    arena: *std.heap.ArenaAllocator,
+    allocator: mem.Allocator,
+
+    pub fn init(arena: *std.heap.ArenaAllocator) Yanked {
+        const allocator = arena.allocator();
+        return .{
+            .refs = ArrayList([]const u8).init(allocator),
+            .arena = arena,
+            .allocator = allocator,
+        };
+    }
+
+    fn append(self: *Yanked, src: []const u8) !void {
+        try self.refs.append(try self.allocator.dupe(u8, src));
+    }
+
+    pub fn reset(self: *Yanked) !void {
+        const success = self.arena.reset(.{ .retain_with_limit = 4096 });
+        if (!success) return error.ArenaResetFail;
+        self.refs.shrinkAndFree(0);
+    }
+};
+
+pub fn getYanked(start: usize, stop: usize, out: *Yanked, ra: mem.Allocator) !void {
+    const command = try fmt.allocPrint(ra, "playlistinfo {}:{}\n", .{ start, stop });
+    const data = try readLargeResponse(ra, command);
+    var lines = try processLargeResponse(data);
+    while (lines.next()) |line| {
+        if (mem.startsWith(u8, line, "file:")) {
+            try out.append(mem.trimLeft(u8, line[5..], " "));
+        }
+    }
+}
+
+test "del" {
+    const alloc = @import("allocators.zig");
+
+    try connect(.command, false);
+
+    var del = Yanked.init(&alloc.delArena);
+    const start = 5;
+    const plen = 31;
+    try getYanked(start, plen, &del, alloc.respAllocator);
+    debug.print("refs len: {}\n", .{del.refs.items.len});
+    for (del.refs.items) |item| {
+        debug.print("item: {s}\n", .{item});
+    }
+    debug.print("capacity: {}\n", .{del.refs.capacity});
+    debug.print("end_index: {}\n", .{del.arena.queryCapacity()});
+    try del.reset();
+    debug.print("capacity: {}\n", .{del.refs.capacity});
+    debug.print("end_index: {}\n", .{del.arena.queryCapacity()});
 }
 
 pub fn clearQueue() !void {
