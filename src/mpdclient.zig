@@ -1395,7 +1395,7 @@ pub fn addFromUri(allocator: mem.Allocator, uri: []const u8) !void {
 
 pub fn batchInsertUri(uris: []const []const u8, pos: usize, ra: mem.Allocator) !void {
     try connSend("command_list_begin\n", &cmdStream);
-    for (uris, 0..uris.len) |item, i| {
+    for (uris, 1..uris.len + 1) |item, i| {
         const command = try fmt.allocPrint(ra, "add \"{s}\" {}\n", .{ item, pos + i });
         try connSend(command, &cmdStream);
     }

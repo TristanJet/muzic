@@ -372,7 +372,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             if (debounce()) return;
             const pos = app.queue.itopviewport + app.scroll_q.pos;
             try mpd.batchInsertUri(app.yanked.refs.items, pos, alloc.respAllocator);
-            app.addedpos = pos + app.yanked.refs.items.len - 1;
+            app.addedpos = app.scroll_q.pos + app.yanked.refs.items.len;
         },
         'l' => {
             if (debounce()) return;

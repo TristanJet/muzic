@@ -22,9 +22,9 @@ Let's freaking go
 - [x] browser column 1 resets when progress node
 - [x] BUG: Going to initial column resets final
 - [x] delete and put and yank in queue
-- [ ] fix jump
+- [x] fix jump
 - [ ] moving around in queue, visual mode?
-    - [ ] when delete from q, store the song ids
+    - [x] when delete from q, store the song ids
 - [ ] go to current playing
 - [ ] hold to batch inputs
 - [ ] return to previous terminal state
