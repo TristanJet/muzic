@@ -46,6 +46,7 @@ pub const State = struct {
     prev_id: usize,
     yanked: mpd.Yanked,
     addedpos: ?usize,
+    visual_anchor_pos: ?usize,
 
     typing_buffer: TypingBuffer,
     find_cursor_pos: u8,

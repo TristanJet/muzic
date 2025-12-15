@@ -49,6 +49,7 @@ const initial_browser: state.Browser = state.Browser{
 var node_buffer: state.Browser = initial_browser;
 pub const Input_State = enum {
     normal_queue,
+    visual_queue,
     typing_find,
     normal_browse,
     typing_browse,
@@ -104,6 +105,7 @@ pub fn handleInput(char: u8, app_state: *state.State, render_state: *RenderState
     const initial_state = app_state.input_state;
     switch (initial_state) {
         .normal_queue => normalQueue(char, app_state, render_state, mpd_data) catch unreachable,
+        .visual_queue => visualQueue(char, app_state, render_state) catch unreachable,
         .typing_find => typingFind(char, app_state, render_state) catch unreachable,
         .normal_browse => handleNormalBrowse(char, app_state, render_state, mpd_data) catch unreachable,
         .typing_browse => typingBrowse(char, app_state, render_state) catch unreachable,
@@ -224,6 +226,7 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_br
 }
 
 fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns), mpd_data: *state.Data) !void {
+    util.log("in normal mode, char: {}", .{char});
     switch (char) {
         'q' => app.quit = true,
         'b' => {
@@ -235,7 +238,6 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             app.input_state = .normal_browse;
             app.node_switched = true;
             render_state.browse_cursor[app.col_arr.index] = true;
-            render_state.queue = true;
         },
         'f' => {
             try onFind(render_state, mpd_data, &app.algo_init, &app.search_sample_su, &app.input_state);
@@ -243,55 +245,22 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         else => if (app.queue.pl_len == 0) return,
     }
     switch (char) {
-        'j' => {
-            const inc_changed = app.scroll_q.scrollDown(app.queue.nviewable, app.queue.pl_len, app.queue.itopviewport);
-            if (inc_changed) {
-                app.queue.itopviewport += 1;
-                if (app.queue.itopviewport + app.queue.nviewable > app.queue.ibufferstart + mpd.Queue.NSONGS) {
-                    app.scroll_q.inc -= try app.queue.getForward(alloc.respAllocator);
-                } else if (app.queue.downBufferWrong()) {
-                    util.log("buffer wrong - resetting", .{});
-                    app.queue.fill += try mpd.getQueue(app.queue, .forward, alloc.respAllocator, mpd.Queue.NSONGS);
-                }
-
-                render_state.queue = true;
-            }
-            render_state.queueEffects = true;
-        },
-        'k' => {
-            const inc_changed = app.scroll_q.scrollUp();
-            if (inc_changed) {
-                app.queue.itopviewport -= 1;
-                if (app.queue.itopviewport < app.queue.ibufferstart) {
-                    app.scroll_q.inc += try app.queue.getBackward(alloc.respAllocator);
-                } else if (app.queue.upBufferWrong()) {
-                    util.log("buffer wrong - resetting", .{});
-                    app.scroll_q.inc = mpd.Queue.NSONGS - 1 + app.queue.nviewable;
-                    app.queue.fill += try mpd.getQueue(app.queue, .backward, alloc.respAllocator, mpd.Queue.NSONGS);
-                    app.queue.ibufferstart -= mpd.Queue.NSONGS;
-                }
-
-                render_state.queue = true;
-            }
-            render_state.queueEffects = true;
-        },
+        'j' => try queueScrollDown(app, render_state),
+        'k' => try queueScrollUp(app, render_state),
         'g' => {
-            if (app.scroll_q.inc > 0) render_state.queue = true;
+            if (app.scroll_q.inc > 0) render_state.queue = true else render_state.queueEffects = true;
             app.scroll_q.inc = 0;
             app.scroll_q.prev_pos = app.scroll_q.pos;
             app.scroll_q.pos = 0;
             app.queue.itopviewport = 0;
-            render_state.queueEffects = true;
         },
         'G' => {
             const max_inc = app.queue.pl_len -| app.queue.nviewable;
-            if (app.scroll_q.inc != max_inc) render_state.queue = true;
+            if (app.scroll_q.inc != max_inc) render_state.queue = true else render_state.queueEffects = true;
             app.scroll_q.inc = max_inc; // this is kinda hacky
             app.scroll_q.prev_pos = app.scroll_q.pos;
             app.scroll_q.pos = @intCast(@min(app.queue.nviewable - 1, app.queue.pl_len - 1));
             app.queue.itopviewport = app.queue.pl_len -| app.queue.nviewable;
-            render_state.queueEffects = true;
-            util.log("itop: {} - inc: {} - pos: {}", .{ app.queue.itopviewport, app.scroll_q.inc, app.scroll_q.pos });
         },
         'd' & '\x1F' => {
             if (app.scroll_q.pos + app.queue.itopviewport == app.queue.pl_len - 1) return;
@@ -302,7 +271,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
                 const pos = app.scroll_q.pos;
                 const len: u8 = @intCast(app.queue.pl_len);
                 app.scroll_q.prev_pos = pos;
-                app.scroll_q.pos = if (pos + half_height < len - 1) pos + half_height else len - 1;
+                app.scroll_q.pos = @min(pos + half_height, len - 1);
                 render_state.queueEffects = true;
                 return;
             }
@@ -321,7 +290,6 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
                 if (app.queue.itopviewport + height > app.queue.ibufferstart + mpd.Queue.NSONGS) {
                     inc -= try app.queue.getForward(alloc.respAllocator);
                 } else if (app.queue.downBufferWrong()) {
-                    util.log("buffer wrong - resetting", .{});
                     app.queue.fill += try mpd.getQueue(app.queue, .forward, alloc.respAllocator, mpd.Queue.NSONGS);
                 }
 
@@ -338,7 +306,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             const height: u8 = @intCast(window.panels.queue.validArea().ylen);
             const half_height: u8 = @intCast(height / 2);
             const pos: i16 = @intCast(app.scroll_q.pos);
-            const viewdelta: u8 = @intCast(@abs(pos - height)); //(pos - half) - half
+            const viewdelta: u8 = @intCast(@abs(pos - height));
             var inc: i128 = app.scroll_q.inc;
             if (viewdelta > 0) {
                 const viewdiff = app.queue.moveViewportUp(viewdelta);
@@ -351,7 +319,6 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
                 if (app.queue.itopviewport < app.queue.ibufferstart) {
                     inc += try app.queue.getBackward(alloc.respAllocator);
                 } else if (app.queue.upBufferWrong()) {
-                    util.log("buffer wrong - resetting", .{});
                     inc = mpd.Queue.NSONGS - 1 + app.queue.nviewable;
                     app.queue.fill += try mpd.getQueue(app.queue, .backward, alloc.respAllocator, mpd.Queue.NSONGS);
                     app.queue.ibufferstart -= mpd.Queue.NSONGS;
@@ -364,7 +331,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             }
             render_state.queueEffects = true;
         },
-        'P' => {
+        ' ' => {
             if (debounce()) return;
             app.isPlaying = try mpd.togglePlaystate(app.isPlaying);
         },
@@ -454,6 +421,11 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             app.scroll_q.inc = 0;
             app.scroll_q.pos = 0;
         },
+        'v' => {
+            app.input_state = .visual_queue;
+            app.visual_anchor_pos = app.queue.itopviewport + app.scroll_q.pos;
+            util.log("Now in visual mode", .{});
+        },
         '\x1B' => {
             var escBuffer: [8]u8 = undefined;
             const escRead = try term.readEscapeCode(&escBuffer);
@@ -493,6 +465,41 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         },
         else => return,
     }
+}
+
+fn visualQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
+    switch (char) {
+        '\x1B' => {
+            var escBuffer: [8]u8 = undefined;
+            const escRead = try term.readEscapeCode(&escBuffer);
+
+            if (escRead == 0) {
+                app.visual_anchor_pos = null;
+                app.input_state = .normal_queue;
+                render_state.queue = true;
+            }
+        },
+        'j' => {
+            try queueScrollDown(app, render_state);
+        },
+        'k' => try queueScrollUp(app, render_state),
+        'd' => {
+            if (app.visual_anchor_pos) |anchor| {
+                try deleteVisual(app.queue.itopviewport + app.scroll_q.pos, anchor, &app.yanked, alloc.respAllocator);
+            }
+
+            app.visual_anchor_pos = null;
+            app.input_state = .normal_queue;
+        },
+        else => return,
+    }
+}
+
+fn deleteVisual(abspos: usize, anchor: usize, yanked: *mpd.Yanked, ra: mem.Allocator) !void {
+    const start = @min(abspos, anchor);
+    const end = @max(abspos, anchor);
+    try mpd.getYanked(start, end + 1, yanked, ra);
+    try mpd.rmRange(start, end + 1, ra);
 }
 
 // ---- Browser Module ----
@@ -1078,4 +1085,38 @@ fn scroll(cursor_pos: *u8, cursor_prev: *u8, max: ?usize, dir: cursorDirection) 
             }
         },
     }
+}
+
+fn queueScrollDown(app: *state.State, render_state: *RenderState(n_browse_col)) !void {
+    const inc_changed = app.scroll_q.scrollDown(app.queue.nviewable, app.queue.pl_len, app.queue.itopviewport);
+    if (inc_changed) {
+        app.queue.itopviewport += 1;
+        if (app.queue.itopviewport + app.queue.nviewable > app.queue.ibufferstart + mpd.Queue.NSONGS) {
+            app.scroll_q.inc -= try app.queue.getForward(alloc.respAllocator);
+        } else if (app.queue.downBufferWrong()) {
+            util.log("buffer wrong - resetting", .{});
+            app.queue.fill += try mpd.getQueue(app.queue, .forward, alloc.respAllocator, mpd.Queue.NSONGS);
+        }
+
+        render_state.queue = true;
+    }
+    render_state.queueEffects = true;
+}
+
+fn queueScrollUp(app: *state.State, render_state: *RenderState(n_browse_col)) !void {
+    const inc_changed = app.scroll_q.scrollUp();
+    if (inc_changed) {
+        app.queue.itopviewport -= 1;
+        if (app.queue.itopviewport < app.queue.ibufferstart) {
+            app.scroll_q.inc += try app.queue.getBackward(alloc.respAllocator);
+        } else if (app.queue.upBufferWrong()) {
+            util.log("buffer wrong - resetting", .{});
+            app.scroll_q.inc = mpd.Queue.NSONGS - 1 + app.queue.nviewable;
+            app.queue.fill += try mpd.getQueue(app.queue, .backward, alloc.respAllocator, mpd.Queue.NSONGS);
+            app.queue.ibufferstart -= mpd.Queue.NSONGS;
+        }
+
+        render_state.queue = true;
+    }
+    render_state.queueEffects = true;
 }

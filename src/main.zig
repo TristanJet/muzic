@@ -128,6 +128,7 @@ pub fn main() !void {
         },
         .yanked = mpd.Yanked.init(&alloc.delArena),
         .addedpos = 0,
+        .visual_anchor_pos = null,
 
         .typing_buffer = initial_typing,
         .find_cursor_pos = 0,

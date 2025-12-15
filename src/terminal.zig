@@ -14,7 +14,7 @@ var raw: posix.termios = undefined;
 var cooked: posix.termios = undefined;
 
 // Buffer for terminal output
-const BUFFER_SIZE = 1024;
+const BUFFER_SIZE = 4096;
 var buffer: [BUFFER_SIZE]u8 = undefined;
 var buffer_pos: usize = 0;
 
@@ -142,38 +142,45 @@ fn cook() !void {
 pub fn flushBuffer() !void {
     if (buffer_pos == 0) return;
 
-    while (buffer_pos > 0) {
-        //resolves to darwin libc write
-        const n = writer.write(buffer[0..buffer_pos]) catch |err| {
+    var offset: usize = 0;
+    while (offset < buffer_pos) {
+        const n = writer.write(buffer[offset..buffer_pos]) catch |err| {
             switch (err) {
                 error.WouldBlock => {
-                    std.time.sleep(1);
+                    // Sleep for 1 millisecond, not 1 nanosecond
+                    std.time.sleep(1_000_000);
                     continue;
                 },
                 else => return err,
             }
         };
-        if (n < buffer_pos) {
-            mem.copyForwards(u8, buffer[0 .. buffer_pos - n], buffer[n..buffer_pos]);
+
+        // Handle case where write returns 0 (shouldn't happen, but be safe)
+        if (n == 0) {
+            return error.WriteZero;
         }
-        buffer_pos -= n;
+
+        offset += n;
     }
+
+    buffer_pos = 0;
 }
 
 fn writeToBuffer(data: []const u8) !void {
+    // If data is larger than buffer, flush and write directly
+    if (data.len > BUFFER_SIZE) {
+        try flushBuffer();
+        _ = try writer.write(data);
+        return;
+    }
+
     // Check if we need to flush before adding more data
     if (buffer_pos + data.len > BUFFER_SIZE) {
         try flushBuffer();
-
-        // If data is larger than buffer, write directly
-        if (data.len > BUFFER_SIZE) {
-            _ = try writer.write(data);
-            return;
-        }
     }
 
     // Copy data to buffer
-    mem.copyForwards(u8, buffer[buffer_pos..], data);
+    @memcpy(buffer[buffer_pos..][0..data.len], data);
     buffer_pos += data.len;
 }
 
