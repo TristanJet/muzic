@@ -171,24 +171,6 @@ fn drawHeader(p: window.Area, text: []const u8) !void {
     try term.writeAll(sym.h_line);
 }
 
-fn formatMilli(allocator: std.mem.Allocator, milli: u64) ![]const u8 {
-    // Validate input - ensure we don't exceed reasonable time values
-    if (milli > std.math.maxInt(u32) * 1000) {
-        return error.TimeValueTooLarge;
-    }
-
-    const seconds = milli / 1000;
-    const minutes = seconds / 60;
-    const remainingSeconds = seconds % 60;
-
-    // Format time string with proper error handling
-    return std.fmt.allocPrint(
-        allocator,
-        "{d:0>2}:{d:0>2}",
-        .{ minutes, remainingSeconds },
-    );
-}
-
 fn formatSeconds(allocator: mem.Allocator, seconds: u64) ![]const u8 {
     const minutes = seconds / 60;
     const remainingSeconds = seconds % 60;
