@@ -1443,9 +1443,9 @@ pub const Yanked = struct {
     }
 
     pub fn reset(self: *Yanked) !void {
+        self.refs.shrinkAndFree(0);
         const success = self.arena.reset(.{ .retain_with_limit = 4096 });
         if (!success) return error.ArenaResetFail;
-        self.refs.shrinkAndFree(0);
     }
 };
 
@@ -1453,6 +1453,7 @@ pub fn getYanked(start: usize, stop: usize, out: *Yanked, ra: mem.Allocator) !vo
     const command = try fmt.allocPrint(ra, "playlistinfo {}:{}\n", .{ start, stop });
     const data = try readLargeResponse(ra, command);
     var lines = try processLargeResponse(data);
+    try out.reset();
     while (lines.next()) |line| {
         if (mem.startsWith(u8, line, "file:")) {
             try out.append(mem.trimLeft(u8, line[5..], " "));
