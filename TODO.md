@@ -23,24 +23,27 @@ Let's freaking go
 - [x] BUG: Going to initial column resets final
 - [x] delete and put and yank in queue
 - [x] fix jump
-- [ ] moving around in queue, visual mode?
+- [x] moving around in queue, visual mode?
     - [x] when delete from q, store the song ids
-- [ ] go to current playing
-- [ ] hold to batch inputs
-- [ ] return to previous terminal state
+- [x] fix jumping bugs
+    - [x] visual mode delete end
+    - [x] paste end
+- [ ] manual go to current playing
+- [ ] send command should fail silently if error unknown
+- [ ] fallback if TTY mode
+- [ ] ROBUST check for terminal features - support ASCII only
+    - [ ] terminfo
+    - [ ] return to original state, whatever was printed before running goes back to being visible
 - [ ] Queue buffer adapts to window size
 
 ## next update
 - [ ] **rewrite** - make maintaineable
+- [ ] hold to batch inputs
 - [ ] allow browse by files and directories - (no tags set)
 - [ ] next strings in browser should be on press - somehow load next strings for browser
     - [ ] naive get on press
 - [ ] I don't want to touch browser code anymore, needs a full rewrite
 - [ ] unify the caches
-- [ ] fallback if TTY mode
-- [ ] ROBUST check for terminal features - support ASCII only
-    - [ ] terminfo
-    - [ ] return to original state, whatever was printed before running goes back to being visible
 - [ ] return exact matches, this can be done inside the smithwaterman function
 
 ## Semi important

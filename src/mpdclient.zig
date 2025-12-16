@@ -445,31 +445,30 @@ pub const Queue = struct {
     }
 
     pub fn upBufferWrong(self: *Queue) bool {
-        var buffer_wrong: bool = false;
         if (self.edgebuf[1]) |edge| {
             if (self.itopviewport <= self.pl_len - 1 - edge.len and
                 self.itopviewport > self.ibufferstart + NSONGS - 1)
             {
                 self.ibufferstart = self.itopviewport + 1;
                 self.fill = 0;
-                buffer_wrong = true;
+                return true;
             }
         }
-        return buffer_wrong;
+        return false;
     }
 
     pub fn jumpToPos(self: *Queue, pos: usize, inc: *usize) void {
         debug.assert(pos >= 0 and pos < self.pl_len);
-        if (self.pl_len - pos <= self.nviewable) {
-            inc.* = self.pl_len -| self.nviewable;
+        if (pos >= self.bound.bend) {
             self.itopviewport = self.pl_len -| self.nviewable;
             self.ibufferstart = @max(self.bound.bstart, self.bound.bend -| NSONGS);
+            inc.* = (self.itopviewport - self.ibufferstart) + self.bound.bstart;
             return;
         }
 
         self.itopviewport = pos;
-        if (pos == 0) {
-            inc.* = 0;
+        if (pos <= self.bound.bstart) {
+            inc.* = self.itopviewport;
             self.ibufferstart = self.bound.bstart;
             return;
         }
@@ -477,7 +476,8 @@ pub const Queue = struct {
         if (self.itopviewport < self.ibufferstart or self.itopviewport + self.nviewable - 1 > self.ibufferstart + NSONGS - 1) {
             self.ibufferstart = @max(pos -| (NSONGS / 2), self.bound.bstart);
         }
-        inc.* = self.bound.bstart + self.itopviewport - self.ibufferstart;
+        util.log("itop: {} - ibuf: {}", .{ self.itopviewport, self.ibufferstart });
+        inc.* = (self.itopviewport - self.ibufferstart) + self.bound.bstart;
     }
 
     //Iterator just returns songs in buffers - not responsible for guaranteeing correct position.
@@ -768,9 +768,7 @@ const Boundary = struct {
     bend: usize,
 
     fn checkBoundary(self: Boundary, start: usize, end: usize) struct { usize, usize } {
-        const newstart: usize = if (start < self.bstart) self.bstart else start;
-        const newend: usize = if (end > self.bend) self.bend else end;
-        return .{ newstart, newend };
+        return .{ @max(start, self.bstart), @min(end, self.bend) };
     }
 };
 

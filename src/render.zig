@@ -192,7 +192,6 @@ fn queueRender(
     input_state: Input_State,
     current_song_id: usize,
 ) !void {
-    util.log("render queue", .{});
     var iterator: QueueIterator = itq;
     var item = iterator.next(inc);
     if (item == null) {
@@ -242,7 +241,6 @@ fn queueEffectsRender(
     current_song_id: usize,
     prev_song_id: usize,
 ) !void {
-    util.log("render effects", .{});
     var iterator = itq;
 
     for (0..area.ylen) |i| {

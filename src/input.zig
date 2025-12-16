@@ -226,7 +226,6 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_br
 }
 
 fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns), mpd_data: *state.Data) !void {
-    util.log("in normal mode, char: {}", .{char});
     switch (char) {
         'q' => app.quit = true,
         'b' => {
@@ -255,12 +254,12 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             app.queue.itopviewport = 0;
         },
         'G' => {
-            const max_inc = app.queue.pl_len -| app.queue.nviewable;
-            if (app.scroll_q.inc != max_inc) render_state.queue = true else render_state.queueEffects = true;
-            app.scroll_q.inc = max_inc; // this is kinda hacky
+            const max_inc = app.queue.bound.bstart + mpd.Queue.NSONGS;
             app.scroll_q.prev_pos = app.scroll_q.pos;
             app.scroll_q.pos = @intCast(@min(app.queue.nviewable - 1, app.queue.pl_len - 1));
             app.queue.itopviewport = app.queue.pl_len -| app.queue.nviewable;
+            if (app.scroll_q.inc != max_inc) render_state.queue = true else render_state.queueEffects = true;
+            app.scroll_q.inc = max_inc;
         },
         'd' & '\x1F' => {
             if (app.scroll_q.pos + app.queue.itopviewport == app.queue.pl_len - 1) return;
@@ -339,7 +338,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             if (debounce()) return;
             const pos = app.queue.itopviewport + app.scroll_q.pos;
             try mpd.batchInsertUri(app.yanked.refs.items, pos, alloc.respAllocator);
-            app.addedpos = app.scroll_q.pos + app.yanked.refs.items.len;
+            app.jumppos = app.queue.itopviewport + app.scroll_q.pos + app.yanked.refs.items.len;
         },
         'l' => {
             if (debounce()) return;
@@ -366,8 +365,6 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         'x' => {
             if (debounce()) return;
             const position: usize = app.scroll_q.pos + app.queue.itopviewport;
-            try app.yanked.reset();
-            app.addedpos = null;
             try mpd.getYanked(position, position + 1, &app.yanked, alloc.respAllocator);
             mpd.rmFromPos(wrkallocator, position) catch |e| switch (e) {
                 error.MpdNotPlaying => return,
@@ -390,8 +387,6 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         'D' => {
             if (debounce()) return;
             const position: usize = app.scroll_q.pos + app.queue.itopviewport;
-            try app.yanked.reset();
-            app.addedpos = null;
             try mpd.getYanked(position, app.queue.pl_len, &app.yanked, alloc.respAllocator);
             try mpd.rmRange(position, app.queue.pl_len, alloc.respAllocator);
 
@@ -400,7 +395,6 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         'y' => {
             if (debounce()) return;
             const position: usize = app.scroll_q.pos + app.queue.itopviewport;
-            try app.yanked.reset();
             try mpd.getYanked(position, position + 1, &app.yanked, alloc.respAllocator);
 
             render_state.queueEffects = true;
@@ -408,14 +402,11 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         'Y' => {
             if (debounce()) return;
             const position: usize = app.scroll_q.pos + app.queue.itopviewport;
-            try app.yanked.reset();
             try mpd.getYanked(position, app.queue.pl_len, &app.yanked, alloc.respAllocator);
 
             render_state.queueEffects = true;
         },
         'X' => {
-            try app.yanked.reset();
-            app.addedpos = null;
             try mpd.getYanked(0, app.queue.pl_len, &app.yanked, alloc.respAllocator);
             try mpd.clearQueue();
             app.scroll_q.inc = 0;
@@ -424,7 +415,6 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         'v' => {
             app.input_state = .visual_queue;
             app.visual_anchor_pos = app.queue.itopviewport + app.scroll_q.pos;
-            util.log("Now in visual mode", .{});
         },
         '\x1B' => {
             var escBuffer: [8]u8 = undefined;
@@ -485,7 +475,7 @@ fn visualQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         'k' => try queueScrollUp(app, render_state),
         'd' => {
             if (app.visual_anchor_pos) |anchor| {
-                try deleteVisual(app.queue.itopviewport + app.scroll_q.pos, anchor, &app.yanked, alloc.respAllocator);
+                app.jumppos = try deleteVisual(app.queue.itopviewport + app.scroll_q.pos, anchor, &app.yanked, alloc.respAllocator);
             }
 
             app.visual_anchor_pos = null;
@@ -495,11 +485,12 @@ fn visualQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
     }
 }
 
-fn deleteVisual(abspos: usize, anchor: usize, yanked: *mpd.Yanked, ra: mem.Allocator) !void {
+fn deleteVisual(abspos: usize, anchor: usize, yanked: *mpd.Yanked, ra: mem.Allocator) !usize {
     const start = @min(abspos, anchor);
     const end = @max(abspos, anchor);
     try mpd.getYanked(start, end + 1, yanked, ra);
     try mpd.rmRange(start, end + 1, ra);
+    return start -| 1;
 }
 
 // ---- Browser Module ----
@@ -697,12 +688,10 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
         '\n', '\r' => {
             const curr_col = app.col_arr.getCurrent();
             try browserHandleEnter(alloc.typingAllocator, curr_col.absolutePos(), mpd_data);
-            app.addedpos = null;
         },
         ' ' => {
             const curr_col = app.col_arr.getCurrent();
             try browserHandleSpace(alloc.typingAllocator, curr_col.absolutePos(), mpd_data);
-            app.addedpos = null;
         },
         else => return,
     }

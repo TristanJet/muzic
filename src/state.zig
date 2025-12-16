@@ -45,7 +45,7 @@ pub const State = struct {
     scroll_q: QueueScroll,
     prev_id: usize,
     yanked: mpd.Yanked,
-    addedpos: ?usize,
+    jumppos: ?usize,
     visual_anchor_pos: ?usize,
 
     typing_buffer: TypingBuffer,
@@ -717,15 +717,14 @@ pub const QueueScroll = struct {
     }
 
     pub fn scrollUp(self: *QueueScroll) bool {
-        var inc_changed: bool = false;
         if (self.pos > 0) {
             self.prev_pos = self.pos;
             self.pos -= 1;
         } else if (self.inc > 0) {
             self.inc -= 1;
-            inc_changed = true;
+            return true;
         }
-        return inc_changed;
+        return false;
     }
 
     pub fn scrollDown(self: *QueueScroll, height: usize, pl_len: usize, itopv: usize) bool {
@@ -874,17 +873,29 @@ fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState(n_browse
             render_state.currentTrack = true;
         },
         .queue => {
-            log("Queue event", .{});
             try app.queue.reset(alloc.respAllocator);
 
-            if (app.addedpos) |jumppos| {
-                app.scroll_q.prev_pos = app.scroll_q.pos;
+            app.scroll_q.prev_pos = app.scroll_q.pos;
+            if (app.jumppos) |jumppos| {
                 log("jumppos {}", .{jumppos});
-                app.scroll_q.pos = @intCast(jumppos);
+                if (jumppos < app.queue.itopviewport) {
+                    log("before view", .{});
+                    app.scroll_q.pos = @intCast(app.queue.nviewable / 2);
+                    app.queue.jumpToPos(@min(jumppos -| (app.queue.nviewable / 2), app.queue.pl_len -| app.queue.nviewable), &app.scroll_q.inc);
+                } else if (app.queue.itopviewport <= jumppos and jumppos <= app.queue.itopviewport + app.queue.nviewable - 1) {
+                    debug.assert(jumppos >= app.queue.itopviewport);
+                    log("In view - jump not noticeable", .{});
+                    app.queue.jumpToPos(@min(jumppos -| app.scroll_q.pos, app.queue.pl_len -| app.queue.nviewable), &app.scroll_q.inc);
+                    app.scroll_q.pos = @intCast(jumppos - app.queue.itopviewport);
+                } else {
+                    log("over out of view", .{});
+                    app.queue.jumpToPos(app.queue.pl_len -| app.queue.nviewable, &app.scroll_q.inc);
+                }
+                log("itop: {} - inc: {}", .{ app.queue.itopviewport, app.scroll_q.inc });
+                app.jumppos = null;
             } else {
-                if (app.queue.pl_len > 0) app.queue.jumpToPos(app.queue.pl_len -| app.queue.nviewable, &app.scroll_q.inc);
-                app.scroll_q.prev_pos = app.scroll_q.pos;
                 app.scroll_q.pos = @intCast(@min(app.queue.pl_len -| 1, app.queue.nviewable -| 1));
+                if (app.queue.pl_len > 0) app.queue.jumpToPos(app.queue.pl_len -| app.queue.nviewable, &app.scroll_q.inc);
             }
             try app.queue.initialFill(alloc.respAllocator, alloc.persistentAllocator);
             if (app.queue.pl_len == 0) app.isPlaying = false;
@@ -911,20 +922,3 @@ fn ping(start: i64, app: *State) !void {
         app.last_ping = start;
     }
 }
-
-// test "event buffer" {
-//     var buf: [256]u8 = undefined;
-//     event_buffer = EventBuffer{};
-//     const event = Event{ .input_char = 'H' };
-//     try event_buffer.append(event);
-//     const event2 = Event{ .idle = Idle.player };
-//     try event_buffer.append(event2);
-//     for (0..event_buffer.len) |i| {
-//         const event_type: []const u8 = switch (event_buffer.buffer[i]) {
-//             EventType.input_char => |value| try std.fmt.bufPrint(&buf, "char: {c}", .{value}),
-//             EventType.idle => |value| try std.fmt.bufPrint(&buf, "mpd: {}", .{value}),
-//             EventType.time => |value| try std.fmt.bufPrint(&buf, "time: {}", .{value}),
-//         };
-//         std.debug.print("event type: {s}\n", .{event_type});
-//     }
-// }

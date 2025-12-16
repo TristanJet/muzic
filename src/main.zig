@@ -127,7 +127,7 @@ pub fn main() !void {
             .threshold_pos = state.getThresholdPos(window.panels.queue.validArea().ylen, 0.8),
         },
         .yanked = mpd.Yanked.init(&alloc.delArena),
-        .addedpos = 0,
+        .jumppos = null,
         .visual_anchor_pos = null,
 
         .typing_buffer = initial_typing,
