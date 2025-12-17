@@ -28,7 +28,8 @@ Let's freaking go
 - [x] fix jumping bugs
     - [x] visual mode delete end
     - [x] paste end
-    - [ ] bug on G, inc is wrong
+    - [x] bug on G, inc is wrong
+    - [ ] paste in middle
 - [x] rewrite half movement to be modular
 - [ ] manual go to current playing
 - [ ] send command should fail silently if error unknown
@@ -40,7 +41,7 @@ Let's freaking go
 
 ## next update
 - [ ] **rewrite** - make maintaineable
-- [ ] hold to batch inputs
+- [ ] hold to batch inputs - arrow seeking especially
 - [ ] allow browse by files and directories - (no tags set)
 - [ ] next strings in browser should be on press - somehow load next strings for browser
     - [ ] naive get on press

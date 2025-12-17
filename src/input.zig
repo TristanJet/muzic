@@ -282,7 +282,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
                 try mpd.playById(wrkallocator, app.song.id);
             }
         },
-        'x' => {
+        'x', 'd' => {
             if (debounce()) return;
             const position: usize = app.scroll_q.pos + app.queue.itopviewport;
             try mpd.getYanked(position, position + 1, &app.yanked, alloc.respAllocator);
@@ -436,15 +436,7 @@ fn visualQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         'u' & '\x1F' => try queueHalfUp(app, render_state),
         'g' => goTop(app, render_state),
         'G' => goBottom(app, render_state),
-        'd' => {
-            if (app.visual_anchor_pos) |anchor| {
-                app.jumppos = try deleteVisual(app.queue.itopviewport + app.scroll_q.pos, anchor, &app.yanked, alloc.respAllocator);
-            }
-
-            app.visual_anchor_pos = null;
-            app.input_state = .normal_queue;
-        },
-        'x' => {
+        'd', 'x' => {
             if (app.visual_anchor_pos) |anchor| {
                 app.jumppos = try deleteVisual(app.queue.itopviewport + app.scroll_q.pos, anchor, &app.yanked, alloc.respAllocator);
             }
