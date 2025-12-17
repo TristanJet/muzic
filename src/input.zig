@@ -536,14 +536,18 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
         },
         'd' & '\x1F' => {
             const current: *state.BrowseColumn = app.col_arr.getCurrent();
-            try halfDown(current);
+            const displaying = current.displaying orelse return;
+            const wheight: u8 = @intCast(window.panels.find.validArea().ylen);
+            current.pos, current.slice_inc = scrollHalfDown(current.pos, wheight, displaying.len, current.slice_inc);
             node_buffer.zeroForward(&app.col_arr);
             current.render(render_state);
             current.renderCursor(render_state);
         },
         'u' & '\x1F' => {
             const current: *state.BrowseColumn = app.col_arr.getCurrent();
-            try halfUp(current);
+            const displaying = current.displaying orelse return;
+            const wheight: u8 = @intCast(window.panels.find.validArea().ylen);
+            current.pos, current.slice_inc = scrollHalfUp(current.pos, wheight, displaying.len, current.slice_inc);
             node_buffer.zeroForward(&app.col_arr);
             current.render(render_state);
             current.renderCursor(render_state);
@@ -753,66 +757,6 @@ fn resetBrowser(next: ?*state.BrowseColumn) !void {
     var resp: bool = undefined;
     resp = alloc.browserArena.reset(.retain_capacity);
     if (!resp) return error.AllocatorError;
-}
-
-fn halfUp(current: *state.BrowseColumn) !void {
-    if (current.displaying == null) return;
-    // Ctrl-u: Move up half the screen height (like vim)
-    const half_height = y_len / 2;
-    var move_up: usize = 0;
-
-    // Determine how many positions we can move up
-    if (current.absolutePos() >= half_height) {
-        move_up = half_height;
-    } else {
-        move_up = current.absolutePos();
-    }
-
-    if (move_up > 0) {
-        // First use slice_inc if available
-        if (current.slice_inc >= move_up) {
-            current.slice_inc -= move_up;
-        } else {
-            // Move cursor position by any remaining amount
-            const remaining = move_up - current.slice_inc;
-            current.slice_inc = 0;
-            current.pos -= @intCast(remaining);
-        }
-    }
-}
-
-fn halfDown(current: *state.BrowseColumn) !void {
-    const displaying = current.displaying orelse return;
-    // Ctrl-d: Move down half the screen height (like vim)
-    const half_height = y_len / 2;
-    var move_down: usize = 0;
-
-    // Determine how many positions we can move down
-    if (current.absolutePos() + half_height < displaying.len) {
-        move_down = half_height;
-    } else if (current.absolutePos() < displaying.len) {
-        move_down = displaying.len - current.absolutePos() - 1;
-    }
-
-    if (move_down > 0) {
-        // Try to keep cursor position in the middle of the screen when possible
-        if (current.pos + move_down < y_len) {
-            // If we can move the cursor down without scrolling, do that
-            current.pos += @intCast(move_down);
-        } else {
-            // Otherwise, move the slice increment (scroll the view)
-            const cursor_target: u8 = @intCast(y_len / 2);
-            if (current.pos > cursor_target) {
-                // Move cursor to middle position and adjust slice_inc
-                const pos_diff = current.pos - cursor_target;
-                current.slice_inc += @as(usize, pos_diff) + move_down;
-                current.pos = cursor_target;
-            } else {
-                // Just increase slice_inc
-                current.slice_inc += move_down;
-            }
-        }
-    }
 }
 
 fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
