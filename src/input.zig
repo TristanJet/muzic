@@ -262,73 +262,36 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             app.scroll_q.inc = max_inc;
         },
         'd' & '\x1F' => {
-            if (app.scroll_q.pos + app.queue.itopviewport == app.queue.pl_len - 1) return;
-            const height: u8 = @intCast(window.panels.queue.validArea().ylen);
-            const half_height: u8 = @intCast(height / 2);
+            const prev_itop = app.queue.itopviewport;
+            app.scroll_q.prev_pos = app.scroll_q.pos;
 
-            if (app.queue.pl_len < height) {
-                const pos = app.scroll_q.pos;
-                const len: u8 = @intCast(app.queue.pl_len);
-                app.scroll_q.prev_pos = pos;
-                app.scroll_q.pos = @min(pos + half_height, len - 1);
-                render_state.queueEffects = true;
-                return;
+            app.scroll_q.pos, app.queue.itopviewport = scrollHalfDown(app.scroll_q.pos, @intCast(app.queue.nviewable), app.queue.pl_len, app.queue.itopviewport);
+            app.scroll_q.inc += app.queue.itopviewport - prev_itop;
+
+            if (app.queue.itopviewport + app.queue.nviewable - 1 > app.queue.ibufferstart + mpd.Queue.NSONGS - 1) {
+                app.scroll_q.inc -= try app.queue.getForward(alloc.respAllocator);
+            } else if (app.queue.downBufferWrong()) {
+                app.queue.fill += try mpd.getQueue(app.queue, .forward, alloc.respAllocator, mpd.Queue.NSONGS);
             }
 
-            const pos: i16 = @intCast(app.scroll_q.pos);
-            const viewdelta: u8 = @intCast((pos - half_height) + half_height);
-            var inc: usize = app.scroll_q.inc;
-            if (viewdelta > 0) {
-                const viewdiff: u8 = app.queue.moveViewportDown(viewdelta);
-                inc += viewdelta - viewdiff;
-                if (viewdiff > 0) {
-                    app.scroll_q.moveCursorDown(viewdiff, app.queue.pl_len, app.queue.itopviewport);
-                } else {
-                    app.scroll_q.pos = half_height;
-                }
-                if (app.queue.itopviewport + height > app.queue.ibufferstart + mpd.Queue.NSONGS) {
-                    inc -= try app.queue.getForward(alloc.respAllocator);
-                } else if (app.queue.downBufferWrong()) {
-                    app.queue.fill += try mpd.getQueue(app.queue, .forward, alloc.respAllocator, mpd.Queue.NSONGS);
-                }
-
-                app.scroll_q.inc = inc;
-                render_state.queue = true;
-            } else {
-                app.scroll_q.prev_pos = app.scroll_q.pos;
-                app.scroll_q.pos += half_height;
-            }
-            render_state.queueEffects = true;
+            if (app.queue.itopviewport != prev_itop) render_state.queue = true else render_state.queueEffects = true;
         },
         'u' & '\x1F' => {
-            if (app.scroll_q.pos + app.queue.itopviewport == 0) return;
-            const height: u8 = @intCast(window.panels.queue.validArea().ylen);
-            const half_height: u8 = @intCast(height / 2);
-            const pos: i16 = @intCast(app.scroll_q.pos);
-            const viewdelta: u8 = @intCast(@abs(pos - height));
-            var inc: i128 = app.scroll_q.inc;
-            if (viewdelta > 0) {
-                const viewdiff = app.queue.moveViewportUp(viewdelta);
-                inc -= viewdelta - viewdiff;
-                if (viewdiff > 0) {
-                    app.scroll_q.moveCursorUp(viewdiff);
-                } else {
-                    app.scroll_q.pos = half_height;
-                }
-                if (app.queue.itopviewport < app.queue.ibufferstart) {
-                    inc += try app.queue.getBackward(alloc.respAllocator);
-                } else if (app.queue.upBufferWrong()) {
-                    inc = mpd.Queue.NSONGS - 1 + app.queue.nviewable;
-                    app.queue.fill += try mpd.getQueue(app.queue, .backward, alloc.respAllocator, mpd.Queue.NSONGS);
-                    app.queue.ibufferstart -= mpd.Queue.NSONGS;
-                }
-                app.scroll_q.inc = @intCast(inc);
-                render_state.queue = true;
-            } else {
-                app.scroll_q.prev_pos = app.scroll_q.pos;
-                app.scroll_q.pos += half_height;
+            const prev_itop = app.queue.itopviewport;
+            app.scroll_q.prev_pos = app.scroll_q.pos;
+
+            app.scroll_q.pos, app.queue.itopviewport = scrollHalfUp(app.scroll_q.pos, @intCast(app.queue.nviewable), app.queue.pl_len, app.queue.itopviewport);
+            app.scroll_q.inc -= prev_itop - app.queue.itopviewport;
+
+            if (app.queue.itopviewport < app.queue.ibufferstart) {
+                app.scroll_q.inc += try app.queue.getBackward(alloc.respAllocator);
+            } else if (app.queue.upBufferWrong()) {
+                app.scroll_q.inc = mpd.Queue.NSONGS - 1 + app.queue.nviewable;
+                app.queue.fill += try mpd.getQueue(app.queue, .backward, alloc.respAllocator, mpd.Queue.NSONGS);
+                app.queue.ibufferstart -= mpd.Queue.NSONGS;
             }
-            render_state.queueEffects = true;
+
+            if (app.queue.itopviewport != prev_itop) render_state.queue = true else render_state.queueEffects = true;
         },
         ' ' => {
             if (debounce()) return;
@@ -457,6 +420,48 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
     }
 }
 
+fn scrollHalfDown(
+    screen_pos: u8,
+    wheight: u8,
+    len: usize,
+    itop: usize,
+) struct { u8, usize } {
+    if (screen_pos + itop == len - 1) return .{ screen_pos, itop };
+    const half_height: u8 = wheight / 2;
+
+    if (len < wheight) {
+        const lencast: u8 = @intCast(len);
+        return .{ @min(screen_pos + half_height, lencast - 1), itop };
+    }
+
+    if (screen_pos == 0) return .{ half_height, itop };
+
+    const newitop = @min(itop + screen_pos, len - wheight);
+    const leftover: u8 = @intCast((itop + screen_pos) - newitop);
+
+    return .{ @min(half_height + leftover, wheight - 1), newitop };
+}
+
+fn scrollHalfUp(
+    screen_pos: u8,
+    wheight: u8,
+    len: usize,
+    itop: usize,
+) struct { u8, usize } {
+    if (screen_pos + itop == 0) return .{ screen_pos, itop };
+    const half_height: u8 = wheight / 2;
+
+    if (len < wheight) {
+        return .{ screen_pos -| half_height, itop };
+    }
+
+    const delta = @abs(@as(i16, screen_pos) - wheight);
+    const newitop = itop -| delta;
+    const leftover: u8 = @intCast(delta - (itop - newitop));
+
+    return .{ half_height -| leftover, newitop };
+}
+
 fn visualQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_browse_columns)) !void {
     switch (char) {
         '\x1B' => {
@@ -578,7 +583,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
             const current: *state.BrowseColumn = app.col_arr.getCurrent();
             const displaying = current.displaying orelse return;
             current.prev_pos = current.pos;
-            current.pos, current.slice_inc = moveToIndex(0, displaying.len, window.panels.find.validArea().ylen);
+            current.pos, current.slice_inc = goToIndex(0, displaying.len, window.panels.find.validArea().ylen);
             node_buffer.zeroForward(&app.col_arr);
 
             current.render(render_state);
@@ -590,7 +595,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
             const slicelen = current.displaying.?.len;
             const windowlen = window.panels.find.validArea().ylen;
             current.prev_pos = current.pos;
-            current.pos, current.slice_inc = moveToIndex(slicelen - 1, slicelen, windowlen);
+            current.pos, current.slice_inc = goToIndex(slicelen - 1, slicelen, windowlen);
             util.log("pos: {}, slice-inc: {}", .{ current.pos, current.slice_inc });
             node_buffer.zeroForward(&app.col_arr);
             current.render(render_state);
@@ -673,7 +678,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
             const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
             const index = findStringIndex(app.str_matches[app.istr_match], app.search_sample_str.set, app.search_sample_str.uppers, compare_type) orelse return error.NotFound;
             current.prev_pos = current.pos;
-            current.pos, current.slice_inc = moveToIndex(index, displaying.len, window.panels.find.validArea().ylen);
+            current.pos, current.slice_inc = goToIndex(index, displaying.len, window.panels.find.validArea().ylen);
 
             current.renderCursor(render_state);
             current.render(render_state);
@@ -690,7 +695,7 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
             const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
             const index = findStringIndex(app.str_matches[app.istr_match], app.search_sample_str.set, app.search_sample_str.uppers, compare_type) orelse return error.NotFound;
             current.prev_pos = current.pos;
-            current.pos, current.slice_inc = moveToIndex(index, displaying.len, window.panels.find.validArea().ylen);
+            current.pos, current.slice_inc = goToIndex(index, displaying.len, window.panels.find.validArea().ylen);
 
             current.renderCursor(render_state);
             current.render(render_state);
@@ -872,7 +877,7 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
             const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
             const index = findStringIndex(app.str_matches[0], app.search_sample_str.set, app.search_sample_str.uppers, compare_type) orelse return error.NotFound;
             current.prev_pos = current.pos;
-            current.pos, current.slice_inc = moveToIndex(index, displaying.len, window.panels.find.validArea().ylen);
+            current.pos, current.slice_inc = goToIndex(index, displaying.len, window.panels.find.validArea().ylen);
 
             current.renderCursor(render_state);
             current.render(render_state);
@@ -894,7 +899,7 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
             const compare_type: CompareType = if (node_buffer.index == 1) .binary else .linear; // doesn't need to be computed on input
             const index = findStringIndex(app.str_matches[0], app.search_sample_str.set, app.search_sample_str.uppers, compare_type) orelse return error.NotFound;
             current.prev_pos = current.pos;
-            current.pos, current.slice_inc = moveToIndex(index, displaying.len, window.panels.find.validArea().ylen);
+            current.pos, current.slice_inc = goToIndex(index, displaying.len, window.panels.find.validArea().ylen);
 
             current.renderCursor(render_state);
             current.render(render_state);
@@ -903,7 +908,7 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
     }
 }
 
-fn moveToIndex(index: usize, len: usize, height: usize) struct { u8, usize } {
+fn goToIndex(index: usize, len: usize, height: usize) struct { u8, usize } {
     const inc = @min(index, len -| height);
     debug.assert(index - inc <= 255 and index - inc >= 0);
     return .{

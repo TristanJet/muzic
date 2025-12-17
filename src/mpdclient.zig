@@ -378,32 +378,6 @@ pub const Queue = struct {
         };
     }
 
-    pub fn moveViewportUp(self: *Queue, delta: u8) u8 {
-        if (self.itopviewport > delta) {
-            self.itopviewport -= delta;
-            return 0;
-        } else {
-            const itopcast: u8 = @intCast(self.itopviewport);
-            const diff = delta - itopcast;
-            self.itopviewport = 0;
-            return diff;
-        }
-    }
-
-    pub fn moveViewportDown(self: *Queue, delta: u8) u8 {
-        if (self.itopviewport + delta < self.pl_len - self.nviewable) {
-            self.itopviewport += delta;
-            util.log("itop: {}", .{self.itopviewport});
-            return 0;
-        } else {
-            const diff = self.itopviewport + @as(usize, delta) - (self.pl_len - self.nviewable);
-            self.itopviewport = self.pl_len - self.nviewable;
-            const castdiff: u8 = @intCast(diff);
-            util.log("castdiff: {}", .{castdiff});
-            return castdiff;
-        }
-    }
-
     pub fn getForward(self: *Queue, respAllocator: mem.Allocator) !usize {
         const added = try getQueue(self, .forward, respAllocator, Queue.ADD_SIZE);
         self.ibufferstart += added;

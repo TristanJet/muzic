@@ -697,25 +697,6 @@ pub const QueueScroll = struct {
     inc: usize,
     threshold_pos: u8,
 
-    pub fn moveCursorUp(self: *QueueScroll, delta: u8) void {
-        if (self.pos > delta) {
-            self.pos -= delta;
-        } else {
-            self.pos = 0;
-        }
-    }
-
-    pub fn moveCursorDown(self: *QueueScroll, delta: u8, pllen: usize, itopv: usize) void {
-        const abspos = self.pos + itopv;
-        if (abspos + delta < pllen) {
-            self.pos += delta;
-        } else {
-            const add = pllen - 1 - abspos;
-            const addcast: u8 = @intCast(add);
-            self.pos += addcast;
-        }
-    }
-
     pub fn scrollUp(self: *QueueScroll) bool {
         if (self.pos > 0) {
             self.prev_pos = self.pos;
