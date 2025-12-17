@@ -268,13 +268,17 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             app.scroll_q.pos, app.queue.itopviewport = scrollHalfDown(app.scroll_q.pos, @intCast(app.queue.nviewable), app.queue.pl_len, app.queue.itopviewport);
             app.scroll_q.inc += app.queue.itopviewport - prev_itop;
 
+            if (app.queue.itopviewport == prev_itop) {
+                render_state.queueEffects = true;
+                return;
+            }
+
             if (app.queue.itopviewport + app.queue.nviewable - 1 > app.queue.ibufferstart + mpd.Queue.NSONGS - 1) {
                 app.scroll_q.inc -= try app.queue.getForward(alloc.respAllocator);
             } else if (app.queue.downBufferWrong()) {
                 app.queue.fill += try mpd.getQueue(app.queue, .forward, alloc.respAllocator, mpd.Queue.NSONGS);
             }
-
-            if (app.queue.itopviewport != prev_itop) render_state.queue = true else render_state.queueEffects = true;
+            render_state.queue = true;
         },
         'u' & '\x1F' => {
             const prev_itop = app.queue.itopviewport;
@@ -283,6 +287,11 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             app.scroll_q.pos, app.queue.itopviewport = scrollHalfUp(app.scroll_q.pos, @intCast(app.queue.nviewable), app.queue.pl_len, app.queue.itopviewport);
             app.scroll_q.inc -= prev_itop - app.queue.itopviewport;
 
+            if (app.queue.itopviewport == prev_itop) {
+                render_state.queueEffects = true;
+                return;
+            }
+
             if (app.queue.itopviewport < app.queue.ibufferstart) {
                 app.scroll_q.inc += try app.queue.getBackward(alloc.respAllocator);
             } else if (app.queue.upBufferWrong()) {
@@ -290,8 +299,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
                 app.queue.fill += try mpd.getQueue(app.queue, .backward, alloc.respAllocator, mpd.Queue.NSONGS);
                 app.queue.ibufferstart -= mpd.Queue.NSONGS;
             }
-
-            if (app.queue.itopviewport != prev_itop) render_state.queue = true else render_state.queueEffects = true;
+            render_state.queue = true;
         },
         ' ' => {
             if (debounce()) return;
