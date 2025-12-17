@@ -246,61 +246,10 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
     switch (char) {
         'j' => try queueScrollDown(app, render_state),
         'k' => try queueScrollUp(app, render_state),
-        'g' => {
-            if (app.scroll_q.inc > 0) render_state.queue = true else render_state.queueEffects = true;
-            app.scroll_q.inc = 0;
-            app.scroll_q.prev_pos = app.scroll_q.pos;
-            app.scroll_q.pos = 0;
-            app.queue.itopviewport = 0;
-        },
-        'G' => {
-            const max_inc = app.queue.bound.bstart + mpd.Queue.NSONGS;
-            app.scroll_q.prev_pos = app.scroll_q.pos;
-            app.scroll_q.pos = @intCast(@min(app.queue.nviewable - 1, app.queue.pl_len - 1));
-            app.queue.itopviewport = app.queue.pl_len -| app.queue.nviewable;
-            if (app.scroll_q.inc != max_inc) render_state.queue = true else render_state.queueEffects = true;
-            app.scroll_q.inc = max_inc;
-        },
-        'd' & '\x1F' => {
-            const prev_itop = app.queue.itopviewport;
-            app.scroll_q.prev_pos = app.scroll_q.pos;
-
-            app.scroll_q.pos, app.queue.itopviewport = scrollHalfDown(app.scroll_q.pos, @intCast(app.queue.nviewable), app.queue.pl_len, app.queue.itopviewport);
-            app.scroll_q.inc += app.queue.itopviewport - prev_itop;
-
-            if (app.queue.itopviewport == prev_itop) {
-                render_state.queueEffects = true;
-                return;
-            }
-
-            if (app.queue.itopviewport + app.queue.nviewable - 1 > app.queue.ibufferstart + mpd.Queue.NSONGS - 1) {
-                app.scroll_q.inc -= try app.queue.getForward(alloc.respAllocator);
-            } else if (app.queue.downBufferWrong()) {
-                app.queue.fill += try mpd.getQueue(app.queue, .forward, alloc.respAllocator, mpd.Queue.NSONGS);
-            }
-            render_state.queue = true;
-        },
-        'u' & '\x1F' => {
-            const prev_itop = app.queue.itopviewport;
-            app.scroll_q.prev_pos = app.scroll_q.pos;
-
-            app.scroll_q.pos, app.queue.itopviewport = scrollHalfUp(app.scroll_q.pos, @intCast(app.queue.nviewable), app.queue.pl_len, app.queue.itopviewport);
-            app.scroll_q.inc -= prev_itop - app.queue.itopviewport;
-
-            if (app.queue.itopviewport == prev_itop) {
-                render_state.queueEffects = true;
-                return;
-            }
-
-            if (app.queue.itopviewport < app.queue.ibufferstart) {
-                app.scroll_q.inc += try app.queue.getBackward(alloc.respAllocator);
-            } else if (app.queue.upBufferWrong()) {
-                app.scroll_q.inc = mpd.Queue.NSONGS - 1 + app.queue.nviewable;
-                app.queue.fill += try mpd.getQueue(app.queue, .backward, alloc.respAllocator, mpd.Queue.NSONGS);
-                app.queue.ibufferstart -= mpd.Queue.NSONGS;
-            }
-            render_state.queue = true;
-        },
+        'd' & '\x1F' => try queueHalfDown(app, render_state),
+        'u' & '\x1F' => try queueHalfUp(app, render_state),
+        'g' => goTop(app, render_state),
+        'G' => goBottom(app, render_state),
         ' ' => {
             if (debounce()) return;
             app.isPlaying = try mpd.togglePlaystate(app.isPlaying);
@@ -483,6 +432,10 @@ fn visualQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         'v' => exitVisual(&app.visual_anchor_pos, &app.input_state, render_state),
         'j' => try queueScrollDown(app, render_state),
         'k' => try queueScrollUp(app, render_state),
+        'd' & '\x1F' => try queueHalfDown(app, render_state),
+        'u' & '\x1F' => try queueHalfUp(app, render_state),
+        'g' => goTop(app, render_state),
+        'G' => goBottom(app, render_state),
         'd' => {
             if (app.visual_anchor_pos) |anchor| {
                 app.jumppos = try deleteVisual(app.queue.itopviewport + app.scroll_q.pos, anchor, &app.yanked, alloc.respAllocator);
@@ -1106,6 +1059,65 @@ fn scroll(cursor_pos: *u8, cursor_prev: *u8, max: ?usize, dir: cursorDirection) 
             }
         },
     }
+}
+
+fn goTop(app: *state.State, render_state: *RenderState(n_browse_col)) void {
+    if (app.scroll_q.inc > 0) render_state.queue = true else render_state.queueEffects = true;
+    app.scroll_q.inc = 0;
+    app.scroll_q.prev_pos = app.scroll_q.pos;
+    app.scroll_q.pos = 0;
+    app.queue.itopviewport = 0;
+}
+
+fn goBottom(app: *state.State, render_state: *RenderState(n_browse_col)) void {
+    const max_inc = app.queue.bound.bstart + mpd.Queue.NSONGS;
+    app.scroll_q.prev_pos = app.scroll_q.pos;
+    app.scroll_q.pos = @intCast(@min(app.queue.nviewable - 1, app.queue.pl_len - 1));
+    app.queue.itopviewport = app.queue.pl_len -| app.queue.nviewable;
+    if (app.scroll_q.inc != max_inc) render_state.queue = true else render_state.queueEffects = true;
+    app.scroll_q.inc = max_inc;
+}
+
+fn queueHalfDown(app: *state.State, render_state: *RenderState(n_browse_col)) !void {
+    const prev_itop = app.queue.itopviewport;
+    app.scroll_q.prev_pos = app.scroll_q.pos;
+
+    app.scroll_q.pos, app.queue.itopviewport = scrollHalfDown(app.scroll_q.pos, @intCast(app.queue.nviewable), app.queue.pl_len, app.queue.itopviewport);
+    app.scroll_q.inc += app.queue.itopviewport - prev_itop;
+
+    if (app.queue.itopviewport == prev_itop) {
+        render_state.queueEffects = true;
+        return;
+    }
+
+    if (app.queue.itopviewport + app.queue.nviewable - 1 > app.queue.ibufferstart + mpd.Queue.NSONGS - 1) {
+        app.scroll_q.inc -= try app.queue.getForward(alloc.respAllocator);
+    } else if (app.queue.downBufferWrong()) {
+        app.queue.fill += try mpd.getQueue(app.queue, .forward, alloc.respAllocator, mpd.Queue.NSONGS);
+    }
+    render_state.queue = true;
+}
+
+fn queueHalfUp(app: *state.State, render_state: *RenderState(n_browse_col)) !void {
+    const prev_itop = app.queue.itopviewport;
+    app.scroll_q.prev_pos = app.scroll_q.pos;
+
+    app.scroll_q.pos, app.queue.itopviewport = scrollHalfUp(app.scroll_q.pos, @intCast(app.queue.nviewable), app.queue.pl_len, app.queue.itopviewport);
+    app.scroll_q.inc -= prev_itop - app.queue.itopviewport;
+
+    if (app.queue.itopviewport == prev_itop) {
+        render_state.queueEffects = true;
+        return;
+    }
+
+    if (app.queue.itopviewport < app.queue.ibufferstart) {
+        app.scroll_q.inc += try app.queue.getBackward(alloc.respAllocator);
+    } else if (app.queue.upBufferWrong()) {
+        app.scroll_q.inc = mpd.Queue.NSONGS - 1 + app.queue.nviewable;
+        app.queue.fill += try mpd.getQueue(app.queue, .backward, alloc.respAllocator, mpd.Queue.NSONGS);
+        app.queue.ibufferstart -= mpd.Queue.NSONGS;
+    }
+    render_state.queue = true;
 }
 
 fn queueScrollDown(app: *state.State, render_state: *RenderState(n_browse_col)) !void {

@@ -28,6 +28,8 @@ Let's freaking go
 - [x] fix jumping bugs
     - [x] visual mode delete end
     - [x] paste end
+    - [ ] bug on G, inc is wrong
+- [x] rewrite half movement to be modular
 - [ ] manual go to current playing
 - [ ] send command should fail silently if error unknown
 - [ ] fallback if TTY mode
