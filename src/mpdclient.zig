@@ -450,7 +450,6 @@ pub const Queue = struct {
         if (self.itopviewport < self.ibufferstart or self.itopviewport + self.nviewable - 1 > self.ibufferstart + NSONGS - 1) {
             self.ibufferstart = @max(pos -| (NSONGS / 2), self.bound.bstart);
         }
-        util.log("itop: {} - ibuf: {}", .{ self.itopviewport, self.ibufferstart });
         inc.* = (self.itopviewport - self.ibufferstart) + self.bound.bstart;
     }
 

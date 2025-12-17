@@ -858,21 +858,16 @@ fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState(n_browse
 
             app.scroll_q.prev_pos = app.scroll_q.pos;
             if (app.jumppos) |jumppos| {
-                log("jumppos {}", .{jumppos});
                 if (jumppos < app.queue.itopviewport) {
-                    log("before view", .{});
                     app.scroll_q.pos = @intCast(app.queue.nviewable / 2);
                     app.queue.jumpToPos(@min(jumppos -| (app.queue.nviewable / 2), app.queue.pl_len -| app.queue.nviewable), &app.scroll_q.inc);
                 } else if (app.queue.itopviewport <= jumppos and jumppos <= app.queue.itopviewport + app.queue.nviewable - 1) {
                     debug.assert(jumppos >= app.queue.itopviewport);
-                    log("In view - jump not noticeable", .{});
                     app.queue.jumpToPos(@min(jumppos -| app.scroll_q.pos, app.queue.pl_len -| app.queue.nviewable), &app.scroll_q.inc);
                     app.scroll_q.pos = @intCast(jumppos - app.queue.itopviewport);
                 } else {
-                    log("over out of view", .{});
                     app.queue.jumpToPos(app.queue.pl_len -| app.queue.nviewable, &app.scroll_q.inc);
                 }
-                log("itop: {} - inc: {}", .{ app.queue.itopviewport, app.scroll_q.inc });
                 app.jumppos = null;
             } else {
                 app.scroll_q.pos = @intCast(@min(app.queue.pl_len -| 1, app.queue.nviewable -| 1));
