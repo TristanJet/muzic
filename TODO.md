@@ -30,6 +30,7 @@ Let's freaking go
     - [x] paste end
     - [x] bug on G, inc is wrong
     - [ ] paste in middle
+    - [ ] Clear completely bug
 - [x] rewrite half movement to be modular
 - [ ] manual go to current playing
 - [ ] send command should fail silently if error unknown

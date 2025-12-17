@@ -168,7 +168,7 @@ fn drawHeader(p: window.Area, text: []const u8) !void {
     try term.writeAll(sym.right_up);
     try term.writeAll(text);
     try term.writeAll(sym.left_up);
-    try term.writeAll(sym.h_line);
+    try term.writeAll(sym.h_line ** 4);
 }
 
 fn formatSeconds(allocator: mem.Allocator, seconds: u64) ![]const u8 {
