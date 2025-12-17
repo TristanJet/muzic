@@ -464,14 +464,11 @@ fn visualQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             const escRead = try term.readEscapeCode(&escBuffer);
 
             if (escRead == 0) {
-                app.visual_anchor_pos = null;
-                app.input_state = .normal_queue;
-                render_state.queue = true;
+                exitVisual(&app.visual_anchor_pos, &app.input_state, render_state);
             }
         },
-        'j' => {
-            try queueScrollDown(app, render_state);
-        },
+        'v' => exitVisual(&app.visual_anchor_pos, &app.input_state, render_state),
+        'j' => try queueScrollDown(app, render_state),
         'k' => try queueScrollUp(app, render_state),
         'd' => {
             if (app.visual_anchor_pos) |anchor| {
@@ -481,8 +478,23 @@ fn visualQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             app.visual_anchor_pos = null;
             app.input_state = .normal_queue;
         },
+        'y' => {
+            if (app.visual_anchor_pos) |anchor| {
+                app.jumppos = try yankVisual(app.queue.itopviewport + app.scroll_q.pos, anchor, &app.yanked, alloc.respAllocator);
+            }
+
+            render_state.queue = true;
+            app.visual_anchor_pos = null;
+            app.input_state = .normal_queue;
+        },
         else => return,
     }
+}
+
+fn exitVisual(anchor: *?usize, input: *Input_State, render_state: *RenderState(n_browse_col)) void {
+    anchor.* = null;
+    input.* = .normal_queue;
+    render_state.queue = true;
 }
 
 fn deleteVisual(abspos: usize, anchor: usize, yanked: *mpd.Yanked, ra: mem.Allocator) !usize {
@@ -490,6 +502,13 @@ fn deleteVisual(abspos: usize, anchor: usize, yanked: *mpd.Yanked, ra: mem.Alloc
     const end = @max(abspos, anchor);
     try mpd.getYanked(start, end + 1, yanked, ra);
     try mpd.rmRange(start, end + 1, ra);
+    return start -| 1;
+}
+
+fn yankVisual(abspos: usize, anchor: usize, yanked: *mpd.Yanked, ra: mem.Allocator) !usize {
+    const start = @min(abspos, anchor);
+    const end = @max(abspos, anchor);
+    try mpd.getYanked(start, end + 1, yanked, ra);
     return start -| 1;
 }
 
