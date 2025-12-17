@@ -444,6 +444,14 @@ fn visualQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             app.visual_anchor_pos = null;
             app.input_state = .normal_queue;
         },
+        'x' => {
+            if (app.visual_anchor_pos) |anchor| {
+                app.jumppos = try deleteVisual(app.queue.itopviewport + app.scroll_q.pos, anchor, &app.yanked, alloc.respAllocator);
+            }
+
+            app.visual_anchor_pos = null;
+            app.input_state = .normal_queue;
+        },
         'y' => {
             if (app.visual_anchor_pos) |anchor| {
                 app.jumppos = try yankVisual(app.queue.itopviewport + app.scroll_q.pos, anchor, &app.yanked, alloc.respAllocator);
