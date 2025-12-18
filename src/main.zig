@@ -85,7 +85,7 @@ pub fn main() !void {
     try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &initial_song);
     var initial_inc: usize = 0;
     var queue: mpd.Queue = try mpd.Queue.init(alloc.respAllocator, alloc.persistentAllocator, window.panels.queue.validArea().ylen);
-    if (queue.pl_len > 0) queue.jumpToPos(initial_song.pos, &initial_inc);
+    const initial_pos = if (queue.pl_len > 0) queue.jumpToPos(initial_song.pos, &initial_inc) else 0;
     try queue.initialFill(alloc.respAllocator, alloc.persistentAllocator);
     initial_typing.init();
 
@@ -121,7 +121,7 @@ pub fn main() !void {
 
         .queue = &queue,
         .scroll_q = state.QueueScroll{
-            .pos = 0,
+            .pos = initial_pos,
             .prev_pos = 0,
             .inc = initial_inc,
             .threshold_pos = state.getThresholdPos(window.panels.queue.validArea().ylen, 0.8),

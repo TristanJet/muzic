@@ -29,8 +29,9 @@ Let's freaking go
     - [x] visual mode delete end
     - [x] paste end
     - [x] bug on G, inc is wrong
-    - [ ] paste in middle
-    - [ ] Clear completely bug
+    - [x] paste in middle
+    - [x] jump if less
+    - [x] Clear completely bug
 - [x] rewrite half movement to be modular
 - [ ] manual go to current playing
 - [ ] send command should fail silently if error unknown
@@ -42,6 +43,7 @@ Let's freaking go
 
 ## next update
 - [ ] **rewrite** - make maintaineable
+- [ ] inc should not be in app.scroll_q
 - [ ] hold to batch inputs - arrow seeking especially
 - [ ] allow browse by files and directories - (no tags set)
 - [ ] next strings in browser should be on press - somehow load next strings for browser

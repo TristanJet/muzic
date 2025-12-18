@@ -858,20 +858,14 @@ fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState(n_browse
 
             app.scroll_q.prev_pos = app.scroll_q.pos;
             if (app.jumppos) |jumppos| {
-                if (jumppos < app.queue.itopviewport) {
-                    app.scroll_q.pos = @intCast(app.queue.nviewable / 2);
-                    app.queue.jumpToPos(@min(jumppos -| (app.queue.nviewable / 2), app.queue.pl_len -| app.queue.nviewable), &app.scroll_q.inc);
-                } else if (app.queue.itopviewport <= jumppos and jumppos <= app.queue.itopviewport + app.queue.nviewable - 1) {
-                    debug.assert(jumppos >= app.queue.itopviewport);
-                    app.queue.jumpToPos(@min(jumppos -| app.scroll_q.pos, app.queue.pl_len -| app.queue.nviewable), &app.scroll_q.inc);
-                    app.scroll_q.pos = @intCast(jumppos - app.queue.itopviewport);
-                } else {
-                    app.queue.jumpToPos(app.queue.pl_len -| app.queue.nviewable, &app.scroll_q.inc);
-                }
+                const pos = jumppos - app.queue.itopviewport;
+                const leftover = pos -| app.scroll_q.threshold_pos;
+                _ = app.queue.jumpToPos(app.queue.itopviewport + leftover, &app.scroll_q.inc);
+                app.scroll_q.pos = @intCast(pos - leftover);
                 app.jumppos = null;
             } else {
                 app.scroll_q.pos = @intCast(@min(app.queue.pl_len -| 1, app.queue.nviewable -| 1));
-                if (app.queue.pl_len > 0) app.queue.jumpToPos(app.queue.pl_len -| app.queue.nviewable, &app.scroll_q.inc);
+                if (app.queue.pl_len > 0) _ = app.queue.jumpToPos(app.queue.pl_len - 1, &app.scroll_q.inc);
             }
 
             if (app.queue.pl_len > 0) {

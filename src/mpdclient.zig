@@ -431,26 +431,32 @@ pub const Queue = struct {
         return false;
     }
 
-    pub fn jumpToPos(self: *Queue, pos: usize, inc: *usize) void {
+    pub fn jumpToPos(self: *Queue, pos: usize, inc: *usize) u8 {
         debug.assert(pos >= 0 and pos < self.pl_len);
-        if (pos >= self.bound.bend) {
-            self.itopviewport = self.pl_len -| self.nviewable;
+        util.log("top\ninc: {} itop: {} pos: {}, plen: {}", .{ inc.*, self.itopviewport, pos, self.pl_len });
+        if (self.pl_len >= self.nviewable and pos > self.pl_len - self.nviewable) {
+            self.itopviewport = self.pl_len - self.nviewable;
             self.ibufferstart = @max(self.bound.bstart, self.bound.bend -| NSONGS);
-            inc.* = (self.itopviewport - self.ibufferstart) + self.bound.bstart;
-            return;
+            inc.* = self.bound.bstart + @min((Queue.NSONGS), (self.pl_len - self.bound.bstart - self.nviewable));
+            util.log("end\ninc: {} itop: {} pos: {}", .{ inc.*, self.itopviewport, pos });
+            return @intCast(pos - self.itopviewport);
+        }
+
+        if (pos <= self.nviewable) {
+            self.itopviewport = @min(pos, self.pl_len -| self.nviewable);
+            inc.* = self.itopviewport;
+            self.ibufferstart = self.bound.bstart;
+            util.log("start\ninc: {} itop: {} pos: {}", .{ inc.*, self.itopviewport, pos });
+            return @intCast(pos - self.itopviewport);
         }
 
         self.itopviewport = pos;
-        if (pos <= self.bound.bstart) {
-            inc.* = self.itopviewport;
-            self.ibufferstart = self.bound.bstart;
-            return;
-        }
-
         if (self.itopviewport < self.ibufferstart or self.itopviewport + self.nviewable - 1 > self.ibufferstart + NSONGS - 1) {
             self.ibufferstart = @max(pos -| (NSONGS / 2), self.bound.bstart);
         }
         inc.* = (self.itopviewport - self.ibufferstart) + self.bound.bstart;
+        util.log("outer\ninc: {} itop: {} pos: {}", .{ inc.*, self.itopviewport, pos });
+        return 0;
     }
 
     //Iterator just returns songs in buffers - not responsible for guaranteeing correct position.
