@@ -182,11 +182,14 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_br
             if (escRead == 0) onTypingExit(app, render_state);
         },
         'n' & '\x1F' => {
-            scroll(&app.find_cursor_pos, &app.find_cursor_prev, app.viewable_searchable.?.len - 1, .down);
+            const searchable = app.viewable_searchable orelse return;
+            app.find_cursor_prev = app.find_cursor_pos;
+            app.find_cursor_pos = @min(app.find_cursor_pos + 1, searchable.len - 1);
             render_state.find_cursor = true;
         },
         'p' & '\x1F' => {
-            scroll(&app.find_cursor_pos, &app.find_cursor_prev, null, .up);
+            app.find_cursor_prev = app.find_cursor_pos;
+            app.find_cursor_pos = app.find_cursor_pos -| 1;
             render_state.find_cursor = true;
         },
         '\r', '\n' => {
@@ -987,22 +990,6 @@ fn debounce() bool {
     }
     last_input = app_time;
     return false;
-}
-
-fn scroll(cursor_pos: *u8, cursor_prev: *u8, max: ?usize, dir: cursorDirection) void {
-    cursor_prev.* = cursor_pos.*;
-    switch (dir) {
-        .up => {
-            if (cursor_pos.* > 0) {
-                cursor_pos.* -= 1;
-            }
-        },
-        .down => {
-            if (cursor_pos.* < max.?) {
-                cursor_pos.* += 1;
-            }
-        },
-    }
 }
 
 fn goTop(app: *state.State, render_state: *RenderState(n_browse_col)) void {
