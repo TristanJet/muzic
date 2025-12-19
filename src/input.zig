@@ -1055,7 +1055,9 @@ fn queueScrollDown(app: *state.State, render_state: *RenderState(n_browse_col)) 
     const inc_changed = app.scroll_q.scrollDown(app.queue.nviewable, app.queue.pl_len, app.queue.itopviewport);
     if (inc_changed) {
         app.queue.itopviewport += 1;
-        if (app.queue.itopviewport + app.queue.nviewable > app.queue.ibufferstart + mpd.Queue.NSONGS) {
+        if (app.queue.itopviewport + app.queue.nviewable > app.queue.ibufferstart + mpd.Queue.NSONGS and
+            app.queue.itopviewport + app.queue.nviewable < app.queue.bound.bend)
+        {
             app.scroll_q.inc -= try app.queue.getForward(alloc.respAllocator);
         } else if (app.queue.downBufferWrong()) {
             util.log("buffer wrong - resetting", .{});
@@ -1071,7 +1073,9 @@ fn queueScrollUp(app: *state.State, render_state: *RenderState(n_browse_col)) !v
     const inc_changed = app.scroll_q.scrollUp();
     if (inc_changed) {
         app.queue.itopviewport -= 1;
-        if (app.queue.itopviewport < app.queue.ibufferstart) {
+        if (app.queue.itopviewport < app.queue.ibufferstart and
+            app.queue.itopviewport > app.queue.bound.bstart)
+        {
             app.scroll_q.inc += try app.queue.getBackward(alloc.respAllocator);
         } else if (app.queue.upBufferWrong()) {
             util.log("buffer wrong - resetting", .{});
