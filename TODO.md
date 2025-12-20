@@ -33,7 +33,7 @@ Let's freaking go
     - [x] jump if less
     - [x] Clear completely bug
 - [x] rewrite half movement to be modular
-- [ ] manual go to current playing
+- [x] manual go to current playing
 - [ ] send command should fail silently if error unknown
 - [ ] ROBUST check for terminal features - support ASCII only
     - [ ] terminfo

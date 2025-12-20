@@ -212,7 +212,6 @@ pub fn connect(stream_type: StreamType, nonblock: bool) !void {
 
 pub fn checkConnection() !void {
     try sendCommand("ping\n");
-    log("PINGED", .{});
 }
 
 fn connSend(data: []const u8, stream: *std.net.Stream) !void {
@@ -379,9 +378,10 @@ pub const Queue = struct {
     }
 
     pub fn getForward(self: *Queue, respAllocator: mem.Allocator) !usize {
+        util.log("get forward", .{});
         const added = try getQueue(self, .forward, respAllocator, Queue.ADD_SIZE);
         self.ibufferstart += added;
-        self.fill = if (self.fill + added > Queue.NSONGS) Queue.NSONGS else self.fill + added;
+        self.fill = @min(Queue.NSONGS, self.fill + added);
         return added;
     }
 
@@ -398,9 +398,22 @@ pub const Queue = struct {
         self.fill += try getQueue(self, .forward, ra, Queue.NSONGS);
     }
 
+    pub fn refill(self: *Queue, ra: mem.Allocator) !void {
+        self.fill = 0;
+        self.ring = Ring{
+            .first = 0,
+            .stop = 0,
+            .fill = 0,
+            .size = NSONGS,
+        };
+        self.fill += try getQueue(self, .forward, ra, Queue.NSONGS);
+    }
+
     pub fn getBackward(self: *Queue, respAllocator: mem.Allocator) !usize {
+        util.log("get backward", .{});
         const added = try getQueue(self, .backward, respAllocator, Queue.ADD_SIZE);
         self.ibufferstart -= added;
+        self.fill = @min(Queue.NSONGS, self.fill + added);
         return added;
     }
 
@@ -432,13 +445,13 @@ pub const Queue = struct {
     }
 
     pub fn jumpToPos(self: *Queue, pos: usize, inc: *usize) u8 {
+        // This function only works reliably immediately after the Ring has been reset
+        // because the inc won't be reliable once the ring buffer has been written to, I know this is bad.
         debug.assert(pos >= 0 and pos < self.pl_len);
-        util.log("top\ninc: {} itop: {} pos: {}, plen: {}", .{ inc.*, self.itopviewport, pos, self.pl_len });
         if (self.pl_len >= self.nviewable and pos > self.pl_len - self.nviewable) {
             self.itopviewport = self.pl_len - self.nviewable;
             self.ibufferstart = @max(self.bound.bstart, self.bound.bend -| NSONGS);
-            inc.* = self.bound.bstart + @min((Queue.NSONGS), (self.pl_len - self.bound.bstart - self.nviewable));
-            util.log("end\ninc: {} itop: {} pos: {}", .{ inc.*, self.itopviewport, pos });
+            inc.* = self.bound.bstart + (self.itopviewport - self.ibufferstart);
             return @intCast(pos - self.itopviewport);
         }
 
@@ -446,7 +459,6 @@ pub const Queue = struct {
             self.itopviewport = @min(pos, self.pl_len -| self.nviewable);
             inc.* = self.itopviewport;
             self.ibufferstart = self.bound.bstart;
-            util.log("start\ninc: {} itop: {} pos: {}", .{ inc.*, self.itopviewport, pos });
             return @intCast(pos - self.itopviewport);
         }
 
@@ -454,8 +466,7 @@ pub const Queue = struct {
         if (self.itopviewport < self.ibufferstart or self.itopviewport + self.nviewable - 1 > self.ibufferstart + NSONGS - 1) {
             self.ibufferstart = @max(pos -| (NSONGS / 2), self.bound.bstart);
         }
-        inc.* = (self.itopviewport - self.ibufferstart) + self.bound.bstart;
-        util.log("outer\ninc: {} itop: {} pos: {}", .{ inc.*, self.itopviewport, pos });
+        inc.* = self.bound.bstart + (self.itopviewport - self.ibufferstart);
         return 0;
     }
 

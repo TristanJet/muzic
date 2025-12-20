@@ -839,7 +839,6 @@ fn handleTime(time_: i64, app: *State, _render_state: *RenderState(n_browse_colu
 fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState(n_browse_columns)) !void {
     switch (idle_event) {
         .player => {
-            log("Player event", .{});
             app.prev_id = app.song.id;
             _ = app.song.init();
             try mpd.getCurrentSong(wrkallocator, &alloc.wrkfba.end_index, app.song);
@@ -863,12 +862,11 @@ fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState(n_browse
                 _ = app.queue.jumpToPos(app.queue.itopviewport + leftover, &app.scroll_q.inc);
                 app.scroll_q.pos = @intCast(pos - leftover);
                 app.jumppos = null;
-            } else {
-                app.scroll_q.pos = @intCast(@min(app.queue.pl_len -| 1, app.queue.nviewable -| 1));
-                if (app.queue.pl_len > 0) _ = app.queue.jumpToPos(app.queue.pl_len - 1, &app.scroll_q.inc);
             }
 
+            app.scroll_q.pos = @intCast(@min(app.queue.pl_len -| 1, app.queue.nviewable -| 1));
             if (app.queue.pl_len > 0) {
+                _ = app.queue.jumpToPos(app.queue.pl_len - 1, &app.scroll_q.inc);
                 try app.queue.initialFill(alloc.respAllocator, alloc.persistentAllocator);
             } else {
                 app.isPlaying = false;

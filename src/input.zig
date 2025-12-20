@@ -272,6 +272,16 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
                 }
             };
         },
+        '\'' => {
+            const previtop = app.queue.itopviewport;
+            const previbuf = app.queue.ibufferstart;
+            app.scroll_q.prev_pos = app.scroll_q.pos;
+            app.scroll_q.pos = app.queue.jumpToPos(app.song.pos, &app.scroll_q.inc);
+            if (app.queue.ibufferstart != previbuf) {
+                try app.queue.refill(alloc.respAllocator);
+            }
+            if (previtop != app.queue.itopviewport) render_state.queue = true else render_state.queueEffects = true;
+        },
         'h' => {
             if (debounce()) return;
             if (app.song.time.elapsed < 5) {
@@ -1002,7 +1012,7 @@ fn goTop(app: *state.State, render_state: *RenderState(n_browse_col)) void {
 
 fn goBottom(app: *state.State, render_state: *RenderState(n_browse_col)) void {
     const previnc = app.scroll_q.inc;
-    app.scroll_q.inc = app.queue.bound.bstart + @min((mpd.Queue.NSONGS), (app.queue.pl_len - app.queue.bound.bstart - app.queue.nviewable));
+    app.scroll_q.inc = app.queue.bound.bstart + @min((app.queue.fill), (app.queue.pl_len - app.queue.bound.bstart - app.queue.nviewable));
     app.scroll_q.prev_pos = app.scroll_q.pos;
     app.scroll_q.pos = @intCast(@min(app.queue.nviewable - 1, app.queue.pl_len - 1));
     app.queue.itopviewport = app.queue.pl_len -| app.queue.nviewable;
