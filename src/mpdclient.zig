@@ -26,19 +26,30 @@ const StreamType = enum {
     idle,
 };
 
-pub const MpdError = error{
-    StreamReadError,
-    StreamWriteError,
-    InvalidResponse,
+pub const Error = StreamError || MpdError || MemoryError;
+
+pub const StreamError = error{
+    ServerNotFound,
     ConnectionError,
-    AllocatorError,
+    ReadError,
+    WriteError,
+    InvalidResponse,
     EndOfStream,
-    OutOfMemory,
-    TooLong,
-    NoSongs,
+    FcntlError,
 };
 
-const BufferFull = error.BufferFull;
+pub const MemoryError = error{
+    AllocatorError,
+    OutOfMemory,
+};
+
+pub const MpdError = error{
+    Invalid,
+    TooLong,
+    NoSongs,
+    NotPlaying,
+    BadIndex,
+};
 
 /// Common function to handle setting string values in a fixed buffer
 fn setStringValue(buffer: []u8, value: []const u8, max_len: usize) []const u8 {
@@ -51,17 +62,16 @@ fn setStringValue(buffer: []u8, value: []const u8, max_len: usize) []const u8 {
 }
 
 /// Sends an MPD command and checks for OK response
-fn sendCommand(command: []const u8) !void {
-    try connSend(command, &cmdStream);
-    _ = try cmdStream.read(&cmdBuf);
+fn sendCommand(command: []const u8) (StreamError || MpdError)!void {
+    connSend(command, &cmdStream) catch return StreamError.WriteError;
+    _ = cmdStream.read(&cmdBuf) catch return StreamError.ReadError;
     if (mem.eql(u8, cmdBuf[0..3], "OK\n")) return;
     if (mem.eql(u8, cmdBuf[0..3], "ACK")) {
         const mpd_err = cmdBuf[5..9];
-        if (mem.eql(u8, mpd_err, "55@0")) return error.MpdNotPlaying;
-        if (mem.eql(u8, mpd_err[0..3], "2@0")) return error.MpdBadIndex;
-        return error.MpdError;
+        if (mem.eql(u8, mpd_err, "55@0")) return MpdError.NotPlaying;
+        if (mem.eql(u8, mpd_err[0..3], "2@0")) return MpdError.BadIndex;
+        return MpdError.Invalid;
     }
-    return error.ReadError;
 }
 
 /// Creates a buffered reader and processes MPD response line by line
@@ -79,10 +89,10 @@ fn processResponse(
 
     while (true) {
         defer end_index.* = startPoint;
-        var line = try reader.readUntilDelimiterAlloc(allocator, '\n', 1024);
+        var line = reader.readUntilDelimiterAlloc(allocator, '\n', 1024) catch return StreamError.ReadError;
 
         if (mem.eql(u8, line, "OK")) break;
-        if (mem.startsWith(u8, line, "ACK")) return MpdError.InvalidResponse;
+        if (mem.startsWith(u8, line, "ACK")) return MpdError.Invalid;
 
         if (mem.indexOf(u8, line, ": ")) |separator_index| {
             const key = line[0..separator_index];
@@ -167,7 +177,7 @@ pub const CurrentSong = struct {
                 self.time.elapsed = try fmt.parseInt(u16, elapsedSlice, 10);
                 const durationSlice = value[index + 1 ..];
                 self.time.duration = try fmt.parseInt(u16, durationSlice, 10);
-            } else return MpdError.InvalidResponse;
+            } else return MpdError.Invalid;
         }
     }
 };
@@ -177,7 +187,7 @@ pub fn handleArgs(arg_host: ?[4]u8, arg_port: ?u16) void {
     if (arg_port) |arg| port = arg;
 }
 
-pub fn connect(stream_type: StreamType, nonblock: bool) !void {
+pub fn connect(stream_type: StreamType, nonblock: bool) (StreamError || MpdError)!void {
     const peer = net.Address.initIp4(host, port);
     // Connect to peer
     const stream = switch (stream_type) {
@@ -185,28 +195,19 @@ pub fn connect(stream_type: StreamType, nonblock: bool) !void {
         .command => &cmdStream,
     };
 
-    stream.* = net.tcpConnectToAddress(peer) catch return error.NoMpd;
+    stream.* = net.tcpConnectToAddress(peer) catch return StreamError.ServerNotFound;
 
-    const bytes_read = try stream.read(&cmdBuf);
+    const bytes_read = stream.read(&cmdBuf) catch return StreamError.ReadError;
     const received_data = cmdBuf[0..bytes_read];
 
-    if (bytes_read < 2 or !mem.eql(u8, received_data[0..2], "OK")) {
-        log("BAD! connection", .{});
-        return error.InvalidResponse;
-    }
+    if (bytes_read < 2 or !mem.eql(u8, received_data[0..2], "OK")) return MpdError.Invalid;
 
     if (nonblock) {
-        const flags = std.posix.fcntl(stream.handle, std.posix.F.GETFL, 0) catch |err| {
-            log("Error getting socket flags: {}", .{err});
-            return err;
-        };
+        const flags = std.posix.fcntl(stream.handle, std.posix.F.GETFL, 0) catch return StreamError.FcntlError;
         // Use direct constant instead of NONBLOCK which may not be available on all platforms
         // const NONBLOCK = 0x0004; // This is O_NONBLOCK value for most systems including macOS
         const NONBLOCK = 0o4000;
-        _ = std.posix.fcntl(stream.handle, std.posix.F.SETFL, flags | NONBLOCK) catch |err| {
-            log("Error setting socket to nonblocking: {}", .{err});
-            return err;
-        };
+        _ = std.posix.fcntl(stream.handle, std.posix.F.SETFL, flags | NONBLOCK) catch return StreamError.FcntlError;
     }
 }
 
@@ -214,12 +215,9 @@ pub fn checkConnection() !void {
     try sendCommand("ping\n");
 }
 
-fn connSend(data: []const u8, stream: *std.net.Stream) !void {
-    // Sending data to peer
+fn connSend(data: []const u8, stream: *std.net.Stream) StreamError!void {
     var writer = stream.writer();
-    _ = try writer.write(data);
-    // Or just using `writer.writeAll`
-    // try writer.writeAll("hello zig");
+    _ = writer.write(data) catch return StreamError.WriteError;
 }
 
 pub fn disconnect(stream_type: StreamType) void {
@@ -244,7 +242,7 @@ pub fn checkIdle() ![2]?Event {
             else => return err,
         };
         if (mem.eql(u8, line, "OK")) break;
-        if (mem.startsWith(u8, line, "ACK")) return MpdError.InvalidResponse;
+        if (mem.startsWith(u8, line, "ACK")) return MpdError.Invalid;
 
         if (mem.indexOf(u8, line, ": ")) |separator_index| {
             const value = line[separator_index + 2 ..];
@@ -276,14 +274,14 @@ pub fn seek(dir: enum { forward, backward }, seconds: u8) !void {
 
 pub fn nextSong() !void {
     sendCommand("next\n") catch |e| switch (e) {
-        error.MpdNotPlaying => return,
+        MpdError.NotPlaying => return,
         else => return e,
     };
 }
 
 pub fn prevSong() !void {
     sendCommand("previous\n") catch |e| switch (e) {
-        error.MpdNotPlaying => return,
+        MpdError.NotPlaying => return,
         else => return e,
     };
 }
@@ -950,8 +948,8 @@ pub fn getPlayState(respAlloc: mem.Allocator) !bool {
 /// - tempAllocator: Used for the raw response data (should be freed after processing)
 /// - command: The MPD command to send
 /// Returns the complete raw response with trailing "OK\n"
-pub fn readLargeResponse(tempAllocator: mem.Allocator, command: []const u8) MpdError![]u8 {
-    connSend(command, &cmdStream) catch return MpdError.StreamWriteError;
+pub fn readLargeResponse(tempAllocator: mem.Allocator, command: []const u8) (StreamError || MpdError || MemoryError)![]u8 {
+    try connSend(command, &cmdStream);
 
     var list = std.ArrayList(u8).init(tempAllocator);
     errdefer list.deinit();
@@ -960,25 +958,25 @@ pub fn readLargeResponse(tempAllocator: mem.Allocator, command: []const u8) MpdE
     while (true) {
         const bytes_read = cmdStream.read(buf[0..]) catch |err| switch (err) {
             error.WouldBlock => continue,
-            else => return MpdError.StreamReadError,
+            else => return StreamError.ReadError,
         };
-        if (mem.eql(u8, buf[0..3], "ACK")) return MpdError.InvalidResponse;
+        if (mem.eql(u8, buf[0..3], "ACK")) return MpdError.Invalid;
         if (bytes_read == 0) {
             if (mem.endsWith(u8, list.items, "OK\n")) {
                 break;
             } else {
-                return MpdError.InvalidResponse;
+                return MpdError.Invalid;
             }
         }
 
-        list.appendSlice(buf[0..bytes_read]) catch return MpdError.AllocatorError;
+        list.appendSlice(buf[0..bytes_read]) catch return MemoryError.AllocatorError;
 
         if (mem.endsWith(u8, list.items, "OK\n")) {
             break;
         }
     }
 
-    return try list.toOwnedSlice();
+    return list.toOwnedSlice() catch return MemoryError.AllocatorError;
 }
 
 const SongIterator = struct {
@@ -1022,7 +1020,7 @@ const SongIterator = struct {
 };
 
 fn processLargeResponse(bytes: []const u8) MpdError!mem.SplitIterator(u8, .scalar) {
-    if (mem.startsWith(u8, bytes, "ACK")) return MpdError.InvalidResponse;
+    if (mem.startsWith(u8, bytes, "ACK")) return MpdError.Invalid;
     if (mem.startsWith(u8, bytes, "OK")) return MpdError.NoSongs;
     return mem.splitScalar(u8, bytes, '\n');
 }
@@ -1402,7 +1400,7 @@ pub fn addList(allocator: mem.Allocator, list: []const SongStringAndUri) !void {
 pub fn rmFromPos(allocator: mem.Allocator, pos: usize) !void {
     const command = try fmt.allocPrint(allocator, "delete {}\n", .{pos});
     sendCommand(command) catch |e| switch (e) {
-        error.MpdNotPlaying => return e,
+        MpdError.NotPlaying => return,
         else => return e,
     };
 }

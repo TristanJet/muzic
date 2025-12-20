@@ -265,12 +265,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         },
         'l' => {
             if (debounce()) return;
-            mpd.nextSong() catch |e| {
-                switch (e) {
-                    error.MpdError => return,
-                    else => return e,
-                }
-            };
+            try mpd.nextSong();
         },
         '\'' => {
             const previtop = app.queue.itopviewport;
@@ -285,12 +280,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         'h' => {
             if (debounce()) return;
             if (app.song.time.elapsed < 5) {
-                mpd.prevSong() catch |e| {
-                    switch (e) {
-                        error.MpdError => return,
-                        else => return e,
-                    }
-                };
+                try mpd.prevSong();
             } else {
                 try mpd.playById(wrkallocator, app.song.id);
             }
@@ -299,14 +289,8 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             if (debounce()) return;
             const position: usize = app.scroll_q.pos + app.queue.itopviewport;
             try mpd.getYanked(position, position + 1, &app.yanked, alloc.respAllocator);
-            mpd.rmFromPos(wrkallocator, position) catch |e| switch (e) {
-                error.MpdNotPlaying => return,
-                error.MpdBadIndex => {
-                    if (app.queue.pl_len == 0) return;
-                    return error.MpdError;
-                },
-                else => return e,
-            };
+            try mpd.rmFromPos(wrkallocator, position);
+
             // If we're deleting the last item in the queue, move cursor up
             if (app.queue.pl_len == 0) return;
             if (app.scroll_q.pos + app.queue.itopviewport >= app.queue.pl_len - 1 and app.scroll_q.pos > 0) {
@@ -377,13 +361,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
         },
         '\n', '\r' => {
             if (debounce()) return;
-            mpd.playByPos(wrkallocator, app.scroll_q.pos + app.queue.itopviewport) catch |e| switch (e) {
-                error.MpdBadIndex => {
-                    if (app.queue.pl_len == 0) return;
-                    return error.MpdError;
-                },
-                else => return e,
-            };
+            try mpd.playByPos(wrkallocator, app.scroll_q.pos + app.queue.itopviewport);
             if (!app.isPlaying) app.isPlaying = true;
         },
         else => return,

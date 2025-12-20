@@ -53,7 +53,7 @@ pub fn main() !void {
 
     mpd.handleArgs(args.host, args.port);
     mpd.connect(.command, false) catch |e| switch (e) {
-        error.NoMpd => {
+        mpd.StreamError.ServerNotFound => {
             try proc.printMpdFail(wrkallocator, args.host, args.port);
             return;
         },
@@ -61,7 +61,7 @@ pub fn main() !void {
     };
     defer mpd.disconnect(.command);
     mpd.connect(.idle, true) catch |e| switch (e) {
-        error.NoMpd => {
+        mpd.StreamError.ServerNotFound => {
             try proc.printMpdFail(wrkallocator, args.host, args.port);
             return;
         },
