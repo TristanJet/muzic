@@ -240,9 +240,11 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
             app.input_state = .normal_browse;
             app.node_switched = true;
             render_state.browse_cursor[app.col_arr.index] = true;
+            render_state.queue = true;
         },
         'f' => {
             try onFind(render_state, mpd_data, &app.algo_init, &app.search_sample_su, &app.input_state);
+            render_state.queue = true;
         },
         else => if (app.queue.pl_len == 0) return,
     }
