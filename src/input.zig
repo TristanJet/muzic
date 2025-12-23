@@ -1009,10 +1009,10 @@ fn queueHalfDown(app: *state.State, render_state: *RenderState(n_browse_col)) !v
         return;
     }
 
-    if (app.queue.itopviewport + app.queue.nviewable - 1 > app.queue.ibufferstart + mpd.Queue.NSONGS - 1) {
+    if (app.queue.itopviewport + app.queue.nviewable - 1 > app.queue.ibufferstart + app.queue.NSONGS - 1) {
         app.scroll_q.inc -= try app.queue.getForward(alloc.respAllocator);
     } else if (app.queue.downBufferWrong()) {
-        app.queue.fill += try mpd.getQueue(app.queue, .forward, alloc.respAllocator, mpd.Queue.NSONGS);
+        app.queue.fill += try mpd.getQueue(app.queue, .forward, alloc.respAllocator, app.queue.NSONGS);
     }
     render_state.queue = true;
 }
@@ -1032,9 +1032,9 @@ fn queueHalfUp(app: *state.State, render_state: *RenderState(n_browse_col)) !voi
     if (app.queue.itopviewport < app.queue.ibufferstart) {
         app.scroll_q.inc += try app.queue.getBackward(alloc.respAllocator);
     } else if (app.queue.upBufferWrong()) {
-        app.scroll_q.inc = mpd.Queue.NSONGS - 1 + app.queue.nviewable;
-        app.queue.fill += try mpd.getQueue(app.queue, .backward, alloc.respAllocator, mpd.Queue.NSONGS);
-        app.queue.ibufferstart -= mpd.Queue.NSONGS;
+        app.scroll_q.inc = app.queue.NSONGS - 1 + app.queue.nviewable;
+        app.queue.fill += try mpd.getQueue(app.queue, .backward, alloc.respAllocator, app.queue.NSONGS);
+        app.queue.ibufferstart -= app.queue.NSONGS;
     }
     render_state.queue = true;
 }
@@ -1043,13 +1043,13 @@ fn queueScrollDown(app: *state.State, render_state: *RenderState(n_browse_col)) 
     const inc_changed = app.scroll_q.scrollDown(app.queue.nviewable, app.queue.pl_len, app.queue.itopviewport);
     if (inc_changed) {
         app.queue.itopviewport += 1;
-        if (app.queue.itopviewport + app.queue.nviewable > app.queue.ibufferstart + mpd.Queue.NSONGS and
+        if (app.queue.itopviewport + app.queue.nviewable > app.queue.ibufferstart + app.queue.NSONGS and
             app.queue.itopviewport + app.queue.nviewable <= app.queue.bound.bend)
         {
             app.scroll_q.inc -= try app.queue.getForward(alloc.respAllocator);
         } else if (app.queue.downBufferWrong()) {
             util.log("buffer wrong - resetting", .{});
-            app.queue.fill += try mpd.getQueue(app.queue, .forward, alloc.respAllocator, mpd.Queue.NSONGS);
+            app.queue.fill += try mpd.getQueue(app.queue, .forward, alloc.respAllocator, app.queue.NSONGS);
         }
 
         render_state.queue = true;
@@ -1067,9 +1067,9 @@ fn queueScrollUp(app: *state.State, render_state: *RenderState(n_browse_col)) !v
             app.scroll_q.inc += try app.queue.getBackward(alloc.respAllocator);
         } else if (app.queue.upBufferWrong()) {
             util.log("buffer wrong - resetting", .{});
-            app.scroll_q.inc = mpd.Queue.NSONGS - 1 + app.queue.nviewable;
-            app.queue.fill += try mpd.getQueue(app.queue, .backward, alloc.respAllocator, mpd.Queue.NSONGS);
-            app.queue.ibufferstart -= mpd.Queue.NSONGS;
+            app.scroll_q.inc = app.queue.NSONGS - 1 + app.queue.nviewable;
+            app.queue.fill += try mpd.getQueue(app.queue, .backward, alloc.respAllocator, app.queue.NSONGS);
+            app.queue.ibufferstart -= app.queue.NSONGS;
         }
 
         render_state.queue = true;

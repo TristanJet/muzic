@@ -105,3 +105,9 @@ pub fn findStringIndex(
         .linear => linearFind(S{ .key = lowerKey, .uppers = uppers, .lowerBuf = lowerBuf2 }, items),
     };
 }
+
+pub fn nextPowerOfTwo(n: usize) usize {
+    if (n == 0) return 1;
+    const shift: u5 = @intCast(@typeInfo(usize).int.bits - @clz(n - 1));
+    return @as(usize, 1) << shift;
+}

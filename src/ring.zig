@@ -29,12 +29,12 @@ pub const Ring = struct {
     }
 };
 
-pub fn Buffer(size: usize, T: type) type {
+pub fn Buffer(T: type) type {
     return struct {
         const Self = @This();
         buf: []T,
 
-        pub fn init(allocator: mem.Allocator) !Self {
+        pub fn init(size: usize, allocator: mem.Allocator) !Self {
             return .{ .buf = try allocator.alloc(T, size) };
         }
 
@@ -49,15 +49,16 @@ pub fn Buffer(size: usize, T: type) type {
 
         pub const Iterator = struct {
             buf: [*]const T,
+            size: usize,
             index: usize,
             remaining: usize,
 
             pub fn next(self: *Iterator, inc: usize) ?T {
-                const index = (self.index + inc) % size;
+                const index = (self.index + inc) % self.size;
                 const remaining = @subWithOverflow(self.remaining, inc);
                 if (remaining[1] != 0 or remaining[0] == 0) return null;
                 const value = self.buf[index];
-                self.index = (self.index + 1) % size;
+                self.index = (self.index + 1) % self.size;
                 self.remaining -= 1;
                 return value;
             }
@@ -68,6 +69,7 @@ pub fn Buffer(size: usize, T: type) type {
         pub fn getIterator(self: *const Self, ring: Ring) Iterator {
             return Iterator{
                 .buf = self.buf.ptr,
+                .size = self.buf.len,
                 .index = ring.first,
                 .remaining = ring.fill,
             };
@@ -75,13 +77,13 @@ pub fn Buffer(size: usize, T: type) type {
     };
 }
 
-pub fn StrBuffer(size: usize, max_str: usize) type {
+pub fn StrBuffer(max_str: usize) type {
     const T = [max_str:0]u8;
     return struct {
         const Self = @This();
         buf: []T,
 
-        pub fn init(allocator: mem.Allocator) !Self {
+        pub fn init(size: usize, allocator: mem.Allocator) !Self {
             return .{ .buf = try allocator.alloc(T, size) };
         }
 
@@ -91,7 +93,7 @@ pub fn StrBuffer(size: usize, max_str: usize) type {
         }
 
         pub fn backwardWrite(self: *Self, ring: Ring, src: []const u8) []const u8 {
-            const start: usize = (ring.first + ring.size - 1) % size;
+            const start: usize = (ring.first + ring.size - 1) % self.buf.len;
             const str = copyString(&self.buf[start], src);
             return str;
         }
@@ -105,16 +107,17 @@ pub fn StrBuffer(size: usize, max_str: usize) type {
 
         pub const Iterator = struct {
             buf: [*]const T,
+            size: usize,
             index: usize,
             remaining: usize,
 
             pub fn next(self: *Iterator, inc: usize) ?[]const u8 {
-                const index = (self.index + inc) % size;
+                const index = (self.index + inc) % self.size;
                 const remaining = @subWithOverflow(self.remaining, inc);
                 if (remaining[1] != 0 or remaining[0] == 0) return null;
                 const ptr: [*:0]const u8 = @ptrCast(&self.buf[index]);
                 const value = mem.span(ptr); // Computes length up to null terminator.
-                self.index = (self.index + 1) % size;
+                self.index = (self.index + 1) % self.size;
                 self.remaining -= 1;
                 return value;
             }
@@ -125,6 +128,7 @@ pub fn StrBuffer(size: usize, max_str: usize) type {
         pub fn getIterator(self: *Self, ring: Ring) Iterator {
             return Iterator{
                 .buf = self.buf.ptr,
+                .size = self.buf.len,
                 .index = ring.first,
                 .remaining = ring.fill,
             };

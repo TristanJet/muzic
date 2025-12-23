@@ -4,7 +4,6 @@ const input = @import("input.zig");
 const algo = @import("algo.zig");
 const RenderState = @import("render.zig").RenderState;
 const CodePointIterator = @import("code_point").Iterator;
-const SongIterator = @import("ring.zig").Buffer(QUEUE_BUF_SIZE, mpd.QSong).Iterator;
 const isAsciiOnly = @import("ascii").isAsciiOnly;
 const lowerString = std.ascii.lowerString;
 const expect = std.testing.expect;
@@ -25,8 +24,6 @@ const ArrayList = std.ArrayList;
 
 pub const n_browse_columns: u4 = 3;
 pub const n_browse_matches = 10;
-//Must be 2x the window size
-pub const QUEUE_BUF_SIZE = 64;
 
 pub const State = struct {
     quit: bool,
