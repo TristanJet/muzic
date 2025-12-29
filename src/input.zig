@@ -301,6 +301,7 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
                 else
                     app.scroll_q.pos -= 1;
             }
+            app.jumppos = app.queue.itopviewport + app.scroll_q.pos;
             render_state.queueEffects = true;
         },
         'D' => {

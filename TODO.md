@@ -37,6 +37,7 @@ Let's freaking go
 - [x] send command should fail silently if error unknown
 - [x] Queue buffer adapts to window size
 - [x] clear cursor
+- [x] fix jumping
 - [ ] ROBUST check for terminal features - support ASCII only
     - [ ] terminfo
     - [ ] return to original state, whatever was printed before running goes back to being visible
