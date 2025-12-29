@@ -855,10 +855,7 @@ fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState(n_browse
             if (app.queue.pl_len > 0) {
                 app.scroll_q.prev_pos = app.scroll_q.pos;
                 if (app.jumppos) |jumppos| {
-                    const pos = jumppos - app.queue.itopviewport;
-                    const leftover = pos -| app.scroll_q.threshold_pos;
-                    _ = app.queue.jumpToPos(app.queue.itopviewport + leftover, &app.scroll_q.inc);
-                    app.scroll_q.pos = @intCast(pos - leftover);
+                    _ = app.queue.jumpToPos(jumppos - app.scroll_q.pos, &app.scroll_q.inc);
                     app.jumppos = null;
                 } else {
                     app.scroll_q.pos = @intCast(@min(app.queue.pl_len -| 1, app.queue.nviewable -| 1));
