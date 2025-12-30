@@ -213,6 +213,7 @@ pub fn checkConnection() !void {
     try sendCommand("ping\n");
 }
 
+//the writer could be global
 fn connSend(data: []const u8, stream: *std.net.Stream) StreamError!void {
     var writer = stream.writer();
     _ = writer.write(data) catch return StreamError.WriteError;
@@ -965,17 +966,19 @@ pub fn readLargeResponse(tempAllocator: mem.Allocator, command: []const u8) (Str
     var list = std.ArrayList(u8).init(tempAllocator);
     errdefer list.deinit();
 
+    var firstbuf: [5]u8 = .{0} ** 5;
     var buf: [4096]u8 = undefined;
     while (true) {
         const bytes_read = cmdStream.read(buf[0..]) catch |err| switch (err) {
             error.WouldBlock => continue,
             else => return StreamError.ReadError,
         };
-        if (mem.eql(u8, buf[0..3], "ACK")) {
-            const i = mem.indexOfScalar(u8, &buf, '\n') orelse unreachable;
-            util.log("MPD ERROR: {s}", .{buf[0..i]});
-            return MpdError.Invalid;
+
+        if (firstbuf[0] == 0) {
+            @memcpy(&firstbuf, buf[0..5]);
+            if (mem.eql(u8, &firstbuf, "ACK [")) return MpdError.Invalid;
         }
+
         if (bytes_read == 0) {
             if (mem.endsWith(u8, list.items, "OK\n")) {
                 break;
