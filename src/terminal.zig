@@ -1,4 +1,7 @@
 const std = @import("std");
+const builtin = @import("builtin");
+const native_os = builtin.os.tag;
+
 const mem = std.mem;
 
 const fmt = std.fmt;
@@ -18,7 +21,11 @@ const BUFFER_SIZE = 4096;
 var buffer: [BUFFER_SIZE]u8 = undefined;
 var buffer_pos: usize = 0;
 
-const color_true = true;
+var caps: Capabilities = undefined;
+
+//global var this is pretty bad lol, who cares
+//There should be a bunch of values configged at the start that are read only for every other part of the program
+pub var symbols: Symbols = undefined;
 
 const ReadError = error{
     NotATerminal,
@@ -31,13 +38,103 @@ const WriteError = error{
     Unexpected,
 };
 
+const OSError = error{
+    NotPosix,
+};
+
 pub fn init() !void {
+    caps = try detectTerminal();
+    symbols = Symbols.init(caps.is_tty);
     try getTty();
     try uncook();
     try setNonBlock();
     try setColor(.white);
     buffer_pos = 0;
 }
+
+pub const Capabilities = struct {
+    truecolor: bool,
+    is_tty: bool,
+};
+
+pub fn detectTerminal() OSError!Capabilities {
+    const is_tty = switch (comptime native_os) {
+        .linux => isTTY(),
+        .macos => false,
+        else => return OSError.NotPosix,
+    };
+
+    return .{
+        .truecolor = if (is_tty) false else supportsTrueColor(),
+        .is_tty = is_tty,
+    };
+}
+
+fn isTTY() bool {
+    if (posix.getenv("TERM")) |term| {
+        return mem.eql(u8, term, "linux");
+    }
+    return false;
+}
+
+fn supportsTrueColor() bool {
+    if (posix.getenv("COLORTERM")) |colorterm| {
+        if (mem.eql(u8, colorterm, "truecolor") or
+            mem.eql(u8, colorterm, "24bit"))
+        {
+            return true;
+        }
+    }
+
+    if (comptime native_os == .macos) {
+        if (posix.getenv("TERM_PROGRAM")) |term_program| {
+            if (mem.eql(u8, term_program, "Apple_Terminal")) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+pub const Symbols = struct {
+    h_line: []const u8,
+    v_line: []const u8,
+    left_up: []const u8,
+    right_up: []const u8,
+    left_down: []const u8,
+    right_down: []const u8,
+    round_left_up: []const u8,
+    round_right_up: []const u8,
+    round_left_down: []const u8,
+    round_right_down: []const u8,
+
+    fn init(is_tty: bool) Symbols {
+        return if (is_tty) .{
+            .h_line = "─",
+            .v_line = "│",
+            .left_up = "┌",
+            .right_up = "┐",
+            .left_down = "└",
+            .right_down = "┘",
+            .round_left_up = "┌", // bad
+            .round_right_up = "┐",
+            .round_left_down = "└",
+            .round_right_down = "┘",
+        } else .{
+            .h_line = "─",
+            .v_line = "│",
+            .left_up = "┌",
+            .right_up = "┐",
+            .left_down = "└",
+            .right_down = "┘",
+            .round_left_up = "╭",
+            .round_right_up = "╮",
+            .round_left_down = "╰",
+            .round_right_down = "╯",
+        };
+    }
+};
 
 fn getTty() !void {
     // Try to open terminal device
@@ -113,7 +210,6 @@ pub fn deinit() !void {
 fn uncook() !void {
     cooked = try posix.tcgetattr(tty.handle);
     errdefer cook() catch {};
-
     raw = cooked;
     inline for (.{ "ECHO", "ICANON", "ISIG", "IEXTEN" }) |flag| {
         @field(raw.lflag, flag) = false;
@@ -125,17 +221,21 @@ fn uncook() !void {
     raw.cc[@intFromEnum(posix.V.MIN)] = 1;
     try posix.tcsetattr(tty.handle, .FLUSH, raw);
 
+    // Enter alternate screen buffer
+    try tty.writeAll("\x1b[?1049h");
     try hideCursor();
     try clear();
     try flushBuffer();
 }
 
 fn cook() !void {
-    try posix.tcsetattr(tty.handle, .FLUSH, cooked);
-    try clear();
     try showCursor();
     try attributeReset();
-    try moveCursor(0, 0);
+
+    // Exit alternate screen buffer (restores previous content)
+    try tty.writeAll("\x1b[?1049l");
+
+    try posix.tcsetattr(tty.handle, .FLUSH, cooked);
     try flushBuffer();
 }
 
@@ -233,7 +333,7 @@ pub const Color = enum {
 
 pub fn setColor(color: Color) !void {
     var buf: [20]u8 = undefined;
-    const fullSequence: []const u8 = if (color_true)
+    const fullSequence: []const u8 = if (caps.truecolor)
         try trueColor(color, &buf)
     else
         try ansiColor(color, &buf);

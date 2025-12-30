@@ -344,8 +344,10 @@ fn normalQueue(char: u8, app: *state.State, render_state: *RenderState(state.n_b
 
             if (mem.eql(u8, escBuffer[0..escRead], "[A")) {
                 // log("input: arrow up\r\n", .{});
+                try mpd.changeVol(.up, 5);
             } else if (mem.eql(u8, escBuffer[0..escRead], "[B")) {
                 // log("input: arrow down\r\n", .{});
+                try mpd.changeVol(.down, 5);
             } else if (mem.eql(u8, escBuffer[0..escRead], "[C")) {
                 //right
                 if (debounce()) return;

@@ -272,6 +272,14 @@ pub fn seek(dir: enum { forward, backward }, seconds: u8) !void {
     try sendCommand(command);
 }
 
+pub fn changeVol(dir: enum { up, down }, change: u8) !void {
+    const command: []const u8 = switch (dir) {
+        .up => try fmt.bufPrint(&cmdBuf, "volume +{}\n", .{change}),
+        .down => try fmt.bufPrint(&cmdBuf, "volume -{}\n", .{change}),
+    };
+    try sendCommand(command);
+}
+
 pub fn nextSong() !void {
     sendCommand("next\n") catch |e| switch (e) {
         MpdError.NotPlaying => return,

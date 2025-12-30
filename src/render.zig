@@ -5,7 +5,6 @@ const window = @import("window.zig");
 const term = @import("terminal.zig");
 const state = @import("state.zig");
 const alloc = @import("allocators.zig");
-const sym = @import("symbols.zig");
 const mpd = @import("mpdclient.zig");
 const dw = @import("display_width.zig");
 const QueueIterator = mpd.Queue.Iterator;
@@ -127,29 +126,29 @@ pub fn render(app: *state.State, render_state: *RenderState(n_browse_columns), p
 
 fn drawBorders(p: window.Area) !void {
     try term.moveCursor(p.ymin, p.xmin);
-    try term.writeAll(sym.round_left_up);
+    try term.writeAll(term.symbols.round_left_up);
     var x: usize = p.xmin + 1;
     while (x != p.xmax) {
-        try term.writeAll(sym.h_line);
+        try term.writeAll(term.symbols.h_line);
         x += 1;
     }
-    try term.writeAll(sym.round_right_up);
+    try term.writeAll(term.symbols.round_right_up);
     var y: usize = p.ymin + 1;
     while (y != p.ymax) {
         try term.moveCursor(y, p.xmin);
-        try term.writeAll(sym.v_line);
+        try term.writeAll(term.symbols.v_line);
         try term.moveCursor(y, p.xmax);
-        try term.writeAll(sym.v_line);
+        try term.writeAll(term.symbols.v_line);
         y += 1;
     }
     try term.moveCursor(p.ymax, p.xmin);
-    try term.writeAll(sym.round_left_down);
+    try term.writeAll(term.symbols.round_left_down);
     x = p.xmin + 1;
     while (x != p.xmax) {
-        try term.writeAll(sym.h_line);
+        try term.writeAll(term.symbols.h_line);
         x += 1;
     }
-    try term.writeAll(sym.round_right_down);
+    try term.writeAll(term.symbols.round_right_down);
 }
 
 fn drawColBar(a: window.Area) !void {
@@ -157,7 +156,7 @@ fn drawColBar(a: window.Area) !void {
     var y: usize = a.ymin;
     while (y <= a.ymax) {
         try term.moveCursor(y, x);
-        try term.writeAll(sym.v_line);
+        try term.writeAll(term.symbols.v_line);
         y += 1;
     }
 }
@@ -165,10 +164,12 @@ fn drawColBar(a: window.Area) !void {
 fn drawHeader(p: window.Area, text: []const u8) !void {
     const x = p.xmin + 1;
     try term.moveCursor(p.ymin, x);
-    try term.writeAll(sym.right_up);
+    try term.writeAll(term.symbols.right_up);
     try term.writeAll(text);
-    try term.writeAll(sym.left_up);
-    try term.writeAll(sym.h_line ** 4);
+    try term.writeAll(term.symbols.left_up);
+    for (0..4) |_| {
+        try term.writeAll(term.symbols.h_line);
+    }
 }
 
 fn formatSeconds(allocator: mem.Allocator, seconds: u64) ![]const u8 {
@@ -541,10 +542,10 @@ fn getQueueText(wa: mem.Allocator, viewend: usize, plen: usize) ![]const u8 {
 
 fn getFindText(wa: mem.Allocator) ![]const u8 {
     return switch (current.input_state) {
-        .normal_queue => try std.fmt.allocPrint(wa, "b{s}{s}find", .{ sym.left_up, sym.right_up }),
-        .visual_queue => try std.fmt.allocPrint(wa, "b{s}{s}find", .{ sym.left_up, sym.right_up }),
-        .typing_find => try std.fmt.allocPrint(wa, "b{s}{s}find: {s}_", .{ sym.left_up, sym.right_up, current.typing_buffer.typed }),
-        .normal_browse => try std.fmt.allocPrint(wa, "f{s}{s}browse", .{ sym.left_up, sym.right_up }),
-        .typing_browse => try std.fmt.allocPrint(wa, "f{s}{s}browse: {s}_", .{ sym.left_up, sym.right_up, current.typing_buffer.typed }),
+        .normal_queue => try std.fmt.allocPrint(wa, "b{s}{s}find", .{ term.symbols.left_up, term.symbols.right_up }),
+        .visual_queue => try std.fmt.allocPrint(wa, "b{s}{s}find", .{ term.symbols.left_up, term.symbols.right_up }),
+        .typing_find => try std.fmt.allocPrint(wa, "b{s}{s}find: {s}_", .{ term.symbols.left_up, term.symbols.right_up, current.typing_buffer.typed }),
+        .normal_browse => try std.fmt.allocPrint(wa, "f{s}{s}browse", .{ term.symbols.left_up, term.symbols.right_up }),
+        .typing_browse => try std.fmt.allocPrint(wa, "f{s}{s}browse: {s}_", .{ term.symbols.left_up, term.symbols.right_up, current.typing_buffer.typed }),
     };
 }

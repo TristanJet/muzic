@@ -38,10 +38,11 @@ Let's freaking go
 - [x] Queue buffer adapts to window size
 - [x] clear cursor
 - [x] fix jumping
-- [ ] ROBUST check for terminal features - support ASCII only
-    - [ ] terminfo
-    - [ ] return to original state, whatever was printed before running goes back to being visible
-    - [ ] fallback if TTY mode
+- [x] ROBUST check for terminal features - support ASCII only
+- [x] fallback if TTY mode
+- [x] return to original state, whatever was printed before running goes back to being visible
+- [x] volume control
+- [ ] robust mac support
 
 ## next update
 - [ ] **rewrite** - make maintaineable
