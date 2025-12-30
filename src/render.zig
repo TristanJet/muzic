@@ -219,6 +219,7 @@ fn queueRender(
                 try writeQueueLine(area, area.ymin + i, x, x.time, allocator);
                 try term.attributeReset();
             } else {
+                try term.setColor(.white);
                 try writeQueueLine(area, area.ymin + i, x, x.time, allocator);
             }
         } else {
@@ -269,6 +270,7 @@ fn queueEffectsRender(
             try writeQueueLine(area, y, item, item.time, allocator);
             try term.attributeReset();
         } else if (should_clear or (prev_song_id != current_song_id and prev_song_id == item.id)) {
+            try term.setColor(.white);
             try writeQueueLine(area, y, item, item.time, allocator);
         }
     }
@@ -317,11 +319,19 @@ fn writeQueueLine(area: window.Area, row: usize, song: mpd.QSong, time: ?u16, wa
 pub fn writeLineCenter(str: []const u8, y: usize, xmin: usize, xmax: usize) !void {
     const panel_width = xmax - xmin;
     const width = try dw.getDisplayWidth(str, .playing);
-    const x_pos = xmin + (panel_width - width.cells) / 2;
+    const x_pos = xmin + (panel_width -| width.cells) / 2;
     try term.moveCursor(y, x_pos);
     try term.writeAll(str);
 }
-// fn scrollQ() !void {}
+
+pub fn writeCenterBounded(str: []const u8, y: usize, xmin: usize, xmax: usize) !void {
+    const panel_width = xmax - xmin;
+    const width = try dw.getDisplayWidth(str, .playing);
+    const x_pos = xmin + @max(((panel_width -| width.cells) / 2), 12); //HARD CODED SIZE OF CLOCK
+    try term.moveCursor(y, x_pos);
+    try term.writeAll(str[0..@min(str.len, xmax - 12)]); //HARD CODED SIZE OF CLOCK
+}
+
 fn currTrackRender(
     allocator: std.mem.Allocator,
     p: window.Panel,
@@ -338,9 +348,7 @@ fn currTrackRender(
     const xmax = area.xmax;
     const ycent = p.getYCentre();
 
-    const has_album = s.album.len > 0;
-
-    const artist_alb = if (!has_album)
+    const artist_alb = if (s.album.len == 0)
         s.artist
     else
         try std.fmt.allocPrint(allocator, "{s} \"{s}\"", .{
@@ -355,10 +363,10 @@ fn currTrackRender(
         try term.clearLine(ycent - 2, xmin, xmax);
     }
     try term.setColor(.magenta);
-    try writeLineCenter(artist_alb, ycent, xmin, xmax);
+    try writeCenterBounded(artist_alb, ycent, xmin, xmax);
     try term.setColor(.cyan);
     try term.setBold();
-    try writeLineCenter(s.title, ycent - 2, xmin, xmax);
+    try writeLineCenter(s.title[0..@min(s.title.len, xmax)], ycent - 2, xmin, xmax);
     try term.attributeReset();
     if (fr.*) fr.* = false;
 }
@@ -369,6 +377,7 @@ fn barRender(panel: window.Panel, song: *mpd.CurrentSong, allocator: std.mem.All
 
     const full_block = "\xe2\x96\x88"; // Unicode escape sequence for '█' (U+2588)
     const light_shade = "\xe2\x96\x92"; // Unicode escape sequence for '▒' (U+2592)
+    // const light_shade: []const u8 = "#"; // Unicode escape sequence for '▒' (U+2592)
     const progress_width = area.xmax - area.xmin;
     const progress_ratio = if (song.time.duration == 0) 0.0 else @as(f32, @floatFromInt(song.time.elapsed)) / @as(f32, @floatFromInt(song.time.duration));
     const float_filled = progress_ratio * @as(f32, @floatFromInt(progress_width));

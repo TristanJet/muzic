@@ -2,7 +2,6 @@ const std = @import("std");
 const util = @import("util.zig");
 const terminal = @import("terminal.zig");
 const algoNRanked = &@import("algo.zig").nRanked;
-const MAX_STR_LEN = @import("mpdclient.zig").CurrentSong.MAX_LEN;
 const debug = std.debug;
 const os = std.os;
 const mem = std.mem;
@@ -10,7 +9,9 @@ const fs = std.fs;
 const posix = std.posix;
 const math = std.math;
 
-pub const MIN_WIN_SIZE = 15 + (2 * MAX_STR_LEN);
+// 12 for clock * 2 + 1 for borders
+pub const MIN_WIN_WIDTH = 27;
+pub const MIN_WIN_HEIGHT = 12;
 
 const y_len_ptr: *usize = &@import("input.zig").y_len;
 
@@ -70,7 +71,8 @@ fn getWindow(tty: *const fs.File) WindowError!void {
 
     const err = posix.system.ioctl(tty.handle, posix.T.IOCGWINSZ, @intFromPtr(&win_size));
     if (posix.errno(err) == .SUCCESS) {
-        if (win_size.col < MIN_WIN_SIZE) return WindowError.TooSmall;
+        if (win_size.col < MIN_WIN_WIDTH) return WindowError.TooSmall;
+        if (win_size.row < MIN_WIN_HEIGHT) return WindowError.TooSmall;
         window = .{
             .xmin = 0,
             .xmax = win_size.col - 1, // Columns (width) minus 1 for zero-based indexing

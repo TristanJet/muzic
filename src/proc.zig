@@ -2,7 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const log = @import("util.zig").log;
 const term = @import("terminal.zig");
-const MIN_WIN_SIZE = @import("window.zig").MIN_WIN_SIZE;
+const win = @import("window.zig");
 const mem = std.mem;
 const fmt = std.fmt;
 const proc = std.process;
@@ -45,7 +45,7 @@ const inv_ipv4_msg: []const u8 =
 
 const win_too_small: []const u8 =
     \\error:    Window size too small
-    \\info:     Muzi requires a window size of at least : {} cells
+    \\info:     Muzi requires a minimum width and height of {} and {} cells
     \\
 ;
 
@@ -162,7 +162,7 @@ pub fn printInvIp4(allocator: mem.Allocator, e: InvalidIPv4Error) !void {
 
 pub fn printWinSmall(allocator: mem.Allocator) !void {
     const tty = try getTty();
-    const msg: []const u8 = try fmt.allocPrint(allocator, win_too_small, .{MIN_WIN_SIZE});
+    const msg: []const u8 = try fmt.allocPrint(allocator, win_too_small, .{ win.MIN_WIN_WIDTH, win.MIN_WIN_HEIGHT });
     try tty.writeAll(msg);
     tty.close();
 }
