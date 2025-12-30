@@ -39,10 +39,12 @@ Let's freaking go
 - [x] clear cursor
 - [x] fix jumping
 - [x] ROBUST check for terminal features - support ASCII only
-- [x] fallback if TTY mode
 - [x] return to original state, whatever was printed before running goes back to being visible
 - [x] volume control
-- [ ] robust mac support
+- [x] robust mac support
+- [ ] fallback if TTY mode
+    - [ ] empty block char check
+- [x] text too long - window size
 
 ## next update
 - [ ] **rewrite** - make maintaineable

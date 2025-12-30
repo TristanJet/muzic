@@ -108,7 +108,7 @@ pub const Time = struct {
 };
 
 pub const CurrentSong = struct {
-    const MAX_LEN = 64;
+    pub const MAX_LEN = 64;
     const TRACKNO_LEN = 2;
 
     bufTitle: [MAX_LEN]u8 = [_]u8{0} ** MAX_LEN,

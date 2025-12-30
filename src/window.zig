@@ -2,6 +2,7 @@ const std = @import("std");
 const util = @import("util.zig");
 const terminal = @import("terminal.zig");
 const algoNRanked = &@import("algo.zig").nRanked;
+const MAX_STR_LEN = @import("mpdclient.zig").CurrentSong.MAX_LEN;
 const debug = std.debug;
 const os = std.os;
 const mem = std.mem;
@@ -9,10 +10,17 @@ const fs = std.fs;
 const posix = std.posix;
 const math = std.math;
 
+pub const MIN_WIN_SIZE = 15 + (2 * MAX_STR_LEN);
+
 const y_len_ptr: *usize = &@import("input.zig").y_len;
 
 pub var window: Area = undefined;
 pub var panels: Panels = undefined;
+
+pub const WindowError = error{
+    TooSmall,
+    Ioctl,
+};
 
 pub const Area = struct {
     xmin: usize,
@@ -45,14 +53,14 @@ const Dim = union(DimType) {
     },
 };
 
-pub fn init() !void {
+pub fn init() WindowError!void {
     const tty = terminal.ttyFile();
     try getWindow(tty);
     panels.init(window);
     y_len_ptr.* = panels.find.validArea().ylen;
 }
 
-fn getWindow(tty: *const fs.File) !void {
+fn getWindow(tty: *const fs.File) WindowError!void {
     var win_size = posix.winsize{
         .row = 0,
         .col = 0,
@@ -62,6 +70,7 @@ fn getWindow(tty: *const fs.File) !void {
 
     const err = posix.system.ioctl(tty.handle, posix.T.IOCGWINSZ, @intFromPtr(&win_size));
     if (posix.errno(err) == .SUCCESS) {
+        if (win_size.col < MIN_WIN_SIZE) return WindowError.TooSmall;
         window = .{
             .xmin = 0,
             .xmax = win_size.col - 1, // Columns (width) minus 1 for zero-based indexing
@@ -71,7 +80,7 @@ fn getWindow(tty: *const fs.File) !void {
             .ylen = win_size.row,
         };
     } else {
-        return error.IoctlError;
+        return WindowError.Ioctl;
     }
 }
 

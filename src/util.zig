@@ -12,7 +12,7 @@ const lowerBuf2: *[512]u8 = alloc.ptrLower2;
 const SearchSample = @import("algo.zig").SearchSample;
 const ascii = std.ascii;
 
-const devttypath = switch (builtin.os.tag) {
+const logttypath = switch (builtin.os.tag) {
     .linux => "/dev/pts/1",
     .macos => "/dev/ttys001",
     else => @compileError("Unsupported OS"),
@@ -21,7 +21,7 @@ const devttypath = switch (builtin.os.tag) {
 
 pub fn loggerInit() !void {
     logtty = try fs.cwd().openFile(
-        devttypath,
+        logttypath,
         .{ .mode = fs.File.OpenMode.write_only },
     );
     logger = logtty.writer();

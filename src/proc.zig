@@ -1,11 +1,19 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const log = @import("util.zig").log;
 const term = @import("terminal.zig");
+const MIN_WIN_SIZE = @import("window.zig").MIN_WIN_SIZE;
 const mem = std.mem;
 const fmt = std.fmt;
 const proc = std.process;
 const fs = std.fs;
 const net = std.net;
+
+const logttypath = switch (builtin.os.tag) {
+    .linux => "/dev/tty",
+    .macos => "/dev/ttys001",
+    else => @compileError("Unsupported OS"),
+};
 
 const helpmsg =
     \\-H, --host <str>      MPD host (default: 127.0.0.1)
@@ -32,6 +40,12 @@ const inv_arg_msg: []const u8 =
 const inv_ipv4_msg: []const u8 =
     \\error:    Invalid {s}
     \\info:     You can use the -h argument to print the help message
+    \\
+;
+
+const win_too_small: []const u8 =
+    \\error:    Window size too small
+    \\info:     Muzi requires a window size of at least : {} cells
     \\
 ;
 
@@ -142,6 +156,13 @@ pub fn printInvIp4(allocator: mem.Allocator, e: InvalidIPv4Error) !void {
         InvalidIPv4Error.InvalidPort => "port",
     };
     const msg: []const u8 = try fmt.allocPrint(allocator, inv_ipv4_msg, .{arg});
+    try tty.writeAll(msg);
+    tty.close();
+}
+
+pub fn printWinSmall(allocator: mem.Allocator) !void {
+    const tty = try getTty();
+    const msg: []const u8 = try fmt.allocPrint(allocator, win_too_small, .{MIN_WIN_SIZE});
     try tty.writeAll(msg);
     tty.close();
 }
