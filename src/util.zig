@@ -11,11 +11,17 @@ const lowerBuf1: *[512]u8 = alloc.ptrLower1;
 const lowerBuf2: *[512]u8 = alloc.ptrLower2;
 const SearchSample = @import("algo.zig").SearchSample;
 const ascii = std.ascii;
-//macos tty: /dev/ttys001
+
+const devttypath = switch (builtin.os.tag) {
+    .linux => "/dev/pts/1",
+    .macos => "/dev/ttys001",
+    else => @compileError("Unsupported OS"),
+};
+//macos tty:
 
 pub fn loggerInit() !void {
     logtty = try fs.cwd().openFile(
-        "/dev/pts/1",
+        devttypath,
         .{ .mode = fs.File.OpenMode.write_only },
     );
     logger = logtty.writer();
@@ -34,7 +40,19 @@ fn initErr() !void {
 }
 
 pub fn log(comptime format: []const u8, args: anytype) void {
-    if (builtin.mode == .Debug) logger.print(format ++ "\n", args) catch return;
+    if (comptime builtin.mode == .Debug) logger.print(format ++ "\n", args) catch return;
+}
+
+pub fn flagNonBlock(flags: usize) usize {
+    return switch (comptime builtin.os.tag) {
+        .linux => blk: {
+            var o: std.os.linux.O = @bitCast(@as(u32, @intCast(flags)));
+            o.NONBLOCK = true;
+            break :blk @as(usize, @bitCast(o));
+        },
+        .macos => flags | 0x0004,
+        else => @compileError("Unsupported OS"),
+    };
 }
 
 pub const CompareType = enum {

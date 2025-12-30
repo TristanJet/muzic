@@ -1,4 +1,5 @@
 const std = @import("std");
+const util = @import("util.zig");
 const builtin = @import("builtin");
 const native_os = builtin.os.tag;
 
@@ -38,7 +39,7 @@ const WriteError = error{
     Unexpected,
 };
 
-const OSError = error{
+pub const OSError = error{
     NotPosix,
 };
 
@@ -176,14 +177,9 @@ pub fn readEscapeCode(read_buffer: []u8) ReadError!usize {
 }
 
 fn setNonBlock() !void {
-    // Use platform-independent fcntl with O_NONBLOCK
     const flags = try posix.fcntl(tty.handle, posix.F.GETFL, 0);
-    // Use direct constant instead of NONBLOCK which may not be available on all platforms
-    // const NONBLOCK = 0x0004; // This is O_NONBLOCK value for most systems including macOS
-    const NONBLOCK = 0o4000;
-    _ = try posix.fcntl(tty.handle, posix.F.SETFL, flags | NONBLOCK);
-    const updated_flags = try posix.fcntl(tty.handle, posix.F.GETFL, 0);
-    if ((updated_flags & NONBLOCK) == 0) return error.NonBlockError;
+    const updated_flags = try posix.fcntl(tty.handle, posix.F.SETFL, util.flagNonBlock(flags));
+    if ((updated_flags & 0x0004) != 0) return error.NonBlockError;
 }
 
 pub fn deinit() !void {

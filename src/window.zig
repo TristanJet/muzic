@@ -53,30 +53,26 @@ pub fn init() !void {
 }
 
 fn getWindow(tty: *const fs.File) !void {
-    // Using posix.winsize which is platform-independent
-    var win_size = mem.zeroes(posix.winsize);
-
-    // TIOCGWINSZ is a standard terminal ioctl call, but might need to be used with the right numeric value
-    // The value below is typically defined for both Linux and macOS
-    const TIOCGWINSZ: u32 = 0x5413; // On macOS it's typically 0x40087468
-
-    // For macOS compatibility, we'll use system.ioctl directly
-    const is_macos = @import("builtin").os.tag == .macos;
-    const ioctl_code = if (is_macos) 0x40087468 else TIOCGWINSZ;
-
-    const err = std.os.linux.ioctl(tty.handle, ioctl_code, @intFromPtr(&win_size));
-    if (err < 0) {
-        return error.WindowSizeError;
-    }
-
-    window = .{
-        .xmin = 0,
-        .xmax = win_size.col - 1, // Columns (width) minus 1 for zero-based indexing
-        .ymin = 0,
-        .ymax = win_size.row - 1, // Rows (height) minus 1 for zero-based indexing
-        .xlen = win_size.col,
-        .ylen = win_size.row,
+    var win_size = posix.winsize{
+        .row = 0,
+        .col = 0,
+        .xpixel = 0,
+        .ypixel = 0,
     };
+
+    const err = posix.system.ioctl(tty.handle, posix.T.IOCGWINSZ, @intFromPtr(&win_size));
+    if (posix.errno(err) == .SUCCESS) {
+        window = .{
+            .xmin = 0,
+            .xmax = win_size.col - 1, // Columns (width) minus 1 for zero-based indexing
+            .ymin = 0,
+            .ymax = win_size.row - 1, // Rows (height) minus 1 for zero-based indexing
+            .xlen = win_size.col,
+            .ylen = win_size.row,
+        };
+    } else {
+        return error.IoctlError;
+    }
 }
 
 const Border = union(enum) {

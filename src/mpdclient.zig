@@ -204,10 +204,8 @@ pub fn connect(stream_type: StreamType, nonblock: bool) (StreamError || MpdError
 
     if (nonblock) {
         const flags = std.posix.fcntl(stream.handle, std.posix.F.GETFL, 0) catch return StreamError.FcntlError;
-        // Use direct constant instead of NONBLOCK which may not be available on all platforms
-        // const NONBLOCK = 0x0004; // This is O_NONBLOCK value for most systems including macOS
-        const NONBLOCK = 0o4000;
-        _ = std.posix.fcntl(stream.handle, std.posix.F.SETFL, flags | NONBLOCK) catch return StreamError.FcntlError;
+        const updated = std.posix.fcntl(stream.handle, std.posix.F.SETFL, util.flagNonBlock(flags)) catch return StreamError.FcntlError;
+        if ((updated & 0x0004) != 0) return StreamError.FcntlError;
     }
 }
 
@@ -973,7 +971,11 @@ pub fn readLargeResponse(tempAllocator: mem.Allocator, command: []const u8) (Str
             error.WouldBlock => continue,
             else => return StreamError.ReadError,
         };
-        if (mem.eql(u8, buf[0..3], "ACK")) return MpdError.Invalid;
+        if (mem.eql(u8, buf[0..3], "ACK")) {
+            const i = mem.indexOfScalar(u8, &buf, '\n') orelse unreachable;
+            util.log("MPD ERROR: {s}", .{buf[0..i]});
+            return MpdError.Invalid;
+        }
         if (bytes_read == 0) {
             if (mem.endsWith(u8, list.items, "OK\n")) {
                 break;

@@ -52,6 +52,7 @@ pub fn main() !void {
     if (args.version) return;
 
     mpd.handleArgs(args.host, args.port);
+    util.log("before connect", .{});
     mpd.connect(.command, false) catch |e| switch (e) {
         mpd.StreamError.ServerNotFound => {
             try proc.printMpdFail(wrkallocator, args.host, args.port);
@@ -71,9 +72,11 @@ pub fn main() !void {
     };
     defer mpd.disconnect(.idle);
     try mpd.initIdle();
+    util.log("after connect", .{});
 
     try term.init();
     defer term.deinit() catch {};
+    util.log("after term", .{});
 
     try window.init();
 
