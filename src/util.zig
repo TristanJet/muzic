@@ -40,7 +40,7 @@ fn initErr() !void {
 }
 
 pub fn log(comptime format: []const u8, args: anytype) void {
-    if (comptime builtin.mode == .Debug) logger.print(format ++ "\n", args) catch return;
+    if (builtin.mode == .Debug) logger.print(format ++ "\n", args) catch return;
 }
 
 pub fn flagNonBlock(flags: usize) usize {
@@ -48,7 +48,7 @@ pub fn flagNonBlock(flags: usize) usize {
         .linux => blk: {
             var o: std.os.linux.O = @bitCast(@as(u32, @intCast(flags)));
             o.NONBLOCK = true;
-            break :blk @as(usize, @bitCast(o));
+            break :blk @as(usize, @as(u32, @bitCast(o)));
         },
         .macos => flags | 0x0004,
         else => @compileError("Unsupported OS"),
