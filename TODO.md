@@ -42,12 +42,14 @@ Let's freaking go
 - [x] return to original state, whatever was printed before running goes back to being visible
 - [x] volume control
 - [x] robust mac support
-- [ ] fallback if TTY mode
-    - [ ] empty block char check
+- [x] fallback if TTY mode
+    - [x] empty block char check
 - [x] text too long - window size
+- [ ] migrate to 0.15
 
 ## next update
 - [ ] **rewrite** - make maintaineable
+- [ ] CurrentSong should have optional values, initialization is unsafe
 - [ ] inc should not be in app.scroll_q
 - [ ] hold to batch inputs - arrow seeking especially
 - [ ] allow browse by files and directories - (no tags set)

@@ -33,8 +33,8 @@ const wrkbuf = &alloc.wrkbuf;
 pub fn main() !void {
     defer alloc.deinit();
 
-    if (builtin.mode == .Debug) try util.loggerInit();
-    defer if (builtin.mode == .Debug) util.deinit() catch {};
+    try util.loggerInit();
+    defer util.deinit();
 
     const args = proc.handleArgs() catch |e| switch (e) {
         error.InvalidOption => {
@@ -89,9 +89,8 @@ pub fn main() !void {
     try dw.init(alloc.persistentAllocator, window.panels);
     defer dw.deinit(alloc.persistentAllocator);
 
-    initial_song.init();
-    try mpd.getCurrentSong(wrkallocator, &wrkfba.end_index, &initial_song);
-    try mpd.getCurrentTrackTime(wrkallocator, &wrkfba.end_index, &initial_song);
+    try mpd.getCurrentSong(&initial_song, alloc.respAllocator);
+    initial_song.time = try mpd.currentTrackTime();
     var initial_inc: usize = 0;
     var queue: mpd.Queue = try mpd.Queue.init(alloc.respAllocator, alloc.persistentAllocator, window.panels.queue.validArea().ylen);
     const initial_pos = if (queue.pl_len > 0) queue.jumpToPos(initial_song.pos, &initial_inc) else 0;
@@ -145,9 +144,9 @@ pub fn main() !void {
         .viewable_searchable = null,
 
         .algo_init = false,
-        .search_sample_str = algo.SearchSample([]const u8).init(alloc.persistentAllocator),
-        .search_sample_su = algo.SearchSample(mpd.SongStringAndUri).init(alloc.persistentAllocator),
-        .search_state = algo.SearchState.init(alloc.persistentAllocator, alloc.typingAllocator),
+        .search_sample_str = .init(),
+        .search_sample_su = .init(),
+        .search_state = .init(alloc.typingAllocator),
         .find_matches = try alloc.persistentAllocator.alloc(mpd.SongStringAndUri, window.panels.find.validArea().ylen),
         .str_matches = try alloc.persistentAllocator.alloc([]const u8, state.n_browse_matches),
         .n_str_matches = 0,
@@ -172,7 +171,7 @@ pub fn main() !void {
             const frame_time = time.milliTimestamp() - loop_start_time;
             if (frame_time < target_frame_time_ms) {
                 const sleep_time: u64 = @intCast((target_frame_time_ms - frame_time) * time.ns_per_ms);
-                time.sleep(sleep_time);
+                std.Thread.sleep(sleep_time);
             }
         }
 

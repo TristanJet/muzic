@@ -200,7 +200,7 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_br
         '\x7F' => {
             app.typing_buffer.pop() catch return;
             const previ = app.search_state.isearch.pop() orelse return;
-            app.search_sample_su.indices = std.ArrayList(usize).fromOwnedSlice(alloc.persistentAllocator, @constCast(previ));
+            app.search_sample_su.indices = .fromOwnedSlice(@constCast(previ));
             const imatches = app.search_state.imatch.pop() orelse return;
             util.log("imatch 0: {}", .{imatches[0]});
             const n = app.search_sample_su.itemsFromIndices(imatches, app.find_matches);
@@ -214,10 +214,15 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_br
             if (app.search_sample_su.indices.items.len == 0) return;
             app.typing_buffer.append(char) catch return;
 
-            try app.search_state.isearch.append(try app.search_state.dupe(app.search_sample_su.indices.items));
-            const imatches = try algo.stringUriBest(app.typing_buffer.typed, &app.search_sample_su, window.panels.find.validArea().ylen);
+            try app.search_state.isearch.append(alloc.typingAllocator, try app.search_state.dupe(app.search_sample_su.indices.items));
+            const imatches = try algo.stringUriBest(
+                app.typing_buffer.typed,
+                &app.search_sample_su,
+                window.panels.find.validArea().ylen,
+                alloc.persistentAllocator,
+            );
             util.log("imatch 0: {}", .{imatches[0]});
-            try app.search_state.imatch.append(try app.search_state.dupe(imatches));
+            try app.search_state.imatch.append(alloc.typingAllocator, try app.search_state.dupe(imatches));
             const n = app.search_sample_su.itemsFromIndices(imatches, app.find_matches);
             util.log("best match: {s}", .{app.find_matches[0].string});
 
@@ -696,7 +701,7 @@ fn onFind(
         try algo.init(@max(window.panels.find.validArea().ylen, state.n_browse_matches));
         algo_init.* = true;
     }
-    try search_sample.update(searchable, uppers);
+    try search_sample.update(searchable, uppers, alloc.persistentAllocator);
     input_state.* = .typing_find;
     rs.find_clear = true;
     rs.queue = true;
@@ -732,10 +737,10 @@ fn switchToTyping(
             },
             else => unreachable,
         }
-        try search_sample.update(set, uppers);
+        try search_sample.update(set, uppers, alloc.persistentAllocator);
     } else {
         const disp = col.displaying orelse return error.NoDisplaying;
-        try search_sample.update(disp, null);
+        try search_sample.update(disp, null, alloc.persistentAllocator);
     }
 }
 
@@ -768,7 +773,7 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
             const displaying = current.displaying orelse return;
 
             const previ = app.search_state.isearch.pop() orelse return;
-            app.search_sample_str.indices = std.ArrayList(usize).fromOwnedSlice(alloc.persistentAllocator, @constCast(previ));
+            app.search_sample_str.indices = .fromOwnedSlice(@constCast(previ));
             const imatches = app.search_state.imatch.pop() orelse return;
             util.log("imatch 0: {}", .{imatches[0]});
             app.n_str_matches = app.search_sample_str.itemsFromIndices(imatches, app.str_matches);
@@ -791,9 +796,9 @@ fn typingBrowse(char: u8, app: *state.State, render_state: *RenderState(state.n_
             const displaying = current.displaying orelse return;
             browse_typed = true;
 
-            try app.search_state.isearch.append(try app.search_state.dupe(app.search_sample_str.indices.items));
-            const imatches = try algo.stringBest(app.typing_buffer.typed, &app.search_sample_str, state.n_browse_matches);
-            try app.search_state.imatch.append(try app.search_state.dupe(imatches));
+            try app.search_state.isearch.append(alloc.persistentAllocator, try app.search_state.dupe(app.search_sample_str.indices.items));
+            const imatches = try algo.stringBest(app.typing_buffer.typed, &app.search_sample_str, state.n_browse_matches, alloc.persistentAllocator);
+            try app.search_state.imatch.append(alloc.persistentAllocator, try app.search_state.dupe(imatches));
             app.n_str_matches = app.search_sample_str.itemsFromIndices(imatches, app.str_matches);
             app.istr_match = 0;
 

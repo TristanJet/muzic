@@ -121,7 +121,7 @@ pub fn render(app: *state.State, render_state: *RenderState(n_browse_columns), p
     if (render_state.browse_clear_cursor[1]) try clearCursor(panels.browse2.validArea(), current.col_arr.buf[1].displaying, current.col_arr.buf[1].pos, current.col_arr.buf[1].slice_inc);
     if (render_state.browse_clear_cursor[2]) try clearCursor(panels.browse3.validArea(), current.col_arr.buf[2].displaying, current.col_arr.buf[2].pos, current.col_arr.buf[2].slice_inc);
 
-    term.flushBuffer() catch |err| if (err != error.WouldBlock) return err;
+    term.flush() catch |err| if (err != error.WouldBlock) return err;
 }
 
 fn drawBorders(p: window.Area) !void {

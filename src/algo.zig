@@ -21,16 +21,16 @@ pub fn SearchSample(comptime T: type) type {
         set: []const T,
         uppers: ?[]const []const u16,
 
-        pub fn init(allocator: mem.Allocator) Self {
+        pub fn init() Self {
             return Self{
-                .indices = ArrayList(usize).init(allocator),
+                .indices = .empty,
                 .set = &[_]T{},
                 .uppers = null,
             };
         }
 
-        pub fn update(self: *Self, set: []const T, uppers: ?[]const []const u16) !void {
-            try self.indices.ensureTotalCapacity(set.len);
+        pub fn update(self: *Self, set: []const T, uppers: ?[]const []const u16, gpa: mem.Allocator) !void {
+            try self.indices.ensureTotalCapacity(gpa, set.len);
             self.indices.items.len = set.len;
             for (0..set.len) |i| {
                 self.indices.items[i] = i;
@@ -54,10 +54,10 @@ pub const SearchState = struct {
     imatch: ArrayList([]const usize),
     index_arena: mem.Allocator,
 
-    pub fn init(allocator: mem.Allocator, arena: mem.Allocator) SearchState {
+    pub fn init(arena: mem.Allocator) SearchState {
         return .{
-            .isearch = ArrayList([]const usize).init(allocator),
-            .imatch = ArrayList([]const usize).init(allocator),
+            .isearch = .empty,
+            .imatch = .empty,
             .index_arena = arena,
         };
     }
@@ -73,7 +73,7 @@ pub const SearchState = struct {
 };
 
 var result: []usize = undefined;
-var scored = ArrayList(ScoredIndex).init(persistentAllocator);
+var scored: ArrayList(ScoredIndex) = .empty;
 
 const match_score: i8 = 2;
 const mismatch_penalty: i8 = -1;
@@ -105,6 +105,7 @@ pub fn stringUriBest(
     input: []const u8,
     search_sample: *SearchSample(mpd.SongStringAndUri),
     nresult: usize,
+    pa: mem.Allocator,
 ) AlgoError![]const usize {
     assert(search_sample.indices.items.len > 0);
     if (nresult > result.len) return error.ResultTooLong;
@@ -122,7 +123,7 @@ pub fn stringUriBest(
         item.string = fastLowerString(item.string, uppers[j], stringLowerBuf1);
         const score = calculateScore(inputLower, item.string, &matrix);
         if (score >= inputLower.len) {
-            try scored.append(.{ .isong = j, .score = score });
+            try scored.append(pa, .{ .isong = j, .score = score });
         } else {
             _ = search_sample.indices.orderedRemove(i);
             continue;
@@ -158,6 +159,7 @@ pub fn stringBest(
     input: []const u8,
     search_sample: *SearchSample([]const u8),
     nresult: usize,
+    pa: mem.Allocator,
 ) ![]const usize {
     assert(search_sample.indices.items.len > 0);
     if (nresult > result.len) return error.ResultTooLong;
@@ -178,7 +180,7 @@ pub fn stringBest(
         }
         const score = calculateScore(inputLower, item, &matrix);
         if (score >= inputLower.len) {
-            try scored.append(.{ .isong = j, .score = score });
+            try scored.append(pa, .{ .isong = j, .score = score });
         } else {
             _ = search_sample.indices.orderedRemove(i);
             continue;

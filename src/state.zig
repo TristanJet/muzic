@@ -119,17 +119,17 @@ pub const Data = struct {
         if (self.searchable) |search| {
             var lower: [][]u16 = try heapAlloc.alloc([]u16, search.len);
             for (search, 0..) |su, i| {
-                var array = ArrayList(u16).init(heapAlloc);
+                var array: ArrayList(u16) = .empty;
                 if (isAsciiOnly(su.string)) {
                     for (su.string, 0..) |c, j| {
                         if (ascii.isUpper(c)) {
                             if (math.cast(u16, j)) |casted|
-                                try array.append(casted)
+                                try array.append(heapAlloc, casted)
                             else
                                 return error.OutOfBoundsOffset;
                         }
                     }
-                    lower[i] = try array.toOwnedSlice();
+                    lower[i] = try array.toOwnedSlice(heapAlloc);
                     continue;
                 }
                 var cp_iter = CodePointIterator{ .bytes = su.string };
@@ -140,13 +140,13 @@ pub const Data = struct {
                     if (math.cast(u8, cp.code)) |c| {
                         if (ascii.isAscii(c) and ascii.isUpper(c)) {
                             if (math.cast(u16, cp.offset)) |casted|
-                                try array.append(casted)
+                                try array.append(heapAlloc, casted)
                             else
                                 return error.OutOfBoundsOffset;
                         }
                     }
                 }
-                lower[i] = try array.toOwnedSlice();
+                lower[i] = try array.toOwnedSlice(heapAlloc);
             }
             self.searchable_lower = lower;
         }
@@ -215,17 +215,17 @@ pub const Data = struct {
 
 fn getUpperIndices(strings: []const []const u8, dest: [][]u16, allocator: mem.Allocator) !void {
     for (strings, 0..) |str, i| {
-        var array = ArrayList(u16).init(allocator);
+        var array: ArrayList(u16) = .empty;
         if (isAsciiOnly(str)) {
             for (str, 0..) |c, j| {
                 if (ascii.isUpper(c)) {
                     if (math.cast(u16, j)) |casted|
-                        try array.append(casted)
+                        try array.append(allocator, casted)
                     else
                         return error.OutOfBoundsOffset;
                 }
             }
-            dest[i] = try array.toOwnedSlice();
+            dest[i] = try array.toOwnedSlice(allocator);
             continue;
         }
         var cp_iter = CodePointIterator{ .bytes = str };
@@ -236,13 +236,13 @@ fn getUpperIndices(strings: []const []const u8, dest: [][]u16, allocator: mem.Al
             if (math.cast(u8, cp.code)) |c| {
                 if (ascii.isAscii(c) and ascii.isUpper(c)) {
                     if (math.cast(u16, cp.offset)) |casted|
-                        try array.append(casted)
+                        try array.append(allocator, casted)
                     else
                         return error.OutOfBoundsOffset;
                 }
             }
         }
-        dest[i] = try array.toOwnedSlice();
+        dest[i] = try array.toOwnedSlice(allocator);
     }
 }
 
@@ -837,9 +837,8 @@ fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState(n_browse
     switch (idle_event) {
         .player => {
             app.prev_id = app.song.id;
-            _ = app.song.init();
-            try mpd.getCurrentSong(wrkallocator, &alloc.wrkfba.end_index, app.song);
-            try mpd.getCurrentTrackTime(wrkallocator, &alloc.wrkfba.end_index, app.song);
+            try mpd.getCurrentSong(app.song, alloc.respAllocator);
+            app.song.time = try mpd.currentTrackTime();
             app.isPlaying = try mpd.getPlayState(alloc.respAllocator);
             app.last_elapsed = app.song.time.elapsed;
             //lazy

@@ -11,6 +11,7 @@ const net = std.net;
 const mem = std.mem;
 const fmt = std.fmt;
 const debug = std.debug;
+const posix = std.posix;
 const ArrayList = std.ArrayList;
 
 var host: [4]u8 = .{ 127, 0, 0, 1 };
@@ -19,7 +20,13 @@ var port: u16 = 6600;
 var cmdStream: std.net.Stream = undefined;
 var idleStream: std.net.Stream = undefined;
 
-var cmdBuf: [128]u8 = undefined;
+var cmdBuf: [64]u8 = undefined;
+
+var readbuf: [4096]u8 = undefined;
+var cmd_file_reader: std.fs.File.Reader = undefined;
+var cmd_reader: *std.io.Reader = undefined;
+
+var current_song_buf: [CurrentSong.MAX_LEN * 3]u8 = undefined;
 
 const StreamType = enum {
     command,
@@ -31,6 +38,7 @@ pub const Error = StreamError || MpdError || MemoryError;
 pub const StreamError = error{
     ServerNotFound,
     ConnectionError,
+    NoResponse,
     ReadError,
     WriteError,
     InvalidResponse,
@@ -51,20 +59,11 @@ pub const MpdError = error{
     BadIndex,
 };
 
-/// Common function to handle setting string values in a fixed buffer
-fn setStringValue(buffer: []u8, value: []const u8, max_len: usize) []const u8 {
-    if (value.len > max_len) {
-        mem.copyForwards(u8, buffer, value[0..max_len]);
-        return buffer[0..max_len];
-    }
-    mem.copyForwards(u8, buffer, value);
-    return buffer[0..value.len];
-}
-
 /// Sends an MPD command and checks for OK response
 fn sendCommand(command: []const u8) (StreamError || MpdError)!void {
-    connSend(command, &cmdStream) catch return StreamError.WriteError;
-    _ = cmdStream.read(&cmdBuf) catch return StreamError.ReadError;
+    _ = posix.write(cmdStream.handle, command) catch return StreamError.WriteError;
+    const n = posix.read(cmdStream.handle, &cmdBuf) catch return StreamError.ReadError;
+    if (n == 0) return StreamError.NoResponse;
     if (mem.eql(u8, cmdBuf[0..3], "OK\n")) return;
     if (mem.eql(u8, cmdBuf[0..3], "ACK")) {
         const mpd_err = cmdBuf[5..9];
@@ -74,114 +73,6 @@ fn sendCommand(command: []const u8) (StreamError || MpdError)!void {
     }
 }
 
-/// Creates a buffered reader and processes MPD response line by line
-fn processResponse(
-    comptime Callback: type,
-    allocator: mem.Allocator,
-    end_index: *usize,
-    callback_fn: fn (key: []const u8, value: []const u8, context: *Callback) anyerror!void,
-    context: *Callback,
-) !void {
-    var buf_reader = std.io.bufferedReader(cmdStream.reader());
-    var reader = buf_reader.reader();
-
-    const startPoint = end_index.*;
-
-    while (true) {
-        defer end_index.* = startPoint;
-        var line = reader.readUntilDelimiterAlloc(allocator, '\n', 1024) catch return StreamError.ReadError;
-
-        if (mem.eql(u8, line, "OK")) break;
-        if (mem.startsWith(u8, line, "ACK")) return MpdError.Invalid;
-
-        if (mem.indexOf(u8, line, ": ")) |separator_index| {
-            const key = line[0..separator_index];
-            const value = line[separator_index + 2 ..];
-            try callback_fn(key, value, context);
-        }
-    }
-}
-
-pub const Time = struct {
-    elapsed: u16,
-    duration: u16,
-};
-
-pub const CurrentSong = struct {
-    pub const MAX_LEN = 64;
-    const TRACKNO_LEN = 2;
-
-    bufTitle: [MAX_LEN]u8 = [_]u8{0} ** MAX_LEN,
-    title: []const u8 = &[_]u8{},
-    bufArtist: [MAX_LEN]u8 = [_]u8{0} ** MAX_LEN,
-    artist: []const u8 = &[_]u8{},
-    bufAlbum: [MAX_LEN]u8 = [_]u8{0} ** MAX_LEN,
-    album: []const u8 = &[_]u8{},
-    bufTrackno: [TRACKNO_LEN]u8 = [_]u8{0} ** TRACKNO_LEN,
-    trackno: []const u8 = &[_]u8{},
-    time: Time = Time{
-        .elapsed = undefined,
-        .duration = undefined,
-    },
-    pos: usize = undefined,
-    id: usize = undefined,
-
-    pub fn init(self: *CurrentSong) void {
-        // Point title to the correct part of bufTitle
-        self.title = self.bufTitle[0..0];
-        self.artist = self.bufArtist[0..0];
-        self.album = self.bufAlbum[0..0];
-        self.trackno = self.bufTrackno[0..0];
-    }
-
-    pub fn setTitle(self: *CurrentSong, title: []const u8) void {
-        self.title = setStringValue(&self.bufTitle, title, MAX_LEN);
-    }
-
-    pub fn setArtist(self: *CurrentSong, artist: []const u8) void {
-        self.artist = setStringValue(&self.bufArtist, artist, MAX_LEN);
-    }
-
-    pub fn setAlbum(self: *CurrentSong, album: []const u8) void {
-        self.album = setStringValue(&self.bufAlbum, album, MAX_LEN);
-    }
-
-    pub fn setTrackno(self: *CurrentSong, trackno: []const u8) void {
-        self.trackno = setStringValue(&self.bufTrackno, trackno, TRACKNO_LEN);
-    }
-
-    pub fn setPos(self: *CurrentSong, pos: []const u8) !void {
-        self.pos = try fmt.parseUnsigned(usize, pos, 10);
-    }
-
-    pub fn setId(self: *CurrentSong, id: []const u8) !void {
-        self.id = try fmt.parseUnsigned(usize, id, 10);
-    }
-
-    fn handleField(self: *CurrentSong, key: []const u8, value: []const u8) !void {
-        if (mem.eql(u8, key, "Id")) {
-            try self.setId(value);
-        } else if (mem.eql(u8, key, "Pos")) {
-            try self.setPos(value);
-        } else if (mem.eql(u8, key, "Track")) {
-            self.setTrackno(value);
-        } else if (mem.eql(u8, key, "Album")) {
-            self.setAlbum(value);
-        } else if (mem.eql(u8, key, "Title")) {
-            self.setTitle(value);
-        } else if (mem.eql(u8, key, "Artist")) {
-            self.setArtist(value);
-        } else if (mem.eql(u8, key, "time")) {
-            if (mem.indexOfScalar(u8, value, ':')) |index| {
-                const elapsedSlice = value[0..index];
-                self.time.elapsed = try fmt.parseInt(u16, elapsedSlice, 10);
-                const durationSlice = value[index + 1 ..];
-                self.time.duration = try fmt.parseInt(u16, durationSlice, 10);
-            } else return MpdError.Invalid;
-        }
-    }
-};
-
 pub fn handleArgs(arg_host: ?[4]u8, arg_port: ?u16) void {
     if (arg_host) |arg| host = arg;
     if (arg_port) |arg| port = arg;
@@ -189,34 +80,32 @@ pub fn handleArgs(arg_host: ?[4]u8, arg_port: ?u16) void {
 
 pub fn connect(stream_type: StreamType, nonblock: bool) (StreamError || MpdError)!void {
     const peer = net.Address.initIp4(host, port);
-    // Connect to peer
-    const stream = switch (stream_type) {
-        .idle => &idleStream,
-        .command => &cmdStream,
-    };
 
-    stream.* = net.tcpConnectToAddress(peer) catch return StreamError.ServerNotFound;
+    const stream = net.tcpConnectToAddress(peer) catch return StreamError.ServerNotFound;
 
-    const bytes_read = stream.read(&cmdBuf) catch return StreamError.ReadError;
+    const bytes_read = posix.read(stream.handle, &cmdBuf) catch return StreamError.ReadError;
     const received_data = cmdBuf[0..bytes_read];
 
     if (bytes_read < 2 or !mem.eql(u8, received_data[0..2], "OK")) return MpdError.Invalid;
 
     if (nonblock) {
-        const flags = std.posix.fcntl(stream.handle, std.posix.F.GETFL, 0) catch return StreamError.FcntlError;
-        const updated = std.posix.fcntl(stream.handle, std.posix.F.SETFL, util.flagNonBlock(flags)) catch return StreamError.FcntlError;
+        const flags = posix.fcntl(stream.handle, posix.F.GETFL, 0) catch return StreamError.FcntlError;
+        const updated = posix.fcntl(stream.handle, posix.F.SETFL, util.flagNonBlock(flags)) catch return StreamError.FcntlError;
         if ((updated & 0x0004) != 0) return StreamError.FcntlError;
+    }
+
+    switch (stream_type) {
+        .command => {
+            cmd_file_reader = stream.reader(&readbuf).file_reader; // Fuck portability
+            cmd_reader = &cmd_file_reader.interface;
+            cmdStream = stream;
+        },
+        .idle => idleStream = stream,
     }
 }
 
 pub fn checkConnection() !void {
     try sendCommand("ping\n");
-}
-
-//the writer could be global
-fn connSend(data: []const u8, stream: *std.net.Stream) StreamError!void {
-    var writer = stream.writer();
-    _ = writer.write(data) catch return StreamError.WriteError;
 }
 
 pub fn disconnect(stream_type: StreamType) void {
@@ -228,18 +117,18 @@ pub fn disconnect(stream_type: StreamType) void {
 }
 
 pub fn initIdle() !void {
-    try connSend("idle player playlist\n", &idleStream);
+    _ = posix.write(idleStream.handle, "idle player playlist\n") catch return StreamError.WriteError;
 }
 
 pub fn checkIdle() ![2]?Event {
-    var reader = idleStream.reader();
     var event: [2]?Event = .{ null, null };
     while (true) {
-        const line = reader.readUntilDelimiter(&cmdBuf, '\n') catch |err| switch (err) {
+        const n = posix.read(idleStream.handle, &cmdBuf) catch |err| switch (err) {
             error.WouldBlock => return .{ null, null }, // No data available
-            error.EndOfStream => return error.IdleConnectionClosed,
             else => return err,
         };
+        const index = mem.indexOfScalar(u8, cmdBuf[0..n], '\n') orelse return MemoryError.OutOfMemory;
+        const line = cmdBuf[0..index];
         if (mem.eql(u8, line, "OK")) break;
         if (mem.startsWith(u8, line, "ACK")) return MpdError.Invalid;
 
@@ -307,13 +196,79 @@ fn handleCurrentSongField(key: []const u8, value: []const u8, song: *CurrentSong
     try song.handleField(key, value);
 }
 
-pub fn getCurrentSong(
-    allocator: mem.Allocator,
-    end_index: *usize,
-    song: *CurrentSong,
-) !void {
-    try connSend("currentsong\n", &cmdStream);
-    try processResponse(CurrentSong, allocator, end_index, handleCurrentSongField, song);
+pub const CurrentSong = struct {
+    pub const MAX_LEN = 64;
+
+    title: []const u8,
+    artist: []const u8,
+    album: []const u8,
+    trackno: u16,
+    pos: usize,
+    id: usize,
+    time: Time,
+};
+
+pub fn getCurrentSong(song: *CurrentSong, ra: mem.Allocator) !void {
+    var lines = try sendAndSplit("status\n", ra);
+
+    var songtitle: ?[]const u8 = null;
+    var songartist: ?[]const u8 = null;
+    var songalbum: ?[]const u8 = null;
+
+    //Behaviour if the tags aren't found is undefined, I need to make this optional
+    var bufend: u16 = 0;
+    while (lines.next()) |line| {
+        if (mem.startsWith(u8, line, "Title:")) {
+            const title = mem.trimLeft(u8, line[6..], " ");
+            const len: u16 = @min(title.len, CurrentSong.MAX_LEN);
+            @memcpy(current_song_buf[bufend .. bufend + len], title[0..len]);
+            songtitle = current_song_buf[bufend .. bufend + len];
+            bufend += len;
+        } else if (mem.startsWith(u8, line, "Artist:")) {
+            const artist = mem.trimLeft(u8, line[7..], " ");
+            const len: u16 = @min(artist.len, CurrentSong.MAX_LEN);
+            @memcpy(current_song_buf[bufend .. bufend + len], artist[0..len]);
+            songartist = current_song_buf[bufend .. bufend + len];
+            bufend += len;
+        } else if (mem.startsWith(u8, line, "Album:")) {
+            const album = mem.trimLeft(u8, line[6..], " ");
+            const len: u16 = @min(album.len, CurrentSong.MAX_LEN);
+            @memcpy(current_song_buf[bufend .. bufend + len], album[0..len]);
+            songalbum = current_song_buf[bufend .. bufend + len];
+            bufend += len;
+        } else if (mem.startsWith(u8, line, "Track:")) {
+            const trackno_str = mem.trimLeft(u8, line[4..], " ");
+            song.trackno = try fmt.parseInt(u16, trackno_str, 10);
+        } else if (mem.startsWith(u8, line, "Pos:")) {
+            const pos_str = mem.trimLeft(u8, line[4..], " ");
+            song.pos = try fmt.parseInt(usize, pos_str, 10);
+        } else if (mem.startsWith(u8, line, "Id:")) {
+            const id_str = mem.trimLeft(u8, line[3..], " ");
+            song.id = try fmt.parseInt(usize, id_str, 10);
+        }
+    }
+
+    song.title = songtitle orelse "";
+    song.artist = songartist orelse "";
+    song.album = songalbum orelse "";
+}
+
+pub const Time = struct {
+    elapsed: u16,
+    duration: u16,
+};
+
+pub fn currentTrackTime() (MpdError || StreamError)!Time {
+    _ = posix.write(cmdStream.handle, "status\n") catch return StreamError.WriteError;
+    const n = posix.read(cmdStream.handle, &cmdBuf) catch return StreamError.ReadError;
+    const line = cmdBuf[0..n];
+    const index = mem.indexOfScalar(u8, line, ':') orelse return MpdError.Invalid;
+    const elapsed = line[0..index];
+    const duration = line[index + 1 ..];
+    return .{
+        .elapsed = fmt.parseInt(u16, elapsed, 10) catch return MpdError.Invalid,
+        .duration = fmt.parseInt(u16, duration, 10) catch return MpdError.Invalid,
+    };
 }
 
 pub const Queue = struct {
@@ -726,8 +681,7 @@ pub const QSong = struct {
 
 pub fn getPlaylistLen(respAllocator: mem.Allocator) !usize {
     const command = "status\n";
-    const data = try readLargeResponse(respAllocator, command);
-    var lines = try processLargeResponse(data);
+    var lines = try sendAndSplit(command, respAllocator);
     while (lines.next()) |line| {
         if (mem.startsWith(u8, line, "playlistlength:")) {
             const slice = mem.trimLeft(u8, line[15..], " ");
@@ -774,7 +728,8 @@ const Boundary = struct {
 
 fn fetchQueueBuf(respAllocator: mem.Allocator, start: usize, end: usize) ![]const u8 {
     const command = try fmt.allocPrint(respAllocator, "playlistinfo {}:{}\n", .{ start, end });
-    return try readLargeResponse(respAllocator, command);
+    _ = posix.write(cmdStream.handle, command) catch return StreamError.WriteError;
+    return try readResponse(respAllocator);
 }
 
 fn allocQueue(
@@ -931,14 +886,8 @@ fn handleTrackTimeField(key: []const u8, value: []const u8, song: *CurrentSong) 
     }
 }
 
-pub fn getCurrentTrackTime(allocator: mem.Allocator, end_index: *usize, song: *CurrentSong) !void {
-    try connSend("status\n", &cmdStream);
-    try processResponse(CurrentSong, allocator, end_index, handleTrackTimeField, song);
-}
-
 pub fn getPlayState(respAlloc: mem.Allocator) !bool {
-    const data = try readLargeResponse(respAlloc, "status\n");
-    var lines = try processLargeResponse(data);
+    var lines = try sendAndSplit("status\n", respAlloc);
 
     var is_playing: bool = undefined;
     while (lines.next()) |line| {
@@ -956,45 +905,36 @@ pub fn getPlayState(respAlloc: mem.Allocator) !bool {
     return is_playing;
 }
 
-/// Reads a large response from MPD for commands that may return a lot of data
-/// - tempAllocator: Used for the raw response data (should be freed after processing)
-/// - command: The MPD command to send
-/// Returns the complete raw response with trailing "OK\n"
-pub fn readLargeResponse(tempAllocator: mem.Allocator, command: []const u8) (StreamError || MpdError || MemoryError)![]u8 {
-    try connSend(command, &cmdStream);
+fn sendAndSplit(command: []const u8, ra: mem.Allocator) !mem.SplitIterator(u8, .scalar) {
+    _ = posix.write(cmdStream.handle, command) catch return StreamError.WriteError;
+    const bytes = try readResponse(ra);
+    return mem.splitScalar(u8, bytes, '\n');
+}
 
-    var list = std.ArrayList(u8).init(tempAllocator);
-    errdefer list.deinit();
+pub fn readResponse(ra: mem.Allocator) (StreamError || MpdError || MemoryError)![]u8 {
+    debug.assert(cmd_reader.end == 0);
+    var buffer: std.ArrayList(u8) = .empty;
 
     var firstbuf: [5]u8 = .{0} ** 5;
-    var buf: [4096]u8 = undefined;
-    while (true) {
-        const bytes_read = cmdStream.read(buf[0..]) catch |err| switch (err) {
-            error.WouldBlock => continue,
+    var should_fill: bool = true;
+    while (should_fill) {
+        cmd_reader.fill(readbuf.len) catch |e| switch (e) {
+            error.EndOfStream => should_fill = false,
             else => return StreamError.ReadError,
         };
 
         if (firstbuf[0] == 0) {
-            @memcpy(&firstbuf, buf[0..5]);
+            _ = cmd_reader.readSliceShort(&firstbuf) catch return StreamError.ReadError;
             if (mem.eql(u8, &firstbuf, "ACK [")) return MpdError.Invalid;
+            if (mem.startsWith(u8, &firstbuf, "OK\n")) return MpdError.NoSongs;
         }
 
-        if (bytes_read == 0) {
-            if (mem.endsWith(u8, list.items, "OK\n")) {
-                break;
-            } else {
-                return MpdError.Invalid;
-            }
-        }
-
-        list.appendSlice(buf[0..bytes_read]) catch return MemoryError.AllocatorError;
-
-        if (mem.endsWith(u8, list.items, "OK\n")) {
-            break;
-        }
+        buffer.appendSlice(ra, cmd_reader.buffered()) catch return MemoryError.AllocatorError;
     }
+    if (!mem.eql(u8, buffer.items[buffer.items.len - 3 .. buffer.items.len], "OK\n")) return MpdError.Invalid;
 
-    return list.toOwnedSlice() catch return MemoryError.AllocatorError;
+    try cmd_reader.rebase(readbuf.len);
+    return buffer.items;
 }
 
 const SongIterator = struct {
@@ -1037,27 +977,20 @@ const SongIterator = struct {
     }
 };
 
-fn processLargeResponse(bytes: []const u8) MpdError!mem.SplitIterator(u8, .scalar) {
-    if (mem.startsWith(u8, bytes, "ACK")) return MpdError.Invalid;
-    if (mem.startsWith(u8, bytes, "OK")) return MpdError.NoSongs;
-    return mem.splitScalar(u8, bytes, '\n');
-}
-
 fn getAllType(data_type: []const u8, heapAllocator: mem.Allocator, respAllocator: std.mem.Allocator) ![][]const u8 {
     const command = try fmt.allocPrint(respAllocator, "list {s}\n", .{data_type});
-    const data = try readLargeResponse(respAllocator, command);
-    var lines = try processLargeResponse(data);
-    var array = std.ArrayList([]const u8).init(heapAllocator);
+    var lines = try sendAndSplit(command, respAllocator);
+    var array: ArrayList([]const u8) = .empty;
 
     while (lines.next()) |line| {
         if (mem.indexOf(u8, line, ": ")) |separator_index| {
             const value = line[separator_index + 2 ..];
             const copied_value = try heapAllocator.dupe(u8, value);
-            try array.append(copied_value);
+            try array.append(heapAllocator, copied_value);
         }
     }
 
-    return array.toOwnedSlice();
+    return array.toOwnedSlice(heapAllocator);
 }
 
 ////
@@ -1097,19 +1030,18 @@ pub fn findAlbumsFromArtists(
 ) ![][]const u8 {
     const escaped = try escapeMpdString(temp_alloc, artist);
     const command = try fmt.allocPrint(temp_alloc, "list album \"(Artist == \\\"{s}\\\")\"\n", .{escaped});
-    const data = try readLargeResponse(temp_alloc, command);
-    var lines = try processLargeResponse(data);
-    var array = std.ArrayList([]const u8).init(persist_alloc);
+    var lines = try sendAndSplit(command, temp_alloc);
+    var array: ArrayList([]const u8) = .empty;
 
     while (lines.next()) |line| {
         if (mem.indexOf(u8, line, ": ")) |separator_index| {
             const value = line[separator_index + 2 ..];
             const copied_value = try persist_alloc.dupe(u8, value);
-            try array.append(copied_value);
+            try array.append(persist_alloc, copied_value);
         }
     }
 
-    return array.toOwnedSlice();
+    return array.toOwnedSlice(persist_alloc);
 }
 
 pub fn findTracksFromAlbum(
@@ -1125,9 +1057,8 @@ pub fn findTracksFromAlbum(
     const escaped_album = try escapeMpdString(temp_alloc, album);
     const command = try fmt.allocPrint(temp_alloc, "find \"((Album == \\\"{s}\\\"){s})\"\n", .{ escaped_album, artist });
 
-    const data = try readLargeResponse(temp_alloc, command);
-    var lines = try processLargeResponse(data);
-    var songs = ArrayList(SongStringAndUri).init(persist_alloc);
+    var lines = try sendAndSplit(command, temp_alloc);
+    var songs: ArrayList(SongStringAndUri) = .empty;
 
     var current_uri: ?[]const u8 = null;
     var current_title: ?[]const u8 = null;
@@ -1140,7 +1071,7 @@ pub fn findTracksFromAlbum(
             if (mem.eql(u8, key, "file")) {
                 // If we have a previous song with both URI and title, add it
                 if (current_uri != null and current_title != null) {
-                    try songs.append(SongStringAndUri{
+                    try songs.append(persist_alloc, SongStringAndUri{
                         .uri = current_uri.?,
                         .string = current_title.?,
                     });
@@ -1156,13 +1087,13 @@ pub fn findTracksFromAlbum(
 
     // Add the last song if it has both URI and title
     if (current_uri != null and current_title != null) {
-        try songs.append(SongStringAndUri{
+        try songs.append(persist_alloc, SongStringAndUri{
             .uri = current_uri.?,
             .string = current_title.?,
         });
     }
 
-    return try songs.toOwnedSlice();
+    return try songs.toOwnedSlice(persist_alloc);
 }
 
 pub fn titlesFromTracks(tracks: []const SongStringAndUri, allocator: mem.Allocator) ![][]const u8 {
@@ -1263,30 +1194,31 @@ test "findAdd" {
 
 fn escapeMpdString(allocator: mem.Allocator, str: []const u8) ![]u8 {
     // Initialize a dynamic array to build the escaped string
-    var result = ArrayList(u8).init(allocator);
-    defer result.deinit(); // Ensure cleanup if toOwnedSlice fails
+    var result: ArrayList(u8) = .empty;
+    defer result.deinit(allocator);
 
     // Iterate over each character in the input string
     for (str) |char| {
         // Escape double quotes and backslashes by prefixing with a backslash
         if (char == '"') {
-            try result.append('\\');
-            try result.append('\\');
-            try result.append('\\');
+            try result.append(allocator, '\\');
+            try result.append(allocator, '\\');
+            try result.append(allocator, '\\');
         }
-        try result.append(char);
+        try result.append(allocator, char);
     }
 
-    return result.toOwnedSlice();
+    return result.toOwnedSlice(allocator);
 }
 
 pub fn listAllData(respAllocator: std.mem.Allocator) ![]u8 {
-    return try readLargeResponse(respAllocator, "listallinfo\n");
+    _ = posix.write(cmdStream.handle, "listallinfo\n") catch return StreamError.WriteError;
+    return try readResponse(respAllocator);
 }
 
 pub fn getAllSongs(heapAllocator: mem.Allocator, data: []const u8) ![]SongStringAndUri {
-    var songs = ArrayList(SongStringAndUri).init(heapAllocator);
-    var lines = try processLargeResponse(data);
+    var songs: ArrayList(SongStringAndUri) = .empty;
+    var lines = mem.splitScalar(u8, data, '\n');
 
     var current_uri: ?[]const u8 = null;
     var current_title: ?[]const u8 = null;
@@ -1299,7 +1231,7 @@ pub fn getAllSongs(heapAllocator: mem.Allocator, data: []const u8) ![]SongString
             if (mem.eql(u8, key, "file")) {
                 // If we have a previous song with both URI and title, add it
                 if (current_uri != null and current_title != null) {
-                    try songs.append(SongStringAndUri{
+                    try songs.append(heapAllocator, SongStringAndUri{
                         .uri = current_uri.?,
                         .string = current_title.?,
                     });
@@ -1315,18 +1247,18 @@ pub fn getAllSongs(heapAllocator: mem.Allocator, data: []const u8) ![]SongString
 
     // Add the last song if it has both URI and title
     if (current_uri != null and current_title != null) {
-        try songs.append(SongStringAndUri{
+        try songs.append(heapAllocator, SongStringAndUri{
             .uri = current_uri.?,
             .string = current_title.?,
         });
     }
 
-    return try songs.toOwnedSlice();
+    return try songs.toOwnedSlice(heapAllocator);
 }
 
 pub fn getSongStringAndUri(heapAllocator: mem.Allocator, data: []const u8) ![]SongStringAndUri {
-    var array = std.ArrayList(SongStringAndUri).init(heapAllocator);
-    var lines = try processLargeResponse(data);
+    var array: ArrayList(SongStringAndUri) = .empty;
+    var lines = mem.splitScalar(u8, data, '\n');
     var current_uri: ?[]const u8 = null;
     var title: ?[]const u8 = null;
     var artist: ?[]const u8 = null;
@@ -1363,7 +1295,7 @@ pub fn getSongStringAndUri(heapAllocator: mem.Allocator, data: []const u8) ![]So
         try appendSongStringAndUri(&array, heapAllocator, current_uri.?, title, artist, album);
     }
 
-    return array.toOwnedSlice();
+    return array.toOwnedSlice(heapAllocator);
 }
 
 // Helper function to append a SongStringAndUri with a properly constructed string
@@ -1375,18 +1307,18 @@ fn appendSongStringAndUri(
     artist: ?[]const u8,
     album: ?[]const u8,
 ) !void {
-    var parts = std.ArrayList([]const u8).init(heapAllocator);
-    defer parts.deinit();
+    var parts: ArrayList([]const u8) = .empty;
+    defer parts.deinit(heapAllocator);
 
     // Add non-null tags to the parts list
-    if (title) |t| try parts.append(t);
-    if (artist) |a| try parts.append(a);
-    if (album) |al| try parts.append(al);
+    if (title) |t| try parts.append(heapAllocator, t);
+    if (artist) |a| try parts.append(heapAllocator, a);
+    if (album) |al| try parts.append(heapAllocator, al);
 
     if (parts.items.len == 0) return;
 
-    const str = try std.mem.join(heapAllocator, " ", parts.items);
-    try array.append(SongStringAndUri{
+    const str = try mem.join(heapAllocator, " ", parts.items);
+    try array.append(heapAllocator, SongStringAndUri{
         .string = str,
         .uri = uri,
     });
@@ -1398,19 +1330,19 @@ pub fn addFromUri(allocator: mem.Allocator, uri: []const u8) !void {
 }
 
 pub fn batchInsertUri(uris: []const []const u8, pos: usize, ra: mem.Allocator) !void {
-    try connSend("command_list_begin\n", &cmdStream);
+    _ = posix.write(cmdStream.handle, "command_list_begin\n") catch return StreamError.WriteError;
     for (uris, 1..uris.len + 1) |item, i| {
         const command = try fmt.allocPrint(ra, "add \"{s}\" {}\n", .{ item, pos + i });
-        try connSend(command, &cmdStream);
+        _ = posix.write(cmdStream.handle, command) catch return StreamError.WriteError;
     }
     try sendCommand("command_list_end\n");
 }
 
 pub fn addList(allocator: mem.Allocator, list: []const SongStringAndUri) !void {
-    try connSend("command_list_begin\n", &cmdStream);
+    _ = posix.write(cmdStream.handle, "command_list_begin\n") catch return StreamError.WriteError;
     for (list) |item| {
         const command = try fmt.allocPrint(allocator, "add \"{s}\"\n", .{item.uri});
-        try connSend(command, &cmdStream);
+        _ = posix.write(cmdStream.handle, command) catch return StreamError.WriteError;
     }
     try sendCommand("command_list_end\n");
 }
@@ -1436,18 +1368,18 @@ pub const Yanked = struct {
     pub fn init(arena: *std.heap.ArenaAllocator) Yanked {
         const allocator = arena.allocator();
         return .{
-            .refs = ArrayList([]const u8).init(allocator),
+            .refs = .empty,
             .arena = arena,
             .allocator = allocator,
         };
     }
 
     fn append(self: *Yanked, src: []const u8) !void {
-        try self.refs.append(try self.allocator.dupe(u8, src));
+        try self.refs.append(self.allocator, try self.allocator.dupe(u8, src));
     }
 
     pub fn reset(self: *Yanked) !void {
-        self.refs.shrinkAndFree(0);
+        self.refs.shrinkAndFree(self.allocator, 0);
         const success = self.arena.reset(.{ .retain_with_limit = 4096 });
         if (!success) return error.ArenaResetFail;
     }
@@ -1455,8 +1387,7 @@ pub const Yanked = struct {
 
 pub fn getYanked(start: usize, stop: usize, out: *Yanked, ra: mem.Allocator) !void {
     const command = try fmt.allocPrint(ra, "playlistinfo {}:{}\n", .{ start, stop });
-    const data = try readLargeResponse(ra, command);
-    var lines = try processLargeResponse(data);
+    var lines = try sendAndSplit(command, ra);
     try out.reset();
     while (lines.next()) |line| {
         if (mem.startsWith(u8, line, "file:")) {

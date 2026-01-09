@@ -55,13 +55,13 @@ const Dim = union(DimType) {
 };
 
 pub fn init() WindowError!void {
-    const tty = terminal.ttyFile();
+    const tty = terminal.fileDescriptor();
     try getWindow(tty);
     panels.init(window);
     y_len_ptr.* = panels.find.validArea().ylen;
 }
 
-fn getWindow(tty: *const fs.File) WindowError!void {
+fn getWindow(ttyfd: fs.File.Handle) WindowError!void {
     var win_size = posix.winsize{
         .row = 0,
         .col = 0,
@@ -69,7 +69,7 @@ fn getWindow(tty: *const fs.File) WindowError!void {
         .ypixel = 0,
     };
 
-    const err = posix.system.ioctl(tty.handle, posix.T.IOCGWINSZ, @intFromPtr(&win_size));
+    const err = posix.system.ioctl(ttyfd, posix.T.IOCGWINSZ, @intFromPtr(&win_size));
     if (posix.errno(err) == .SUCCESS) {
         if (win_size.col < MIN_WIN_WIDTH) return WindowError.TooSmall;
         if (win_size.row < MIN_WIN_HEIGHT) return WindowError.TooSmall;
@@ -82,6 +82,7 @@ fn getWindow(tty: *const fs.File) WindowError!void {
             .ylen = win_size.row,
         };
     } else {
+        util.log("err no: {}", .{err});
         return WindowError.Ioctl;
     }
 }

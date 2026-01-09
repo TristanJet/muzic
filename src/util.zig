@@ -4,7 +4,6 @@ const fs = std.fs;
 const math = std.math;
 const mem = std.mem;
 var logtty: fs.File = undefined;
-var logger: fs.File.Writer = undefined;
 const state = @import("state.zig");
 const alloc = @import("allocators.zig");
 const lowerBuf1: *[512]u8 = alloc.ptrLower1;
@@ -17,30 +16,41 @@ const logttypath = switch (builtin.os.tag) {
     .macos => "/dev/ttys001",
     else => @compileError("Unsupported OS"),
 };
-//macos tty:
+
+var logbuf: if (builtin.mode == .Debug) [256]u8 else void = undefined;
 
 pub fn loggerInit() !void {
-    logtty = try fs.cwd().openFile(
-        logttypath,
-        .{ .mode = fs.File.OpenMode.write_only },
-    );
-    logger = logtty.writer();
-    try logger.writeAll("\x1B[2J");
-    initErr() catch return error.StdErrInitFailed;
+    if (builtin.mode == .Debug) {
+        logtty = try fs.cwd().openFile(
+            logttypath,
+            .{
+                .mode = fs.File.OpenMode.write_only,
+                .allow_ctty = false,
+                .lock = .none,
+                .lock_nonblocking = false,
+            },
+        );
+        _ = try std.posix.write(logtty.handle, "\x1B[2J");
+
+        initErr() catch return error.StdErrInitFailed;
+    }
 }
 
-pub fn deinit() !void {
-    logtty.close();
+pub fn deinit() void {
+    if (builtin.mode == .Debug) logtty.close();
 }
 
 fn initErr() !void {
-    const stderr_fd = std.io.getStdErr().handle;
+    const stderr_fd = fs.File.stderr().handle;
     // Redirect stderr to the target terminal's file descriptor
     try std.posix.dup2(logtty.handle, stderr_fd);
 }
 
 pub fn log(comptime format: []const u8, args: anytype) void {
-    if (builtin.mode == .Debug) logger.print(format ++ "\n", args) catch return;
+    if (builtin.mode == .Debug) {
+        const msg = std.fmt.bufPrint(&logbuf, format ++ "\n", args) catch return;
+        _ = std.posix.write(logtty.handle, msg) catch return;
+    }
 }
 
 pub fn flagNonBlock(flags: usize) usize {

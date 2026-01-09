@@ -12,6 +12,7 @@ const posix = std.posix;
 
 var tty: fs.File = undefined;
 var writer: fs.File.Writer = undefined;
+var out: *std.io.Writer = undefined;
 
 // Use posix.termios which is platform-independent
 var raw: posix.termios = undefined;
@@ -138,16 +139,21 @@ pub const Symbols = struct {
 };
 
 fn getTty() !void {
-    // Try to open terminal device
     tty = try fs.cwd().openFile(
         "/dev/tty",
-        .{ .mode = .read_write },
+        .{
+            .mode = fs.File.OpenMode.write_only,
+            .allow_ctty = false,
+            .lock = .none,
+            .lock_nonblocking = false,
+        },
     );
-    writer = tty.writer();
+    writer = tty.writerStreaming(&buffer);
+    out = &writer.interface;
 }
 
-pub fn ttyFile() *const fs.File {
-    return &tty;
+pub fn fileDescriptor() fs.File.Handle {
+    return tty.handle;
 }
 
 pub fn readBytes(read_buffer: []u8) ReadError!usize {
@@ -183,7 +189,7 @@ fn setNonBlock() !void {
 }
 
 pub fn deinit() !void {
-    try flushBuffer();
+    try out.flush();
     //
     // cooked = try posix.tcgetattr(tty.handle);
     // errdefer cook() catch {};
@@ -221,7 +227,7 @@ fn uncook() !void {
     try tty.writeAll("\x1b[?1049h");
     try hideCursor();
     try clear();
-    try flushBuffer();
+    try out.flush();
 }
 
 fn cook() !void {
@@ -232,89 +238,28 @@ fn cook() !void {
     try tty.writeAll("\x1b[?1049l");
 
     try posix.tcsetattr(tty.handle, .FLUSH, cooked);
-    try flushBuffer();
+    try out.flush();
 }
-
-pub fn flushBuffer() !void {
-    if (buffer_pos == 0) return;
-
-    var offset: usize = 0;
-    while (offset < buffer_pos) {
-        const n = writer.write(buffer[offset..buffer_pos]) catch |err| {
-            switch (err) {
-                error.WouldBlock => {
-                    // Sleep for 1 millisecond, not 1 nanosecond
-                    std.time.sleep(1_000_000);
-                    continue;
-                },
-                else => return err,
-            }
-        };
-
-        // Handle case where write returns 0 (shouldn't happen, but be safe)
-        if (n == 0) {
-            return error.WriteZero;
-        }
-
-        offset += n;
-    }
-
-    buffer_pos = 0;
-}
-
-fn writeToBuffer(data: []const u8) !void {
-    // If data is larger than buffer, flush and write directly
-    if (data.len > BUFFER_SIZE) {
-        try flushBuffer();
-        _ = try writer.write(data);
-        return;
-    }
-
-    // Check if we need to flush before adding more data
-    if (buffer_pos + data.len > BUFFER_SIZE) {
-        try flushBuffer();
-    }
-
-    // Copy data to buffer
-    @memcpy(buffer[buffer_pos..][0..data.len], data);
-    buffer_pos += data.len;
-}
-
-fn writeByteToBuffer(byte: u8) !void {
-    // Check if buffer is full
-    if (buffer_pos >= BUFFER_SIZE) {
-        try flushBuffer();
-    }
-
-    buffer[buffer_pos] = byte;
-    buffer_pos += 1;
-}
-
-// Terminal control sequences
-
-// pub fn backspace() !void {
-//     try writeToBuffer('\b');
-// }
 
 pub fn attributeReset() !void {
-    try writeToBuffer("\x1B[0m");
+    try out.writeAll("\x1B[0m");
     try setColor(.white);
 }
 
 pub fn setBold() !void {
-    try writeToBuffer("\x1B[1m");
+    try out.writeAll("\x1B[1m");
 }
 
 pub fn hideCursor() !void {
-    try writeToBuffer("\x1B[?25l");
+    try out.writeAll("\x1B[?25l");
 }
 
 pub fn showCursor() !void {
-    try writeToBuffer("\x1B[?25h");
+    try out.writeAll("\x1B[?25h");
 }
 
 pub fn highlight() !void {
-    try writeToBuffer("\x1B[7m");
+    try out.writeAll("\x1B[7m");
 }
 
 pub const Color = enum {
@@ -334,7 +279,7 @@ pub fn setColor(color: Color) !void {
     else
         try ansiColor(color, &buf);
 
-    try writeToBuffer(fullSequence);
+    try out.writeAll(fullSequence);
 }
 
 fn ansiColor(color: Color, buf: []u8) ![]const u8 {
@@ -371,79 +316,31 @@ fn trueColor(color: Color, buf: []u8) ![]const u8 {
         .{ rgb.r, rgb.g, rgb.b },
     );
 }
+
+pub fn flush() !void {
+    try out.flush();
+}
+
 // Text output functions
 pub fn writeAll(str: []const u8) !void {
-    try writeToBuffer(str);
-}
-
-pub fn print(comptime fmt_: []const u8, args: anytype) !void {
-    var temp_buf: [512]u8 = undefined;
-    var fbs = std.io.fixedBufferStream(&temp_buf);
-    try fmt.format(fbs.writer(), fmt_, args);
-    try writeToBuffer(fbs.getWritten());
-}
-
-pub fn writeByte(byte: u8) !void {
-    try writeByteToBuffer(byte);
+    try out.writeAll(str);
 }
 
 pub fn writeByteNTimes(byte: u8, n: usize) !void {
-    if (n == 0) return;
-    for (0..n) |_| {
-        try writeByteToBuffer(byte);
-
-        // If buffer gets full, flush it automatically
-        if (buffer_pos == BUFFER_SIZE) {
-            try flushBuffer();
-        }
-    }
+    for (0..n) |_| try out.writeByte(byte);
 }
 
 // Cursor and position control
 pub fn moveCursor(row: usize, col: usize) !void {
-    try print("\x1B[{};{}H", .{ row + 1, col + 1 });
+    try out.print("\x1B[{};{}H", .{ row + 1, col + 1 });
 }
 
 pub fn clear() !void {
-    try writeToBuffer("\x1B[2J");
+    try out.writeAll("\x1B[2J");
 }
 
 pub fn clearLine(y: usize, xmin: usize, xmax: usize) !void {
     try moveCursor(y, xmin);
     const width = xmax - xmin + 1;
     try writeByteNTimes(' ', width);
-}
-
-// Helper function to write a byte sequence multiple times
-pub fn writeBytesNTimesChunked(bytes: []const u8, n: usize) !void {
-    for (0..n) |_| {
-        try writeToBuffer(bytes);
-
-        // If buffer gets full, flush it automatically
-        if (buffer_pos + bytes.len > BUFFER_SIZE) {
-            try flushBuffer();
-        }
-    }
-}
-
-test "buffer write" {
-    if (buffer_pos == 0) return;
-
-    var count: usize = 0;
-    while (buffer_pos > 0) : (count += 1) {
-        //resolves to darwin libc write
-        const n = writer.write(buffer[0..buffer_pos]) catch |err| {
-            switch (err) {
-                error.WouldBlock => {
-                    std.time.sleep(1);
-                    continue;
-                },
-                else => return err,
-            }
-        };
-        if (n < buffer_pos) {
-            mem.copyForwards(u8, buffer[0 .. buffer_pos - n], buffer[n..buffer_pos]);
-        }
-        buffer_pos -= n;
-    }
 }
