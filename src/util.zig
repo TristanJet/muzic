@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const fs = std.fs;
 const math = std.math;
 const mem = std.mem;
+const posix = std.posix;
 var logtty: fs.File = undefined;
 const state = @import("state.zig");
 const alloc = @import("allocators.zig");
@@ -18,6 +19,7 @@ const logttypath = switch (builtin.os.tag) {
 };
 
 var logbuf: if (builtin.mode == .Debug) [256]u8 else void = undefined;
+var logno: if (builtin.mode == .Debug) u16 else void = 0;
 
 pub fn loggerInit() !void {
     if (builtin.mode == .Debug) {
@@ -47,9 +49,11 @@ fn initErr() !void {
 }
 
 pub fn log(comptime format: []const u8, args: anytype) void {
+    defer logno += 1;
     if (builtin.mode == .Debug) {
-        const msg = std.fmt.bufPrint(&logbuf, format ++ "\n", args) catch return;
-        _ = std.posix.write(logtty.handle, msg) catch return;
+        const msg = std.fmt.bufPrint(&logbuf, format ++ "\n", args) catch "ERROR FORMATTING";
+        const no = std.fmt.bufPrint(logbuf[msg.len..], "{} -> ", .{logno}) catch unreachable;
+        _ = posix.writev(logtty.handle, &.{ .{ .base = no.ptr, .len = no.len }, .{ .base = msg.ptr, .len = msg.len } }) catch return;
     }
 }
 

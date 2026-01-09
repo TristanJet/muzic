@@ -51,6 +51,10 @@ pub fn main() !void {
     if (args.help) return;
     if (args.version) return;
 
+    try term.init();
+    defer term.deinit() catch {};
+    util.log("after term", .{});
+
     window.init() catch |e| switch (e) {
         window.WindowError.TooSmall => {
             try proc.printWinSmall(wrkallocator);
@@ -81,10 +85,6 @@ pub fn main() !void {
     defer mpd.disconnect(.idle);
     try mpd.initIdle();
     util.log("after connect", .{});
-
-    try term.init();
-    defer term.deinit() catch {};
-    util.log("after term", .{});
 
     try dw.init(alloc.persistentAllocator, window.panels);
     defer dw.deinit(alloc.persistentAllocator);
