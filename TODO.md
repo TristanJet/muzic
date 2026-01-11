@@ -47,6 +47,7 @@ Let's freaking go
 - [x] text too long - window size
 - [x] migrate to 0.15
 - [ ] CurrentSong should have optional values, initialization is unsafe
+- [ ] fix arena bugs, make managed struct?
 - [ ] why is getting albums, songs, artists slow
 
 ## next update

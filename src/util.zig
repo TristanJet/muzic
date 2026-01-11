@@ -18,8 +18,12 @@ const logttypath = switch (builtin.os.tag) {
     else => @compileError("Unsupported OS"),
 };
 
-var logbuf: if (builtin.mode == .Debug) [256]u8 else void = undefined;
-var logno: if (builtin.mode == .Debug) u16 else void = 0;
+const DebugLog = if (builtin.mode == .Debug) struct {
+    buffer: [256]u8,
+    n: u16,
+} else void;
+
+var debug_log: DebugLog = if (builtin.mode == .Debug) .{ .buffer = undefined, .n = 0 } else {};
 
 pub fn loggerInit() !void {
     if (builtin.mode == .Debug) {
@@ -32,7 +36,7 @@ pub fn loggerInit() !void {
                 .lock_nonblocking = false,
             },
         );
-        _ = try std.posix.write(logtty.handle, "\x1B[2J");
+        _ = try posix.write(logtty.handle, "\x1B[2J");
 
         initErr() catch return error.StdErrInitFailed;
     }
