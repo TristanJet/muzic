@@ -23,8 +23,6 @@ var idleStream: std.net.Stream = undefined;
 var cmdBuf: [64]u8 = undefined;
 
 var readbuf: [4096]u8 = undefined;
-var cmd_file_reader: std.fs.File.Reader = undefined;
-var cmd_reader: *std.io.Reader = undefined;
 
 var current_song_buf: [CurrentSong.MAX_LEN * 3]u8 = undefined;
 
@@ -57,6 +55,7 @@ pub const MpdError = error{
     NoSongs,
     NotPlaying,
     BadIndex,
+    NoTime,
 };
 
 /// Sends an MPD command and checks for OK response
@@ -95,11 +94,7 @@ pub fn connect(stream_type: StreamType, nonblock: bool) (StreamError || MpdError
     }
 
     switch (stream_type) {
-        .command => {
-            cmd_file_reader = stream.reader(&readbuf).file_reader; // Fuck portability
-            cmd_reader = &cmd_file_reader.interface;
-            cmdStream = stream;
-        },
+        .command => cmdStream = stream,
         .idle => idleStream = stream,
     }
 }
@@ -116,18 +111,23 @@ pub fn disconnect(stream_type: StreamType) void {
     stream.close();
 }
 
-pub fn initIdle() !void {
-    _ = posix.write(idleStream.handle, "idle player playlist\n") catch return StreamError.WriteError;
+pub fn initIdle() StreamError!void {
+    const msg = "idle player playlist\n";
+    const n = posix.write(idleStream.handle, msg) catch return StreamError.WriteError;
+    util.log("n written idle: {}", .{n});
+    if (n != msg.len) return StreamError.WriteError;
 }
 
 pub fn checkIdle() ![2]?Event {
+    // util.log("checking idle", .{});
     var event: [2]?Event = .{ null, null };
     while (true) {
         const n = posix.read(idleStream.handle, &cmdBuf) catch |err| switch (err) {
-            error.WouldBlock => return .{ null, null }, // No data available
+            error.WouldBlock => return .{ null, null },
             else => return err,
         };
-        const index = mem.indexOfScalar(u8, cmdBuf[0..n], '\n') orelse return MemoryError.OutOfMemory;
+        if (n == 0) return .{ null, null };
+        const index = mem.indexOfScalar(u8, cmdBuf[0..n], '\n') orelse return StreamError.ReadError;
         const line = cmdBuf[0..index];
         if (mem.eql(u8, line, "OK")) break;
         if (mem.startsWith(u8, line, "ACK")) return MpdError.Invalid;
@@ -137,6 +137,7 @@ pub fn checkIdle() ![2]?Event {
 
             if (mem.eql(u8, value, "player")) event[0] = Event{ .idle = Idle.player };
             if (mem.eql(u8, value, "playlist")) event[1] = Event{ .idle = Idle.queue };
+            break;
         }
     }
     try initIdle();
@@ -209,7 +210,7 @@ pub const CurrentSong = struct {
 };
 
 pub fn getCurrentSong(song: *CurrentSong, ra: mem.Allocator) !void {
-    var lines = try sendAndSplit("status\n", ra);
+    var lines = try sendAndSplit("currentsong\n", ra);
 
     var songtitle: ?[]const u8 = null;
     var songartist: ?[]const u8 = null;
@@ -237,7 +238,8 @@ pub fn getCurrentSong(song: *CurrentSong, ra: mem.Allocator) !void {
             songalbum = current_song_buf[bufend .. bufend + len];
             bufend += len;
         } else if (mem.startsWith(u8, line, "Track:")) {
-            const trackno_str = mem.trimLeft(u8, line[4..], " ");
+            const trackno_str = mem.trimLeft(u8, line[6..], " ");
+            util.log("trackno: {s}", .{trackno_str});
             song.trackno = try fmt.parseInt(u16, trackno_str, 10);
         } else if (mem.startsWith(u8, line, "Pos:")) {
             const pos_str = mem.trimLeft(u8, line[4..], " ");
@@ -258,17 +260,22 @@ pub const Time = struct {
     duration: u16,
 };
 
-pub fn currentTrackTime() (MpdError || StreamError)!Time {
-    _ = posix.write(cmdStream.handle, "status\n") catch return StreamError.WriteError;
-    const n = posix.read(cmdStream.handle, &cmdBuf) catch return StreamError.ReadError;
-    const line = cmdBuf[0..n];
-    const index = mem.indexOfScalar(u8, line, ':') orelse return MpdError.Invalid;
-    const elapsed = line[0..index];
-    const duration = line[index + 1 ..];
-    return .{
-        .elapsed = fmt.parseInt(u16, elapsed, 10) catch return MpdError.Invalid,
-        .duration = fmt.parseInt(u16, duration, 10) catch return MpdError.Invalid,
-    };
+//(MpdError || StreamError)
+pub fn currentTrackTime(ra: mem.Allocator) !Time {
+    var lines = try sendAndSplit("status\n", ra);
+    while (lines.next()) |line| {
+        if (mem.startsWith(u8, line, "time:")) {
+            const time = mem.trimLeft(u8, line[5..], " ");
+            const index = mem.indexOfScalar(u8, time, ':') orelse return MpdError.Invalid;
+            const elapsed = time[0..index];
+            const duration = time[index + 1 ..];
+            return .{
+                .elapsed = fmt.parseInt(u16, elapsed, 10) catch return MpdError.Invalid,
+                .duration = fmt.parseInt(u16, duration, 10) catch return MpdError.Invalid,
+            };
+        }
+    }
+    return MpdError.NoTime;
 }
 
 pub const Queue = struct {
@@ -910,30 +917,28 @@ fn sendAndSplit(command: []const u8, ra: mem.Allocator) !mem.SplitIterator(u8, .
     const bytes = try readResponse(ra);
     return mem.splitScalar(u8, bytes, '\n');
 }
-
-pub fn readResponse(ra: mem.Allocator) (StreamError || MpdError || MemoryError)![]u8 {
-    debug.assert(cmd_reader.end == 0);
+//(StreamError || MpdError || MemoryError)
+//This shit used to block so I don't think I can use the reader interface
+//Will have to update once the new I/O interface drops
+pub fn readResponse(ra: mem.Allocator) ![]u8 {
     var buffer: std.ArrayList(u8) = .empty;
 
     var firstbuf: [5]u8 = .{0} ** 5;
-    var should_fill: bool = true;
-    while (should_fill) {
-        cmd_reader.fill(readbuf.len) catch |e| switch (e) {
-            error.EndOfStream => should_fill = false,
+    while (true) {
+        const n = posix.read(cmdStream.handle, &cmdBuf) catch |e| switch (e) {
+            error.WouldBlock => continue,
             else => return StreamError.ReadError,
         };
-
         if (firstbuf[0] == 0) {
-            _ = cmd_reader.readSliceShort(&firstbuf) catch return StreamError.ReadError;
+            const max = @min(n, firstbuf.len);
+            @memcpy(firstbuf[0..max], cmdBuf[0..max]);
             if (mem.eql(u8, &firstbuf, "ACK [")) return MpdError.Invalid;
             if (mem.startsWith(u8, &firstbuf, "OK\n")) return MpdError.NoSongs;
         }
 
-        buffer.appendSlice(ra, cmd_reader.buffered()) catch return MemoryError.AllocatorError;
+        buffer.appendSlice(ra, cmdBuf[0..n]) catch return MemoryError.AllocatorError;
+        if (n != cmdBuf.len or n == 0) break;
     }
-    if (!mem.eql(u8, buffer.items[buffer.items.len - 3 .. buffer.items.len], "OK\n")) return MpdError.Invalid;
-
-    try cmd_reader.rebase(readbuf.len);
     return buffer.items;
 }
 

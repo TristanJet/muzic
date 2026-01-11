@@ -45,11 +45,13 @@ Let's freaking go
 - [x] fallback if TTY mode
     - [x] empty block char check
 - [x] text too long - window size
-- [ ] migrate to 0.15
+- [x] migrate to 0.15
+- [ ] CurrentSong should have optional values, initialization is unsafe
+- [ ] why is getting albums, songs, artists slow
 
 ## next update
 - [ ] **rewrite** - make maintaineable
-- [ ] CurrentSong should have optional values, initialization is unsafe
+- [ ] handle the non blocking I/O properly ; worst case it blocks the whole terminal!
 - [ ] inc should not be in app.scroll_q
 - [ ] hold to batch inputs - arrow seeking especially
 - [ ] allow browse by files and directories - (no tags set)

@@ -142,7 +142,7 @@ fn getTty() !void {
     tty = try fs.cwd().openFile(
         "/dev/tty",
         .{
-            .mode = fs.File.OpenMode.write_only,
+            .mode = fs.File.OpenMode.read_write,
             .allow_ctty = false,
             .lock = .none,
             .lock_nonblocking = false,
@@ -157,7 +157,7 @@ pub fn fileDescriptor() fs.File.Handle {
 }
 
 pub fn readBytes(read_buffer: []u8) ReadError!usize {
-    return tty.read(read_buffer) catch |err| switch (err) {
+    return posix.read(tty.handle, read_buffer) catch |err| switch (err) {
         error.WouldBlock => 0, // No input available
         else => ReadError.Unexpected,
     };

@@ -838,7 +838,8 @@ fn handleIdle(idle_event: Idle, app: *State, render_state: *RenderState(n_browse
         .player => {
             app.prev_id = app.song.id;
             try mpd.getCurrentSong(app.song, alloc.respAllocator);
-            app.song.time = try mpd.currentTrackTime();
+            log("song title: {s}", .{app.song.title});
+            app.song.time = try mpd.currentTrackTime(alloc.respAllocator);
             app.isPlaying = try mpd.getPlayState(alloc.respAllocator);
             app.last_elapsed = app.song.time.elapsed;
             //lazy

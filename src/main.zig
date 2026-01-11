@@ -90,7 +90,7 @@ pub fn main() !void {
     defer dw.deinit(alloc.persistentAllocator);
 
     try mpd.getCurrentSong(&initial_song, alloc.respAllocator);
-    initial_song.time = try mpd.currentTrackTime();
+    initial_song.time = try mpd.currentTrackTime(alloc.respAllocator);
     var initial_inc: usize = 0;
     var queue: mpd.Queue = try mpd.Queue.init(alloc.respAllocator, alloc.persistentAllocator, window.panels.queue.validArea().ylen);
     const initial_pos = if (queue.pl_len > 0) queue.jumpToPos(initial_song.pos, &initial_inc) else 0;
