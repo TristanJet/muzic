@@ -119,7 +119,6 @@ pub fn initIdle() StreamError!void {
 }
 
 pub fn checkIdle() ![2]?Event {
-    // util.log("checking idle", .{});
     var event: [2]?Event = .{ null, null };
     while (true) {
         const n = posix.read(idleStream.handle, &cmdBuf) catch |err| switch (err) {

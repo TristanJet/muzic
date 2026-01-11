@@ -9,12 +9,6 @@ const proc = std.process;
 const fs = std.fs;
 const net = std.net;
 
-const logttypath = switch (builtin.os.tag) {
-    .linux => "/dev/tty",
-    .macos => "/dev/ttys001",
-    else => @compileError("Unsupported OS"),
-};
-
 const helpmsg =
     \\-H, --host <str>      MPD host (default: 127.0.0.1)
     \\-p, --port <u16>      MPD port (default: 6600)
@@ -49,7 +43,7 @@ const win_too_small: []const u8 =
     \\
 ;
 
-const version = "0.9.2";
+const version = "1.0.0-dev";
 
 pub const OptionValues = struct {
     host: ?[4]u8,
@@ -123,6 +117,7 @@ test "validIp" {
 
 pub fn printMpdFail(allocator: mem.Allocator, host: ?[4]u8, port: ?u16) !void {
     const tty = try getTty();
+    defer tty.close();
     const msg: []const u8 = if (host) |arr|
         try fmt.allocPrint(allocator, no_mpd_msg, .{
             arr[0],
@@ -140,31 +135,30 @@ pub fn printMpdFail(allocator: mem.Allocator, host: ?[4]u8, port: ?u16) !void {
             port orelse 6600,
         });
     try tty.writeAll(msg);
-    tty.close();
 }
 
 pub fn printInvArg() !void {
     const tty = try getTty();
+    defer tty.close();
     try tty.writeAll(inv_arg_msg);
-    tty.close();
 }
 
 pub fn printInvIp4(allocator: mem.Allocator, e: InvalidIPv4Error) !void {
     const tty = try getTty();
+    defer tty.close();
     const arg: []const u8 = switch (e) {
         InvalidIPv4Error.InvalidHost => "host",
         InvalidIPv4Error.InvalidPort => "port",
     };
     const msg: []const u8 = try fmt.allocPrint(allocator, inv_ipv4_msg, .{arg});
     try tty.writeAll(msg);
-    tty.close();
 }
 
 pub fn printWinSmall(allocator: mem.Allocator) !void {
     const tty = try getTty();
+    defer tty.close();
     const msg: []const u8 = try fmt.allocPrint(allocator, win_too_small, .{ win.MIN_WIN_WIDTH, win.MIN_WIN_HEIGHT });
     try tty.writeAll(msg);
-    tty.close();
 }
 
 fn getTty() !fs.File {
