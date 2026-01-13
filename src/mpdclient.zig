@@ -24,7 +24,7 @@ var cmdBuf: [64]u8 = undefined;
 
 var readbuf: [4096]u8 = undefined;
 
-var current_song_buf: [CurrentSong.MAX_LEN * 3]u8 = undefined;
+var current_song_buf: [CurrentSong.MAX_LEN * 4]u8 = undefined;
 
 const StreamType = enum {
     command,
@@ -199,26 +199,33 @@ fn handleCurrentSongField(key: []const u8, value: []const u8, song: *CurrentSong
 pub const CurrentSong = struct {
     pub const MAX_LEN = 64;
 
-    title: []const u8,
-    artist: []const u8,
-    album: []const u8,
-    trackno: u16,
+    uri: []const u8,
     pos: usize,
     id: usize,
     time: Time,
+    title: ?[]const u8,
+    artist: ?[]const u8,
+    album: ?[]const u8,
+    trackno: ?u16,
 };
 
 pub fn getCurrentSong(song: *CurrentSong, ra: mem.Allocator) !void {
     var lines = try sendAndSplit("currentsong\n", ra);
 
+    var songuri: ?[]const u8 = null;
     var songtitle: ?[]const u8 = null;
     var songartist: ?[]const u8 = null;
     var songalbum: ?[]const u8 = null;
 
-    //Behaviour if the tags aren't found is undefined, I need to make this optional
     var bufend: u16 = 0;
     while (lines.next()) |line| {
-        if (mem.startsWith(u8, line, "Title:")) {
+        if (mem.startsWith(u8, line, "file:")) {
+            const uri = mem.trimLeft(u8, line[6..], " ");
+            const len: u16 = @min(uri.len, CurrentSong.MAX_LEN);
+            @memcpy(current_song_buf[bufend .. bufend + len], uri[0..len]);
+            songuri = current_song_buf[bufend .. bufend + len];
+            bufend += len;
+        } else if (mem.startsWith(u8, line, "Title:")) {
             const title = mem.trimLeft(u8, line[6..], " ");
             const len: u16 = @min(title.len, CurrentSong.MAX_LEN);
             @memcpy(current_song_buf[bufend .. bufend + len], title[0..len]);
@@ -249,9 +256,10 @@ pub fn getCurrentSong(song: *CurrentSong, ra: mem.Allocator) !void {
         }
     }
 
-    song.title = songtitle orelse "";
-    song.artist = songartist orelse "";
-    song.album = songalbum orelse "";
+    song.uri = songuri orelse return error.NoUri;
+    song.title = songtitle;
+    song.artist = songartist;
+    song.album = songalbum;
 }
 
 pub const Time = struct {
@@ -680,9 +688,9 @@ pub const QSong = struct {
     pub const MAX_STR_LEN = 64;
     title: ?[]const u8,
     artist: ?[]const u8,
-    time: ?u16,
-    pos: ?usize,
-    id: ?usize,
+    time: u16,
+    pos: usize,
+    id: usize,
 };
 
 pub fn getPlaylistLen(respAllocator: mem.Allocator) !usize {

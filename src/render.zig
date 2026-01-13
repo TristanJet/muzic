@@ -284,14 +284,11 @@ fn visualHlCond(itempos: ?usize, cursor: usize, anchor: usize) bool {
     return start <= pos and pos <= end;
 }
 
-fn writeQueueLine(area: window.Area, row: usize, song: mpd.QSong, time: ?u16, wa: mem.Allocator) !void {
+fn writeQueueLine(area: window.Area, row: usize, song: mpd.QSong, time: u16, wa: mem.Allocator) !void {
     const n = area.xlen / 4;
     const gapcol = area.xlen / 8;
     const no_title = "NO TITLE";
-    const ftime: []const u8 = if (time) |t|
-        formatSeconds(wa, @as(u64, t)) catch ""
-    else
-        "";
+    const ftime: []const u8 = formatSeconds(wa, @as(u64, time)) catch "";
 
     try term.moveCursor(row, area.xmin);
     if (song.title) |title| {
@@ -348,15 +345,18 @@ fn currTrackRender(
     const xmax = area.xmax;
     const ycent = p.getYCentre();
 
-    const artist_alb = if (s.album.len == 0)
-        s.artist
-    else
-        try std.fmt.allocPrint(allocator, "{s} \"{s}\"", .{
-            s.artist,
-            s.album,
-        });
+    const title: []const u8 = s.title orelse s.uri;
 
-    //Include co-ords in the panel drawing?
+    var artist_alb: []const u8 = "";
+    if (s.artist) |artist| {
+        if (s.album) |album| {
+            artist_alb = try std.fmt.allocPrint(allocator, "{s} \"{s}\"", .{
+                artist,
+                album,
+            });
+        }
+        artist_alb = artist;
+    }
 
     if (!current.first_render) {
         try term.clearLine(ycent, xmin + 11, xmax);
@@ -366,7 +366,7 @@ fn currTrackRender(
     try writeCenterBounded(artist_alb, ycent, xmin, xmax);
     try term.setColor(.cyan);
     try term.setBold();
-    try writeLineCenter(s.title[0..@min(s.title.len, xmax)], ycent - 2, xmin, xmax);
+    try writeLineCenter(title[0..@min(title.len, xmax)], ycent - 2, xmin, xmax);
     try term.attributeReset();
     if (fr.*) fr.* = false;
 }
