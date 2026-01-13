@@ -53,8 +53,8 @@ fn initErr() !void {
 }
 
 pub fn log(comptime format: []const u8, args: anytype) void {
-    defer debug_log.n += 1;
     if (builtin.mode == .Debug) {
+        defer debug_log.n += 1;
         const msg = std.fmt.bufPrint(&debug_log.buffer, format ++ "\n", args) catch "ERROR FORMATTING";
         const no = std.fmt.bufPrint(debug_log.buffer[msg.len..], "{} -> ", .{debug_log.n}) catch unreachable;
         _ = posix.writev(logtty.handle, &.{ .{ .base = no.ptr, .len = no.len }, .{ .base = msg.ptr, .len = msg.len } }) catch return;
