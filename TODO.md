@@ -46,6 +46,7 @@ Let's freaking go
     - [x] empty block char check
 - [x] text too long - window size
 - [x] migrate to 0.15
+- [x] fix I/O
 - [ ] CurrentSong should have optional values, initialization is unsafe
 - [ ] fix arena bugs, make managed struct?
 - [ ] why is getting albums, songs, artists slow

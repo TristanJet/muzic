@@ -701,7 +701,7 @@ fn onFind(
         try algo.init(@max(window.panels.find.validArea().ylen, state.n_browse_matches));
         algo_init.* = true;
     }
-    try search_sample.update(searchable, uppers, alloc.persistentAllocator);
+    search_sample.* = try .init(searchable, uppers, alloc.typingAllocator);
     input_state.* = .typing_find;
     rs.find_clear = true;
     rs.queue = true;
@@ -737,10 +737,10 @@ fn switchToTyping(
             },
             else => unreachable,
         }
-        try search_sample.update(set, uppers, alloc.persistentAllocator);
+        search_sample.* = try .init(set, uppers, alloc.typingAllocator);
     } else {
         const disp = col.displaying orelse return error.NoDisplaying;
-        try search_sample.update(disp, null, alloc.persistentAllocator);
+        search_sample.* = try .init(disp, null, alloc.typingAllocator);
     }
 }
 

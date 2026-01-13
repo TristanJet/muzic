@@ -89,12 +89,16 @@ pub fn main() !void {
     try dw.init(alloc.persistentAllocator, window.panels);
     defer dw.deinit(alloc.persistentAllocator);
 
+    util.log("get current song", .{});
     try mpd.getCurrentSong(&initial_song, alloc.respAllocator);
     initial_song.time = try mpd.currentTrackTime(alloc.respAllocator);
+
+    util.log("queue filling", .{});
     var initial_inc: usize = 0;
     var queue: mpd.Queue = try mpd.Queue.init(alloc.respAllocator, alloc.persistentAllocator, window.panels.queue.validArea().ylen);
     const initial_pos = if (queue.pl_len > 0) queue.jumpToPos(initial_song.pos, &initial_inc) else 0;
     try queue.initialFill(alloc.respAllocator, alloc.persistentAllocator);
+
     initial_typing.init();
 
     var mpd_data = state.Data{
@@ -113,6 +117,7 @@ pub fn main() !void {
         .songs_init = false,
     };
 
+    util.log("pre initial state", .{});
     const initial_state = state.State{
         .quit = false,
         .first_render = true,
@@ -144,8 +149,8 @@ pub fn main() !void {
         .viewable_searchable = null,
 
         .algo_init = false,
-        .search_sample_str = .init(),
-        .search_sample_su = .init(),
+        .search_sample_str = undefined,
+        .search_sample_su = undefined,
         .search_state = .init(alloc.typingAllocator),
         .find_matches = try alloc.persistentAllocator.alloc(mpd.SongStringAndUri, window.panels.find.validArea().ylen),
         .str_matches = try alloc.persistentAllocator.alloc([]const u8, state.n_browse_matches),
@@ -158,12 +163,14 @@ pub fn main() !void {
 
         .input_state = .normal_queue,
     };
+    util.log("initial state", .{});
 
     _ = alloc.respArena.reset(.free_all);
     var app = App.init(initial_state, &mpd_data);
 
     var render_state = RenderState(state.n_browse_columns).init();
 
+    util.log("init complete - beginning main loop", .{});
     while (!app.state.quit) {
         const loop_start_time = time.milliTimestamp();
 

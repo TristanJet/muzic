@@ -703,16 +703,25 @@ pub fn getQueue(queue: *Queue, dir: Queue.Dir, ra: mem.Allocator, addsize: usize
     var songs: SongIterator = undefined;
     switch (dir) {
         .forward => {
-            const start, const end = queue.bound.checkBoundary(queue.ibufferstart + queue.fill, queue.ibufferstart + queue.fill + addsize);
+            const start, const end = queue.bound.check(queue.ibufferstart + queue.fill, queue.ibufferstart + queue.fill + addsize);
+            const buffer = fetchQueueBuf(ra, start, end) catch |e|
+                switch (e) {
+                    MpdError.NoSongs => return 0,
+                    else => return e,
+                };
             songs = SongIterator{
-                .buffer = try fetchQueueBuf(ra, start, end),
+                .buffer = buffer,
                 .index = 0,
                 .ireverse = 0,
             };
         },
         .backward => {
-            const start, const end = queue.bound.checkBoundary(queue.ibufferstart -| addsize, queue.ibufferstart);
-            const buf = try fetchQueueBuf(ra, start, end);
+            const start, const end = queue.bound.check(queue.ibufferstart -| addsize, queue.ibufferstart);
+            const buf = fetchQueueBuf(ra, start, end) catch |e|
+                switch (e) {
+                    MpdError.NoSongs => return 0,
+                    else => return e,
+                };
             songs = SongIterator{
                 .buffer = buf,
                 .index = 0,
@@ -727,15 +736,16 @@ const Boundary = struct {
     bstart: usize,
     bend: usize,
 
-    fn checkBoundary(self: Boundary, start: usize, end: usize) struct { usize, usize } {
+    fn check(self: Boundary, start: usize, end: usize) struct { usize, usize } {
         return .{ @max(start, self.bstart), @min(end, self.bend) };
     }
 };
 
 fn fetchQueueBuf(respAllocator: mem.Allocator, start: usize, end: usize) ![]const u8 {
     const command = try fmt.allocPrint(respAllocator, "playlistinfo {}:{}\n", .{ start, end });
+    util.log("fetching: {s}", .{command});
     _ = posix.write(cmdStream.handle, command) catch return StreamError.WriteError;
-    return try readResponse(respAllocator);
+    return try readCmd(respAllocator);
 }
 
 fn allocQueue(
@@ -913,33 +923,31 @@ pub fn getPlayState(respAlloc: mem.Allocator) !bool {
 
 fn sendAndSplit(command: []const u8, ra: mem.Allocator) !mem.SplitIterator(u8, .scalar) {
     _ = posix.write(cmdStream.handle, command) catch return StreamError.WriteError;
-    const bytes = try readResponse(ra);
+    const bytes = try readCmd(ra);
     return mem.splitScalar(u8, bytes, '\n');
 }
-//(StreamError || MpdError || MemoryError)
-//This shit used to block so I don't think I can use the reader interface
-//Will have to update once the new I/O interface drops
-pub fn readResponse(ra: mem.Allocator) ![]u8 {
+
+pub fn readCmd(ra: mem.Allocator) ![]u8 {
+    util.log("-------Beginning Read------------", .{});
     var buffer: std.ArrayList(u8) = .empty;
 
-    var firstbuf: [5]u8 = .{0} ** 5;
     while (true) {
-        const n = posix.read(cmdStream.handle, &cmdBuf) catch |e| switch (e) {
-            error.WouldBlock => continue,
-            else => return StreamError.ReadError,
-        };
-        if (firstbuf[0] == 0) {
-            const max = @min(n, firstbuf.len);
-            @memcpy(firstbuf[0..max], cmdBuf[0..max]);
-            if (mem.eql(u8, &firstbuf, "ACK [")) return MpdError.Invalid;
-            if (mem.startsWith(u8, &firstbuf, "OK\n")) return MpdError.NoSongs;
-        }
+        util.log("reading", .{});
+        const n = try posix.read(cmdStream.handle, &readbuf);
+        util.log("nread: {}", .{n});
+        if (n == 0) break;
 
-        buffer.appendSlice(ra, cmdBuf[0..n]) catch return MemoryError.AllocatorError;
-        if (n != cmdBuf.len or n == 0) break;
+        buffer.appendSlice(ra, readbuf[0..n]) catch return MemoryError.AllocatorError;
+        if (buffer.items.len >= 3 and
+            mem.eql(u8, buffer.items[buffer.items.len -| 3..buffer.items.len], "OK\n"))
+            break;
     }
+    if (mem.startsWith(u8, buffer.items, "ACK [")) return MpdError.Invalid;
+    if (mem.startsWith(u8, buffer.items, "OK\n")) return MpdError.NoSongs;
     return buffer.items;
 }
+
+fn readNonBlock() ![]u8 {}
 
 const SongIterator = struct {
     buffer: []const u8,
@@ -1217,7 +1225,7 @@ fn escapeMpdString(allocator: mem.Allocator, str: []const u8) ![]u8 {
 
 pub fn listAllData(respAllocator: std.mem.Allocator) ![]u8 {
     _ = posix.write(cmdStream.handle, "listallinfo\n") catch return StreamError.WriteError;
-    return try readResponse(respAllocator);
+    return try readCmd(respAllocator);
 }
 
 pub fn getAllSongs(heapAllocator: mem.Allocator, data: []const u8) ![]SongStringAndUri {

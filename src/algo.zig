@@ -21,22 +21,16 @@ pub fn SearchSample(comptime T: type) type {
         set: []const T,
         uppers: ?[]const []const u16,
 
-        pub fn init() Self {
-            return Self{
-                .indices = .empty,
-                .set = &[_]T{},
-                .uppers = null,
-            };
-        }
-
-        pub fn update(self: *Self, set: []const T, uppers: ?[]const []const u16, gpa: mem.Allocator) !void {
-            try self.indices.ensureTotalCapacity(gpa, set.len);
-            self.indices.items.len = set.len;
+        pub fn init(set: []const T, uppers: ?[]const []const u16, gpa: mem.Allocator) !Self {
+            var indices: ArrayList(usize) = try .initCapacity(gpa, set.len);
             for (0..set.len) |i| {
-                self.indices.items[i] = i;
+                indices.appendAssumeCapacity(i);
             }
-            self.set = set;
-            self.uppers = uppers;
+            return .{
+                .indices = indices,
+                .set = set,
+                .uppers = uppers,
+            };
         }
 
         pub fn itemsFromIndices(self: Self, js: []const usize, out: []T) usize {
