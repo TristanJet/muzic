@@ -287,26 +287,21 @@ fn visualHlCond(itempos: ?usize, cursor: usize, anchor: usize) bool {
 fn writeQueueLine(area: window.Area, row: usize, song: mpd.QSong, time: u16, wa: mem.Allocator) !void {
     const n = area.xlen / 4;
     const gapcol = area.xlen / 8;
-    const no_title = "NO TITLE";
+    const title = song.title orelse song.uri;
     const ftime: []const u8 = formatSeconds(wa, @as(u64, time)) catch "";
 
     try term.moveCursor(row, area.xmin);
-    if (song.title) |title| {
-        const width = try dw.getDisplayWidth(title, .queue);
-        try term.writeAll(title[0..width.byte_offset]);
-        try term.writeByteNTimes(' ', n - width.cells);
-    } else {
-        if (n > no_title.len) {
-            try term.writeAll(no_title);
-            try term.writeByteNTimes(' ', n - no_title.len);
-        } else try term.writeAll(no_title[0..n]);
-    }
+    var width = try dw.getDisplayWidth(title, .queue);
+    try term.writeAll(title[0..width.byte_offset]);
+    try term.writeByteNTimes(' ', n - width.cells);
     try term.writeByteNTimes(' ', gapcol);
+
     if (song.artist) |artist| {
-        const width = try dw.getDisplayWidth(artist, .queue);
+        width = try dw.getDisplayWidth(artist, .queue);
         try term.writeAll(artist[0..width.byte_offset]);
         try term.writeByteNTimes(' ', n - width.cells);
     } else try term.writeByteNTimes(' ', n);
+
     try term.writeByteNTimes(' ', area.xlen - 4 - gapcol - 2 * n);
     try term.moveCursor(row, area.xmax - 4);
     try term.writeAll(ftime);

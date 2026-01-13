@@ -47,7 +47,10 @@ Let's freaking go
 - [x] text too long - window size
 - [x] migrate to 0.15
 - [x] fix I/O
-- [ ] CurrentSong should have optional values, initialization is unsafe
+- [x] CurrentSong should have optional values, initialization is unsafe
+- [x] queue handle no tags
+- [x] weird bug where queue no tags handled differently if zoom out
+- [ ] browser handle no tags
 
 ## next update
 - [ ] **rewrite** - make maintaineable

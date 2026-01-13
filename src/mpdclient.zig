@@ -220,7 +220,7 @@ pub fn getCurrentSong(song: *CurrentSong, ra: mem.Allocator) !void {
     var bufend: u16 = 0;
     while (lines.next()) |line| {
         if (mem.startsWith(u8, line, "file:")) {
-            const uri = mem.trimLeft(u8, line[6..], " ");
+            const uri = mem.trimLeft(u8, line[5..], " ");
             const len: u16 = @min(uri.len, CurrentSong.MAX_LEN);
             @memcpy(current_song_buf[bufend .. bufend + len], uri[0..len]);
             songuri = current_song_buf[bufend .. bufend + len];
@@ -299,6 +299,7 @@ pub const Queue = struct {
     songbuf: ring.Buffer(QSong),
     edgebuf: struct { ?[]QSong, ?[]QSong },
     edge: ?Edge,
+    uribuf: ring.StrBuffer(QSong.MAX_STR_LEN),
     artistbuf: ring.StrBuffer(QSong.MAX_STR_LEN),
     titlebuf: ring.StrBuffer(QSong.MAX_STR_LEN),
     bound: Boundary,
@@ -327,6 +328,7 @@ pub const Queue = struct {
             .songbuf = try ring.Buffer(QSong).init(nsongs, persAllocator),
             .edgebuf = .{ null, null },
             .edge = null,
+            .uribuf = try ring.StrBuffer(QSong.MAX_STR_LEN).init(nsongs, persAllocator),
             .artistbuf = try ring.StrBuffer(QSong.MAX_STR_LEN).init(nsongs, persAllocator),
             .titlebuf = try ring.StrBuffer(QSong.MAX_STR_LEN).init(nsongs, persAllocator),
             .bound = Boundary{
@@ -508,13 +510,13 @@ const Edge = struct {
         util.log("edge size: {}", .{wheight});
         return .{
             .songbuf = try pa.alloc(QSong, 2 * wheight),
-            .strbuf = try pa.alloc(u8, 2 * 2 * QSong.MAX_STR_LEN * wheight),
+            .strbuf = try pa.alloc(u8, (2 * wheight) * (3 * QSong.MAX_STR_LEN)),
         };
     }
 
     fn getEdgeBuffers(self: *Edge, nsongs: usize, plen: usize, wheight: usize, ra: mem.Allocator) !struct { []QSong, ?[]QSong } {
         debug.assert(plen > nsongs);
-        if (self.songbuf.len != 2 * wheight or self.strbuf.len != 2 * 2 * QSong.MAX_STR_LEN * wheight) return error.WindowHeightMismatch;
+        if (self.songbuf.len != 2 * wheight or self.strbuf.len != 2 * 3 * QSong.MAX_STR_LEN * wheight) return error.WindowHeightMismatch;
 
         var ittop = SongIterator{
             .buffer = try fetchQueueBuf(ra, 0, wheight),
@@ -686,6 +688,7 @@ test "iter" {
 
 pub const QSong = struct {
     pub const MAX_STR_LEN = 64;
+    uri: []const u8,
     title: ?[]const u8,
     artist: ?[]const u8,
     time: u16,
@@ -737,7 +740,7 @@ pub fn getQueue(queue: *Queue, dir: Queue.Dir, ra: mem.Allocator, addsize: usize
             };
         },
     }
-    return try allocQueue(&songs, dir, &queue.ring, &queue.songbuf, &queue.titlebuf, &queue.artistbuf, addsize);
+    return try allocQueue(&songs, dir, &queue.ring, &queue.songbuf, &queue.uribuf, &queue.titlebuf, &queue.artistbuf, addsize);
 }
 
 const Boundary = struct {
@@ -761,11 +764,11 @@ fn allocQueue(
     dir: Queue.Dir,
     r: *Ring,
     songbuf: *ring.Buffer(QSong),
+    uribuf: *ring.StrBuffer(QSong.MAX_STR_LEN),
     titlebuf: *ring.StrBuffer(QSong.MAX_STR_LEN),
     artistbuf: *ring.StrBuffer(QSong.MAX_STR_LEN),
     N: usize,
 ) !usize {
-    var current: QSong = undefined;
     var lines: mem.SplitIterator(u8, .scalar) = undefined;
     var next: *const fn (*SongIterator) ?[]const u8 = undefined;
     var strwrite: *const fn (*ring.StrBuffer(QSong.MAX_STR_LEN), Ring, []const u8) []const u8 = undefined;
@@ -788,27 +791,47 @@ fn allocQueue(
     var added: usize = 0;
     while (next(songs)) |song| {
         lines = mem.splitScalar(u8, song, '\n');
+        var uri: ?[]const u8 = null;
+        var title: ?[]const u8 = null;
+        var artist: ?[]const u8 = null;
+        var time: ?u16 = null;
+        var pos: ?usize = null;
+        var id: ?usize = null;
+
         while (lines.next()) |line| {
-            if (mem.startsWith(u8, line, "Title:")) {
-                const title = mem.trimLeft(u8, line[6..], " ");
-                const copied = strwrite(titlebuf, r.*, title);
-                current.title = copied;
+            if (mem.startsWith(u8, line, "file:")) {
+                const str = mem.trimLeft(u8, line[5..], " ");
+                uri = strwrite(uribuf, r.*, str);
+            } else if (mem.startsWith(u8, line, "Title:")) {
+                const str = mem.trimLeft(u8, line[6..], " ");
+                title = strwrite(titlebuf, r.*, str);
             } else if (mem.startsWith(u8, line, "Artist:")) {
-                const artist = mem.trimLeft(u8, line[7..], " ");
-                const copied = strwrite(artistbuf, r.*, artist);
-                current.artist = copied;
+                const str = mem.trimLeft(u8, line[7..], " ");
+                artist = strwrite(artistbuf, r.*, str);
             } else if (mem.startsWith(u8, line, "Time:")) {
-                const time_str = mem.trimLeft(u8, line[5..], " ");
-                current.time = try std.fmt.parseInt(u16, time_str, 10);
+                const str = mem.trimLeft(u8, line[5..], " ");
+                time = try std.fmt.parseInt(u16, str, 10);
             } else if (mem.startsWith(u8, line, "Pos:")) {
-                const pos_str = mem.trimLeft(u8, line[4..], " ");
-                current.pos = try fmt.parseInt(usize, pos_str, 10);
+                const str = mem.trimLeft(u8, line[4..], " ");
+                pos = try fmt.parseInt(usize, str, 10);
             } else if (mem.startsWith(u8, line, "Id:")) {
-                const id_str = mem.trimLeft(u8, line[3..], " ");
-                current.id = try fmt.parseInt(usize, id_str, 10);
+                const str = mem.trimLeft(u8, line[3..], " ");
+                id = try fmt.parseInt(usize, str, 10);
             }
         }
-        songwrite(songbuf, r.*, current);
+        debug.assert(uri != null);
+        debug.assert(time != null);
+        debug.assert(pos != null);
+        debug.assert(id != null);
+
+        songwrite(songbuf, r.*, .{
+            .uri = uri.?,
+            .title = title,
+            .artist = artist,
+            .time = time.?,
+            .pos = pos.?,
+            .id = id.?,
+        });
         added += 1;
         ringUpdate(r);
         if (added == N) break;
@@ -817,35 +840,58 @@ fn allocQueue(
 }
 
 fn queueToBuf(buf: []QSong, strbuf: []u8, songs: *SongIterator, N: usize) !void {
-    var current: QSong = undefined;
     var lines: mem.SplitIterator(u8, .scalar) = undefined;
     var songi: usize = 0;
     var istr: usize = 0;
     while (songs.next()) |song| {
         lines = mem.splitScalar(u8, song, '\n');
+        var uri: ?[]const u8 = null;
+        var title: ?[]const u8 = null;
+        var artist: ?[]const u8 = null;
+        var time: ?u16 = null;
+        var pos: ?usize = null;
+        var id: ?usize = null;
+
         while (lines.next()) |line| {
-            if (mem.startsWith(u8, line, "Title:")) {
-                const title = mem.trimLeft(u8, line[6..], " ");
-                @memcpy(strbuf[istr .. istr + title.len], title);
-                current.title = strbuf[istr .. istr + title.len];
-                istr += title.len;
+            if (mem.startsWith(u8, line, "file:")) {
+                const str = mem.trimLeft(u8, line[5..], " ");
+                @memcpy(strbuf[istr .. istr + str.len], str);
+                uri = strbuf[istr .. istr + str.len];
+                istr += str.len;
+            } else if (mem.startsWith(u8, line, "Title:")) {
+                const str = mem.trimLeft(u8, line[6..], " ");
+                @memcpy(strbuf[istr .. istr + str.len], str);
+                title = strbuf[istr .. istr + str.len];
+                istr += str.len;
             } else if (mem.startsWith(u8, line, "Artist:")) {
-                const artist = mem.trimLeft(u8, line[7..], " ");
-                @memcpy(strbuf[istr .. istr + artist.len], artist);
-                current.artist = strbuf[istr .. istr + artist.len];
-                istr += artist.len;
+                const str = mem.trimLeft(u8, line[7..], " ");
+                @memcpy(strbuf[istr .. istr + str.len], str);
+                artist = strbuf[istr .. istr + str.len];
+                istr += str.len;
             } else if (mem.startsWith(u8, line, "Time:")) {
-                const time_str = mem.trimLeft(u8, line[5..], " ");
-                current.time = try fmt.parseInt(u16, time_str, 10);
+                const str = mem.trimLeft(u8, line[5..], " ");
+                time = try fmt.parseInt(u16, str, 10);
             } else if (mem.startsWith(u8, line, "Pos:")) {
-                const pos_str = mem.trimLeft(u8, line[4..], " ");
-                current.pos = try fmt.parseInt(usize, pos_str, 10);
+                const str = mem.trimLeft(u8, line[4..], " ");
+                pos = try fmt.parseInt(usize, str, 10);
             } else if (mem.startsWith(u8, line, "Id:")) {
-                const id_str = mem.trimLeft(u8, line[3..], " ");
-                current.id = try fmt.parseInt(usize, id_str, 10);
+                const str = mem.trimLeft(u8, line[3..], " ");
+                id = try fmt.parseInt(usize, str, 10);
             }
         }
-        buf[songi] = current;
+        debug.assert(uri != null);
+        debug.assert(time != null);
+        debug.assert(pos != null);
+        debug.assert(id != null);
+
+        buf[songi] = QSong{
+            .uri = uri.?,
+            .artist = artist,
+            .title = title,
+            .time = time.?,
+            .id = id.?,
+            .pos = pos.?,
+        };
         songi += 1;
         if (songi == N) return;
     }
@@ -936,13 +982,10 @@ fn sendAndSplit(command: []const u8, ra: mem.Allocator) !mem.SplitIterator(u8, .
 }
 
 pub fn readCmd(ra: mem.Allocator) ![]u8 {
-    util.log("-------Beginning Read------------", .{});
     var buffer: std.ArrayList(u8) = .empty;
 
     while (true) {
-        util.log("reading", .{});
         const n = try posix.read(cmdStream.handle, &readbuf);
-        util.log("nread: {}", .{n});
         if (n == 0) break;
 
         buffer.appendSlice(ra, readbuf[0..n]) catch return MemoryError.AllocatorError;
