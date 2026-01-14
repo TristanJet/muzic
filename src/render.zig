@@ -172,7 +172,7 @@ fn drawHeader(p: window.Area, text: []const u8) !void {
     }
 }
 
-fn formatSeconds(allocator: mem.Allocator, seconds: u64) ![]const u8 {
+fn formatSeconds(allocator: mem.Allocator, seconds: u16) ![]const u8 {
     const minutes = seconds / 60;
     const remainingSeconds = seconds % 60;
 
@@ -288,7 +288,7 @@ fn writeQueueLine(area: window.Area, row: usize, song: mpd.QSong, time: u16, wa:
     const n = area.xlen / 4;
     const gapcol = area.xlen / 8;
     const title = song.title orelse song.uri;
-    const ftime: []const u8 = formatSeconds(wa, @as(u64, time)) catch "";
+    const ftime: []const u8 = formatSeconds(wa, time) catch "";
 
     try term.moveCursor(row, area.xmin);
     var width = try dw.getDisplayWidth(title, .queue);
@@ -302,8 +302,8 @@ fn writeQueueLine(area: window.Area, row: usize, song: mpd.QSong, time: u16, wa:
         try term.writeByteNTimes(' ', n - width.cells);
     } else try term.writeByteNTimes(' ', n);
 
-    try term.writeByteNTimes(' ', area.xlen - 4 - gapcol - 2 * n);
-    try term.moveCursor(row, area.xmax - 4);
+    try term.writeByteNTimes(' ', area.xlen - ftime.len - gapcol - 2 * n);
+    try term.moveCursor(row, area.xmax - ftime.len);
     try term.writeAll(ftime);
 }
 

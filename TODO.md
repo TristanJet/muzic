@@ -50,7 +50,8 @@ Let's freaking go
 - [x] CurrentSong should have optional values, initialization is unsafe
 - [x] queue handle no tags
 - [x] weird bug where queue no tags handled differently if zoom out
-- [ ] browser handle no tags
+- [x] browser files
+- [ ] browser handle no tags testing
 
 ## next update
 - [ ] **rewrite** - make maintaineable
