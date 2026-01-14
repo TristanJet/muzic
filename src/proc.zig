@@ -43,7 +43,7 @@ const win_too_small: []const u8 =
     \\
 ;
 
-const version = "1.0.0-dev";
+const version = "1.0.0";
 
 pub const OptionValues = struct {
     host: ?[4]u8,
