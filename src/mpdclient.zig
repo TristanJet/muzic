@@ -31,6 +31,11 @@ const StreamType = enum {
     idle,
 };
 
+const ConnectionFlag = enum {
+    block,
+    nonblock,
+};
+
 pub const Error = StreamError || MpdError || MemoryError;
 
 pub const StreamError = error{
@@ -77,7 +82,7 @@ pub fn handleArgs(arg_host: ?[4]u8, arg_port: ?u16) void {
     if (arg_port) |arg| port = arg;
 }
 
-pub fn connect(stream_type: StreamType, nonblock: bool) (StreamError || MpdError)!void {
+pub fn connect(stream_type: StreamType, flag: ConnectionFlag) (StreamError || MpdError)!void {
     const peer = net.Address.initIp4(host, port);
 
     const stream = net.tcpConnectToAddress(peer) catch return StreamError.ServerNotFound;
@@ -87,7 +92,7 @@ pub fn connect(stream_type: StreamType, nonblock: bool) (StreamError || MpdError
 
     if (bytes_read < 2 or !mem.eql(u8, received_data[0..2], "OK")) return MpdError.Invalid;
 
-    if (nonblock) {
+    if (flag == .nonblock) {
         const flags = posix.fcntl(stream.handle, posix.F.GETFL, 0) catch return StreamError.FcntlError;
         const updated = posix.fcntl(stream.handle, posix.F.SETFL, util.flagNonBlock(flags)) catch return StreamError.FcntlError;
         if ((updated & 0x0004) != 0) return StreamError.FcntlError;
@@ -549,7 +554,7 @@ test "queueinit" {
     const pa = all.persistentAllocator;
     const ra = all.respAllocator;
 
-    try connect(.command, false);
+    try connect(.command, .block);
 
     const plen = try getPlaylistLen(ra);
     debug.print("plen: {}\n", .{plen});
@@ -589,7 +594,7 @@ test "getedge" {
     const pa = all.persistentAllocator;
     const ra = all.respAllocator;
 
-    try connect(.command, false);
+    try connect(.command, .block);
 
     const plen = try getPlaylistLen(ra);
     debug.print("plen: {}\n", .{plen});
@@ -906,7 +911,7 @@ test "fill" {
     defer respArena.deinit();
     const respAllocator = respArena.allocator();
 
-    try connect(.command, false);
+    try connect(.command, .block);
 
     var queue = try Queue.init(respAllocator, heapAllocator, 4);
     // _ = respArena.reset(.free_all);
@@ -1048,6 +1053,7 @@ fn getAllType(data_type: []const u8, heapAllocator: mem.Allocator, respAllocator
     while (lines.next()) |line| {
         if (mem.indexOf(u8, line, ": ")) |separator_index| {
             const value = line[separator_index + 2 ..];
+            if (value.len == 0) continue;
             const copied_value = try heapAllocator.dupe(u8, value);
             try array.append(heapAllocator, copied_value);
         }
@@ -1186,7 +1192,7 @@ test "addFromArtist" {
     defer heapArena.deinit();
     const heapAllocator = heapArena.allocator();
 
-    _ = try connect(.command, false);
+    _ = try connect(.command, .block);
 
     const artist = "Playboi Carti";
     try addAllFromArtist(heapAllocator, artist);
@@ -1317,6 +1323,20 @@ pub fn getAllSongs(heapAllocator: mem.Allocator, data: []const u8) ![]SongString
     }
 
     return try songs.toOwnedSlice(heapAllocator);
+}
+
+pub fn getUris(ha: mem.Allocator, data: []const u8) ![][]const u8 {
+    var uris: ArrayList([]const u8) = .empty;
+    var lines = mem.splitScalar(u8, data, '\n');
+
+    while (lines.next()) |line| {
+        if (mem.startsWith(u8, line, "file:")) {
+            const str = mem.trimLeft(u8, line[5..], " ");
+            try uris.append(ha, try ha.dupe(u8, str));
+        }
+    }
+
+    return uris.items;
 }
 
 pub fn getSongStringAndUri(heapAllocator: mem.Allocator, data: []const u8) ![]SongStringAndUri {
@@ -1462,7 +1482,7 @@ pub fn getYanked(start: usize, stop: usize, out: *Yanked, ra: mem.Allocator) !vo
 test "del" {
     const alloc = @import("allocators.zig");
 
-    try connect(.command, false);
+    try connect(.command, .block);
 
     var del = Yanked.init(&alloc.delArena);
     const start = 5;

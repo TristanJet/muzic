@@ -65,7 +65,7 @@ pub fn main() !void {
 
     mpd.handleArgs(args.host, args.port);
     util.log("before connect", .{});
-    mpd.connect(.command, false) catch |e| switch (e) {
+    mpd.connect(.command, .block) catch |e| switch (e) {
         mpd.StreamError.ServerNotFound => {
             try proc.printMpdFail(wrkallocator, args.host, args.port);
             return;
@@ -73,7 +73,7 @@ pub fn main() !void {
         else => return error.MpdConnectionFailed,
     };
     defer mpd.disconnect(.command);
-    mpd.connect(.idle, true) catch |e| switch (e) {
+    mpd.connect(.idle, .nonblock) catch |e| switch (e) {
         mpd.StreamError.ServerNotFound => {
             try proc.printMpdFail(wrkallocator, args.host, args.port);
             return;
@@ -115,6 +115,8 @@ pub fn main() !void {
         .songs_lower = null,
         .song_titles = null,
         .songs_init = false,
+        .uris = null,
+        .uris_init = false,
     };
 
     util.log("pre initial state", .{});

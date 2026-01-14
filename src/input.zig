@@ -202,7 +202,6 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_br
             const previ = app.search_state.isearch.pop() orelse return;
             app.search_sample_su.indices = .fromOwnedSlice(@constCast(previ));
             const imatches = app.search_state.imatch.pop() orelse return;
-            util.log("imatch 0: {}", .{imatches[0]});
             const n = app.search_sample_su.itemsFromIndices(imatches, app.find_matches);
             util.log("best match: {s}", .{app.find_matches[0].string});
 
@@ -221,7 +220,6 @@ fn typingFind(char: u8, app: *state.State, render_state: *RenderState(state.n_br
                 window.panels.find.validArea().ylen,
                 alloc.persistentAllocator,
             );
-            util.log("imatch 0: {}", .{imatches[0]});
             try app.search_state.imatch.append(alloc.typingAllocator, try app.search_state.dupe(imatches));
             const n = app.search_sample_su.itemsFromIndices(imatches, app.find_matches);
             util.log("best match: {s}", .{app.find_matches[0].string});
@@ -611,6 +609,10 @@ fn handleNormalBrowse(char: u8, app: *state.State, render_state: *RenderState(st
                         const songs = mpd_data.songs orelse return;
                         node_buffer = state.Browser.apexTracks(songs, titles);
                     },
+                    3 => {
+                        const uris = mpd_data.uris orelse return;
+                        node_buffer = state.Browser.apexUris(uris);
+                    },
                     else => unreachable,
                 }
             }
@@ -845,6 +847,10 @@ fn browserScrollVertical(dir: cursorDirection, current: *state.BrowseColumn, nex
                     _ = try mpd_data.init(.songs);
                     col.displaying = mpd_data.song_titles;
                 },
+                3 => {
+                    _ = try mpd_data.init(.uris);
+                    col.displaying = mpd_data.uris;
+                },
                 else => unreachable,
             }
         }
@@ -878,8 +884,16 @@ fn browserHandleEnter(allocator: mem.Allocator, abs_pos: usize, mpd_data: *const
             if (next_col_ready) mpd.addList(allocator, tracks) catch return error.CommandFailed;
         },
         .Artists => {
-            const artist = mpd_data.artists.?[abs_pos];
+            const artists = mpd_data.artists orelse return error.NoArtists;
+            const artist = artists[abs_pos];
             try mpd.addAllFromArtist(allocator, artist);
+        },
+        .Uris => {
+            const uris = mpd_data.uris orelse return error.NoUris;
+            if (abs_pos < uris.len) {
+                mpd.addFromUri(allocator, uris[abs_pos]) catch return error.CommandFailed;
+                return;
+            } else return error.OutOfBounds;
         },
         else => return,
     }

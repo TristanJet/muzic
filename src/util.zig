@@ -7,8 +7,8 @@ const posix = std.posix;
 var logtty: fs.File = undefined;
 const state = @import("state.zig");
 const alloc = @import("allocators.zig");
-const lowerBuf1: *[512]u8 = alloc.ptrLower1;
-const lowerBuf2: *[512]u8 = alloc.ptrLower2;
+const lowerBuf1: []u8 = alloc.ptrLower1;
+const lowerBuf2: []u8 = alloc.ptrLower2;
 const SearchSample = @import("algo.zig").SearchSample;
 const ascii = std.ascii;
 
@@ -102,7 +102,7 @@ fn compareStrings(context: S, mid_item: []const u8, index: usize) math.Order {
     if (context.uppers) |uppers| {
         lowerItem = state.fastLowerString(mid_item, uppers[index], context.lowerBuf);
     } else {
-        lowerItem = ascii.lowerString(context.lowerBuf, lowerItem);
+        lowerItem = ascii.lowerString(context.lowerBuf, mid_item);
     }
     const order = std.mem.order(u8, context.key, lowerItem);
     return order;

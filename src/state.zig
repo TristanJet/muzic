@@ -82,16 +82,20 @@ pub const Data = struct {
     songs_lower: ?[]const []const u16,
     songs: ?[]const mpd.SongStringAndUri,
     songs_init: bool,
+    uris: ?[]const []const u8,
+    uris_init: bool,
 
-    pub fn init(self: *Data, D: enum { searchable, songs, albums, artists }) !bool {
+    pub fn init(self: *Data, D: enum { searchable, songs, albums, artists, uris }) !bool {
         switch (D) {
             .searchable => {
+                defer self.deinitsongdata();
                 if (self.searchable_init) return false;
                 try self.initSearchable(alloc.persistentAllocator, alloc.songDataAllocator);
                 self.searchable_init = true;
                 log("init searchable", .{});
             },
             .songs => {
+                defer self.deinitsongdata();
                 if (self.songs_init) return false;
                 try self.initSongs(alloc.persistentAllocator, alloc.songDataAllocator);
                 self.songs_init = true;
@@ -109,8 +113,28 @@ pub const Data = struct {
                 self.artists_init = true;
                 log("init artists", .{});
             },
+            .uris => {
+                defer self.deinitsongdata();
+                if (self.uris_init) return false;
+                try self.initUris(alloc.persistentAllocator, alloc.songDataAllocator);
+                self.uris_init = true;
+            },
         }
         return true;
+    }
+
+    fn deinitsongdata(self: *const Data) void {
+        if (self.searchable_init and self.songs_init and self.uris_init) {
+            alloc.songData.deinit();
+            song_data = null;
+        }
+    }
+
+    fn initUris(self: *Data, heap_arena: mem.Allocator, songdata_arena: mem.Allocator) !void {
+        if (song_data == null) song_data = try mpd.listAllData(songdata_arena);
+        const uris: [][]const u8 = try mpd.getUris(heap_arena, song_data.?);
+        sortStringsLex(uris);
+        self.uris = uris;
     }
 
     fn initSearchable(self: *Data, heapAlloc: mem.Allocator, songDataAlloc: mem.Allocator) !void {
@@ -150,11 +174,6 @@ pub const Data = struct {
             }
             self.searchable_lower = lower;
         }
-
-        if (self.songs_init) {
-            alloc.songData.deinit();
-            song_data = null;
-        }
     }
 
     fn initSongs(self: *Data, persistentAlloc: mem.Allocator, songDataAlloc: mem.Allocator) !void {
@@ -175,11 +194,6 @@ pub const Data = struct {
         self.songs = songs;
         self.song_titles = titles;
         self.songs_lower = lower;
-
-        if (self.searchable_init) {
-            alloc.songData.deinit();
-            song_data = null;
-        }
     }
 
     fn initAlbums(self: *Data, persistentAllocator: mem.Allocator, tempArena: *heap.ArenaAllocator) !void {
@@ -212,6 +226,29 @@ pub const Data = struct {
         }
     }
 };
+
+test "inituris" {
+    try mpd.connect(.command, .block);
+    var data = Data{
+        .artists = null,
+        .artists_lower = null,
+        .artists_init = false,
+        .albums = null,
+        .albums_lower = null,
+        .albums_init = false,
+        .searchable = null,
+        .searchable_lower = null,
+        .searchable_init = false,
+        .songs = null,
+        .songs_lower = null,
+        .song_titles = null,
+        .songs_init = false,
+        .uris = null,
+        .uris_init = false,
+    };
+
+    _ = try data.init(.uris);
+}
 
 fn getUpperIndices(strings: []const []const u8, dest: [][]u16, allocator: mem.Allocator) !void {
     for (strings, 0..) |str, i| {
@@ -295,6 +332,7 @@ pub const Column_Type = enum {
     Albums,
     Artists,
     Tracks,
+    Uris,
     Select,
     None,
 };
@@ -358,10 +396,11 @@ pub const NodeApex = enum {
     Albums,
     Artists,
     Tracks,
+    Uris,
     UNSET,
 };
 
-pub const browse_types: [3][]const u8 = .{ "Albums", "Artists", "Songs" };
+pub const browse_types: [4][]const u8 = .{ "Albums", "Artists", "Songs", "Files" };
 
 //Virtual representation of the browser independent of columns
 //Allows to save state of the browser regardless of column layout
@@ -434,6 +473,25 @@ pub const Browser = struct {
         };
     }
 
+    pub fn apexUris(uris: []const []const u8) Browser {
+        return Browser{
+            .buf = .{
+                .{ .pos = 4, .slice_inc = 0, .displaying = &browse_types, .callback_type = null, .type = .Select },
+                .{ .pos = 0, .slice_inc = 0, .displaying = uris, .callback_type = null, .type = .Uris },
+                null,
+                null,
+            },
+            .apex = .Tracks,
+            .index = 0,
+            .len = 2,
+            .tracks = null,
+            .find_filter = .{
+                .artist = null,
+                .album = null,
+            },
+        };
+    }
+
     pub fn setNodes(
         self: *Browser,
         columns: *ColumnArray(n_browse_columns),
@@ -472,6 +530,7 @@ pub const Browser = struct {
                 } else return false;
             },
             .Tracks => return false,
+            .Uris => return false,
             .UNSET => return error.UnsetApex,
         }
     }
