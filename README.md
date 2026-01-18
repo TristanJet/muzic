@@ -2,7 +2,8 @@
 
 **A snappy, slick terminal client for MPD written in Zig with vim-keybindings and fuzzy-finding.**
 
-![short-demo](https://github.com/user-attachments/assets/9112f666-cf60-4512-81f9-943f9225d4a3)
+![demo-muzi-black](https://github.com/user-attachments/assets/4da905c5-f47c-4530-bceb-649d311f61b0)
+
 ## Features
  - Queue manipulation
  - Fuzzy find through entire song library
