@@ -5,7 +5,6 @@ const native_os = builtin.os.tag;
 
 const mem = std.mem;
 
-const fmt = std.fmt;
 const fs = std.fs;
 const os = std.os;
 const posix = std.posix;
@@ -35,10 +34,7 @@ const ReadError = error{
     Unexpected,
 };
 
-const WriteError = error{
-    BufferFull,
-    Unexpected,
-};
+const WriteError = fs.File.WriteError;
 
 pub const OSError = error{
     NotPosix,
@@ -48,7 +44,9 @@ pub fn init() !void {
     caps = try detectTerminal();
     symbols = Symbols.init(caps.is_tty);
     try getTty();
+    errdefer tty.close();
     try uncook();
+    errdefer cook() catch {};
     try setNonBlock();
     try setColor(.white);
     buffer_pos = 0;
@@ -152,6 +150,22 @@ fn getTty() !void {
     out = &writer.interface;
 }
 
+pub fn flush() WriteError!void {
+    out.flush() catch return writer.err.?;
+}
+
+pub fn writeAll(str: []const u8) WriteError!void {
+    out.writeAll(str) catch return writer.err.?;
+}
+
+fn print(comptime fmt: []const u8, args: anytype) WriteError!void {
+    out.print(fmt, args) catch return writer.err.?;
+}
+
+pub fn writeByteNTimes(byte: u8, n: usize) !void {
+    for (0..n) |_| out.writeByte(byte) catch return writer.err.?;
+}
+
 pub fn fileDescriptor() fs.File.Handle {
     return tty.handle;
 }
@@ -189,7 +203,7 @@ fn setNonBlock() !void {
 }
 
 pub fn deinit() !void {
-    try out.flush();
+    try flush();
     //
     // cooked = try posix.tcgetattr(tty.handle);
     // errdefer cook() catch {};
@@ -207,6 +221,7 @@ pub fn deinit() !void {
     // try posix.tcsetattr(tty.handle, .FLUSH, raw);
     //
     try cook();
+    tty.close();
 }
 
 fn uncook() !void {
@@ -224,10 +239,10 @@ fn uncook() !void {
     try posix.tcsetattr(tty.handle, .FLUSH, raw);
 
     // Enter alternate screen buffer
-    try tty.writeAll("\x1b[?1049h");
+    try writeAll("\x1b[?1049h");
     try hideCursor();
     try clear();
-    try out.flush();
+    try flush();
 }
 
 fn cook() !void {
@@ -235,31 +250,31 @@ fn cook() !void {
     try attributeReset();
 
     // Exit alternate screen buffer (restores previous content)
-    try tty.writeAll("\x1b[?1049l");
+    try writeAll("\x1b[?1049l");
 
     try posix.tcsetattr(tty.handle, .FLUSH, cooked);
-    try out.flush();
+    try flush();
 }
 
 pub fn attributeReset() !void {
-    try out.writeAll("\x1B[0m");
+    try writeAll("\x1B[0m");
     try setColor(.white);
 }
 
 pub fn setBold() !void {
-    try out.writeAll("\x1B[1m");
+    try writeAll("\x1B[1m");
 }
 
 pub fn hideCursor() !void {
-    try out.writeAll("\x1B[?25l");
+    try writeAll("\x1B[?25l");
 }
 
 pub fn showCursor() !void {
-    try out.writeAll("\x1B[?25h");
+    try writeAll("\x1B[?25h");
 }
 
 pub fn highlight() !void {
-    try out.writeAll("\x1B[7m");
+    try writeAll("\x1B[7m");
 }
 
 pub const Color = enum {
@@ -273,16 +288,13 @@ pub const Color = enum {
 };
 
 pub fn setColor(color: Color) !void {
-    var buf: [20]u8 = undefined;
-    const fullSequence: []const u8 = if (caps.truecolor)
-        try trueColor(color, &buf)
+    if (caps.truecolor)
+        try trueColor(color)
     else
-        try ansiColor(color, &buf);
-
-    try out.writeAll(fullSequence);
+        try ansiColor(color);
 }
 
-fn ansiColor(color: Color, buf: []u8) ![]const u8 {
+fn ansiColor(color: Color) !void {
     const color_code: u16 = switch (color) {
         // .blue => 34,
         // .red => 31,
@@ -293,10 +305,10 @@ fn ansiColor(color: Color, buf: []u8) ![]const u8 {
         .magenta => 35,
     };
 
-    return try fmt.bufPrint(buf, "\x1B[{}m", .{color_code});
+    return try print("\x1B[{}m", .{color_code});
 }
 
-fn trueColor(color: Color, buf: []u8) ![]const u8 {
+fn trueColor(color: Color) !void {
     // Predefined RGB values for each named color
     const RGB = struct { r: u8, g: u8, b: u8 };
     const rgb: RGB = switch (color) {
@@ -310,33 +322,16 @@ fn trueColor(color: Color, buf: []u8) ![]const u8 {
     };
 
     // Format the true color ANSI sequence
-    return try fmt.bufPrint(
-        buf,
-        "\x1B[38;2;{};{};{}m",
-        .{ rgb.r, rgb.g, rgb.b },
-    );
-}
-
-pub fn flush() !void {
-    try out.flush();
-}
-
-// Text output functions
-pub fn writeAll(str: []const u8) !void {
-    try out.writeAll(str);
-}
-
-pub fn writeByteNTimes(byte: u8, n: usize) !void {
-    for (0..n) |_| try out.writeByte(byte);
+    return try print("\x1B[38;2;{};{};{}m", .{ rgb.r, rgb.g, rgb.b });
 }
 
 // Cursor and position control
 pub fn moveCursor(row: usize, col: usize) !void {
-    try out.print("\x1B[{};{}H", .{ row + 1, col + 1 });
+    try print("\x1B[{};{}H", .{ row + 1, col + 1 });
 }
 
 pub fn clear() !void {
-    try out.writeAll("\x1B[2J");
+    try writeAll("\x1B[2J");
 }
 
 pub fn clearLine(y: usize, xmin: usize, xmax: usize) !void {
