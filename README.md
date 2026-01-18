@@ -1,6 +1,6 @@
-# muzic
+# muzi
 
-**A snappy, lightweight terminal client for MPD written in Zig with vim-keybindings and fuzzy-finding.**
+**A snappy, slick terminal client for MPD written in Zig with vim-keybindings and fuzzy-finding.**
 
 ![short-demo](https://github.com/user-attachments/assets/9112f666-cf60-4512-81f9-943f9225d4a3)
 ## Features
@@ -9,15 +9,15 @@
  - Music browser for manual browsing
 
 ## Installation and Usage
-muzic currently only works on linux.
+muzi works on linux and macos
 
-muzic is available on the **AUR**
+muzi is available on the **AUR**
 
 ```bash
-yay -S muzic
+yay -S muzi
 ```
 
-To build muzic from source you need **Zig 0.14** installed, running the following command in the source directory will build to $source/zig-out/bin/
+To build muzi from source you need **Zig 0.15** installed, running the following command in the source directory will build to $source/zig-out/bin/
 
 ```bash
 zig build -Doptimize=ReleaseFast
@@ -26,16 +26,15 @@ zig build -Doptimize=ReleaseFast
 A running [mpd](https://github.com/MusicPlayerDaemon/MPD) instance will be required. The default host and port are 127.0.0.1:6600. The port and host can be specified as so:
 
 ```bash
-muzic -H "127.0.0.1" -p 6600
+muzi -H "127.0.0.1" -p 6600
 ```
-
-muzic is requires NO external dependencies other than the Zig standard library, which comes with the Zig binary.
-
-muzic's memory footprint will be directly correlated to the number of songs in your library but you can expect to be around 1MB per 1000 songs.
+muzi is a *stateful* mpd client so if the mpd library is updated while muzi is active it will need to be resynced. This must be done by quitting and launching the program again.
 
 ## Keybinds
 
 **normal queue**
+
+All *delete* commands save the selected songs to a yank buffer
 | key   | action    |
 |---    |---        |
 | q     | quit      |
@@ -48,22 +47,44 @@ muzic's memory footprint will be directly correlated to the number of songs in y
 | h     | prev song      |
 | l     | next song      |
 | ENTER     | play selected song      |
-| x     | delete from queue      |
+| x, d     | delete from queue at cursor position              |
 | X     | clear queue      |
-| D     | clear till end      |
-| p     | pause/play      |
+| D     | clear till      |
+| y     | yank at current position  |
+| Y     | yank till end         |
+| p     | put (in yank buffer)      |
+| v     | enter visual mode         |
+| SPACE | play/pause        |
 | left     | seek -5      |
 | right     | seek +5      |
+| SHIFT+left     | seek -15      |
+| SHIFT+right     | seek +15      |
 | up     | increase volume      |
-| up     | decrease volume      |
-| f     | switch to fuzzy find      |
+| up     | decrease volume            |
+| f     | switch to fuzzy find                       |
 | b     | switch to browser      |
+
+**visual queue**
+All *delete* commands save the selected songs to a yank buffer
+
+| key   | action    |
+|---    |---|
+| ESC, v   | exit visual mode |
+| k     | cursor up        |
+| j     | cursor down      |
+| Ctrl+U     | cursor up half queue      |
+| Ctrl+D     | cursor down half queue                                 |
+| g     | go top      |
+| G     | go bottom      |
+| d, x  | delete selected |
+| y     | yank selected |
 
 **fuzzy find**
 | key   | action    |
 |---    |---        |
-| ESC     | return to normal queue      |
-| Ctrl+U     | cursor up      |
+| ESC     | return to normal queue          |
+| Backspace | delete                                                 |
+| Ctrl+U     | cursor up      |     
 | Ctrl+D     | cursor down      |
 | ENTER     | add song to queue      |
 | *rest*     |  type      |
@@ -75,12 +96,12 @@ muzic's memory footprint will be directly correlated to the number of songs in y
 | k     | cursor up        |
 | j     | cursor down      |
 | Ctrl+U     | cursor up half queue      |
-| Ctrl+D     | cursor down half queue      |
+| Ctrl+D     | cursor down half queue             |
 | g     | go top      |
-| G     | go bottom      |
+| G     | go bottom                     |
 | h     | prev column      |
 | l     | next column      |
+| n     | cycle 10 best query matches      |
 | ENTER     | add song/album to queue      |
 | /     | search in column      |
-| ENTER *while searching    | exit search |
-| ESC *while searching   | exit search |
+| ENTER, ESC *while searching    | exit search |

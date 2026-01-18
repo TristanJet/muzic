@@ -52,7 +52,7 @@ Let's freaking go
 - [x] weird bug where queue no tags handled differently if zoom out
 - [x] browser files
 - [x] WriteFailed error on release fast only
-- [ ] segfault with data arenas
+- [x] segfault with data arenas
 - [ ] browser handle no tags testing
 
 ## next update
