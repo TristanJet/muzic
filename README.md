@@ -18,7 +18,7 @@ muzi is available on the **AUR**
 yay -S muzi
 ```
 
-To build muzi from source you need **Zig 0.15** installed, running the following command in the source directory will build to $source/zig-out/bin/
+To build muzi from source you need **Zig 0.15** installed, running the following command in the source directory will build to $source/zig-out/bin/muzi
 
 ```bash
 zig build -Doptimize=ReleaseFast
