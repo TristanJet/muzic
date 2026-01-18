@@ -125,8 +125,10 @@ pub const Data = struct {
 
     fn deinitsongdata(self: *const Data) void {
         if (self.searchable_init and self.songs_init and self.uris_init) {
-            alloc.songData.deinit();
-            song_data = null;
+            if (song_data) |_| {
+                alloc.songData.deinit();
+                song_data = null;
+            }
         }
     }
 
