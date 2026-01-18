@@ -7,7 +7,7 @@ pub fn build(b: *std.Build) void {
     const zg = b.dependency("zg", .{});
 
     const exe = b.addExecutable(.{
-        .name = if (optimize == .ReleaseFast) "muzic" else "out",
+        .name = if (optimize == .ReleaseFast) "muzi" else "out",
         .root_module = b.createModule(.{
             // b.createModule defines a new module just like b.addModule but,
             // unlike b.addModule, it does not expose the module to consumers of
