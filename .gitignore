@@ -5,3 +5,5 @@ zig-out/
 .tarignore
 
 CLAUDE.md
+
+TODO.md

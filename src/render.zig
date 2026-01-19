@@ -349,8 +349,9 @@ fn currTrackRender(
                 artist,
                 album,
             });
+        } else {
+            artist_alb = artist;
         }
-        artist_alb = artist;
     }
 
     if (!current.first_render) {
