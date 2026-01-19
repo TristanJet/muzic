@@ -12,7 +12,7 @@
 ## Installation and Usage
 muzi works on linux and macos
 
-muzi is available on the **AUR**
+muzi is available on the [AUR](https://aur.archlinux.org/packages/muzi)
 
 ```bash
 yay -S muzi
