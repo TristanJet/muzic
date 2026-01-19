@@ -103,6 +103,7 @@ All *delete* commands save the selected songs to a yank buffer
 | h     | prev column      |
 | l     | next column      |
 | n     | cycle 10 best query matches      |
-| ENTER     | add song/album to queue      |
+| ENTER     | add to queue      |
+| SPACE     | clear queue + add to queue |
 | /     | search in column      |
 | ENTER, ESC *while searching    | exit search |
