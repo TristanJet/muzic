@@ -53,6 +53,13 @@ Let's freaking go
 - [x] browser files
 - [x] WriteFailed error on release fast only
 - [x] segfault with data arenas
+
+## TO 1.1
+- [x] FIXED: investigate segfault on find
+- [x] INTEGER OVERFLOW: G, fuck up queue
+- [ ] ESC bug
+- [ ] loop, shuffle etc.
+- [ ] volume display
 - [ ] browser handle no tags testing
 
 ## next update

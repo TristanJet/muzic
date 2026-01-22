@@ -1014,7 +1014,7 @@ fn goTop(app: *state.State, render_state: *RenderState(n_browse_col)) void {
 
 fn goBottom(app: *state.State, render_state: *RenderState(n_browse_col)) void {
     const previnc = app.scroll_q.inc;
-    app.scroll_q.inc = app.queue.bound.bstart + @min((app.queue.fill), (app.queue.pl_len - app.queue.bound.bstart - app.queue.nviewable));
+    app.scroll_q.inc = app.queue.bound.bstart + @min((app.queue.fill), (app.queue.pl_len -| app.queue.bound.bstart -| app.queue.nviewable));
     app.scroll_q.prev_pos = app.scroll_q.pos;
     app.scroll_q.pos = @intCast(@min(app.queue.nviewable - 1, app.queue.pl_len - 1));
     app.queue.itopviewport = app.queue.pl_len -| app.queue.nviewable;

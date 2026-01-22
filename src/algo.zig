@@ -61,8 +61,8 @@ pub const SearchState = struct {
     }
 
     pub fn reset(self: *SearchState) void {
-        self.isearch.shrinkRetainingCapacity(0);
-        self.imatch.shrinkRetainingCapacity(0);
+        self.isearch.clearAndFree(self.index_arena);
+        self.imatch.clearAndFree(self.index_arena);
     }
 };
 
